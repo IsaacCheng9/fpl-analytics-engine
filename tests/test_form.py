@@ -1,0 +1,118 @@
+"""Tests for point-in-time form computation and back-testing."""
+
+import polars as pl
+import pytest
+
+from fpl_analytics_engine import form
+
+
+def _game(
+    element: int,
+    round_: int,
+    *,
+    minutes: int = 90,
+    xgi: float = 0.0,
+    points: int = 0,
+    defcon_hit: bool | None = False,
+    position: str = "MID",
+    value: int = 50,
+) -> dict:
+    """Build one enriched per-gameweek history row for tests."""
+    return {
+        "element": element,
+        "round": round_,
+        "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+        "minutes": minutes,
+        "total_points": points,
+        "value": value,
+        "expected_goals": 0.0,
+        "expected_assists": 0.0,
+        "expected_goal_involvements": xgi,
+        "expected_goals_conceded": 0.0,
+        "web_name": f"P{element}",
+        "position": position,
+        "team_name": "T",
+        "defcon_hit": defcon_hit,
+    }
+
+
+def _frame(rows: list[dict]) -> pl.DataFrame:
+    return pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+
+def _player_row(history: pl.DataFrame, as_of_gw: int, window: int, element: int):
+    table = form.compute_form_table(history, as_of_gw, window)
+    return table.filter(pl.col("element") == element).to_dicts()[0]
+
+
+def test_form_table_is_point_in_time() -> None:
+    # Low early form (GW1-3), hot recent form (GW4-6).
+    rows = [_game(1, r, xgi=0.1) for r in (1, 2, 3)]
+    rows += [_game(1, r, xgi=0.9) for r in (4, 5, 6)]
+    history = _frame(rows)
+
+    at_gw4 = _player_row(history, as_of_gw=4, window=3, element=1)
+    # Window = GW2-4; season-to-date = GW1-4. GW5-6 must be invisible.
+    assert at_gw4["window_xgi90"] == pytest.approx(1.1 / 270 * 90)
+    assert at_gw4["season_xgi90"] == pytest.approx(0.30)
+    assert at_gw4["delta_xgi90"] == pytest.approx(1.1 / 270 * 90 - 0.30)
+
+    at_gw6 = _player_row(history, as_of_gw=6, window=3, element=1)
+    # With the later data visible the baseline and delta both change.
+    assert at_gw6["season_xgi90"] == pytest.approx(0.50)
+    assert at_gw6["delta_xgi90"] == pytest.approx(0.40)
+
+
+def test_flag_players_ranks_and_filters() -> None:
+    # P1 improves (positive delta); P2 declines (negative delta).
+    rows = [_game(1, r, xgi=0.1) for r in (1, 2)]
+    rows += [_game(1, r, xgi=0.9) for r in (3, 4)]
+    rows += [_game(2, r, xgi=0.9) for r in (1, 2)]
+    rows += [_game(2, r, xgi=0.1) for r in (3, 4)]
+    table = form.compute_form_table(_frame(rows), as_of_gw=4, window=2)
+
+    flagged = form.flag_players(table, min_delta_xgi90=0.0)
+
+    elements = flagged["element"].to_list()
+    assert 1 in elements  # improving player is flagged
+    assert 2 not in elements  # declining player has a negative delta
+
+
+def test_defcon_hit_rate_by_position() -> None:
+    rows = [
+        _game(1, 1, defcon_hit=True, position="DEF"),
+        _game(1, 2, defcon_hit=False, position="DEF"),
+        _game(1, 3, defcon_hit=True, position="DEF"),
+        _game(2, 1, defcon_hit=None, position="GK"),
+        _game(2, 2, defcon_hit=None, position="GK"),
+        _game(2, 3, defcon_hit=None, position="GK"),
+    ]
+    table = form.compute_form_table(_frame(rows), as_of_gw=3, window=3)
+
+    defender = table.filter(pl.col("element") == 1).to_dicts()[0]
+    keeper = table.filter(pl.col("element") == 2).to_dicts()[0]
+    assert defender["window_defcon_hit_rate"] == pytest.approx(2 / 3)
+    assert keeper["window_defcon_hit_rate"] is None
+
+
+def test_backtest_flags_replays_each_gameweek() -> None:
+    # A monotonically improving player is flagged from the window onward.
+    history = _frame([_game(1, r, xgi=0.1 * r) for r in (1, 2, 3, 4)])
+
+    flags = form.backtest_flags(history, window=2, min_delta_xgi90=0.0)
+
+    assert set(flags["as_of_gw"].to_list()) == {2, 3, 4}
+
+
+def test_evaluate_flags_attaches_next_gameweek_points() -> None:
+    history = _frame([_game(1, r, xgi=0.1 * r, points=r) for r in (1, 2, 3, 4)])
+    flags = form.backtest_flags(history, window=2, min_delta_xgi90=0.0)
+
+    evaluated = form.evaluate_flags(history, flags)
+
+    # The flag after GW2 should see GW3's points (= 3).
+    after_gw2 = evaluated.filter(pl.col("as_of_gw") == 2).to_dicts()[0]
+    assert after_gw2["next_gw_points"] == 3
+    # The flag after the final GW4 has no following gameweek.
+    after_gw4 = evaluated.filter(pl.col("as_of_gw") == 4).to_dicts()[0]
+    assert after_gw4["next_gw_points"] is None
