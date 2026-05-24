@@ -147,6 +147,38 @@ def flag_players(
     return flagged
 
 
+def flag_defcon(
+    form_table: pl.DataFrame,
+    min_window_minutes: int = 0,
+    min_hit_rate: float = 0.0,
+    position: str | None = None,
+    top_k: int | None = None,
+) -> pl.DataFrame:
+    """Filter and rank players by recent DefCon hit-rate.
+
+    Args:
+        form_table: Output of :func:`compute_form_table`.
+        min_window_minutes: Minimum minutes in the window to qualify.
+        min_hit_rate: Minimum window DefCon hit-rate; this also drops ineligible
+            positions (GK and managers), whose hit-rate is null.
+        position: Optional position filter ('DEF', 'MID', 'FWD').
+        top_k: Optional cap on the number of players returned.
+
+    Returns:
+        The qualifying players sorted by ``window_defcon_hit_rate`` descending.
+    """
+    flagged = form_table.filter(
+        pl.col("window_minutes") >= min_window_minutes,
+        pl.col("window_defcon_hit_rate") >= min_hit_rate,
+    )
+    if position is not None:
+        flagged = flagged.filter(pl.col("position") == position)
+    flagged = flagged.sort("window_defcon_hit_rate", descending=True, nulls_last=True)
+    if top_k is not None:
+        flagged = flagged.head(top_k)
+    return flagged
+
+
 def backtest_flags(
     history: pl.DataFrame,
     window: int = DEFAULT_WINDOW,
