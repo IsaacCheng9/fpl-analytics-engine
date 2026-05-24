@@ -4,6 +4,8 @@ from pathlib import Path
 
 import polars as pl
 
+from fpl_analytics_engine.domain import DEFCON_THRESHOLDS, ELEMENT_TYPE_TO_POSITION
+
 # Expected-stat columns arrive from the FPL API as strings and need casting.
 EXPECTED_STAT_COLUMNS = [
     "expected_goals",
@@ -11,11 +13,6 @@ EXPECTED_STAT_COLUMNS = [
     "expected_goal_involvements",
     "expected_goals_conceded",
 ]
-POSITIONS = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD", 5: "MNG"}
-# Defensive-contribution points threshold per position (GK and managers are
-# ineligible). Defenders need 10+ CBIT; midfielders and forwards need 12+ CBIRT.
-# The API's defensive_contribution field already holds the positional count.
-DEFCON_THRESHOLDS = {"DEF": 10, "MID": 12, "FWD": 12}
 
 
 def load_player_history(data_dir: Path) -> pl.DataFrame:
@@ -80,7 +77,7 @@ def enrich_history(
         .join(team_meta, on="team", how="left")
         .with_columns(
             pl.col("element_type")
-            .replace_strict(POSITIONS, default=None)
+            .replace_strict(ELEMENT_TYPE_TO_POSITION, default=None)
             .alias("position")
         )
         .with_columns(
