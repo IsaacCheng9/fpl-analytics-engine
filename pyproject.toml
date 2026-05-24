@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.116.1",
     "polars>=1.41.0",
     "requests>=2.32.4",
+    "uvicorn[standard]>=0.48.0",
 ]
 
 [build-system]
@@ -21,7 +22,13 @@ build-backend = "hatchling.build"
 packages = ["src/fpl_analytics_engine"]
 
 [dependency-groups]
-dev = ["pytest>=8.4.1", "pytest-cov>=6.2.1", "ruff>=0.11.0", "ty"]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.11.0",
+    "ty",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP", "D"]
