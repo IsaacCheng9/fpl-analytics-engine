@@ -3,7 +3,7 @@ name = "fpl-analytics-engine"
 version = "0.1.1"
 description = "A football analytics engine processing Premier League data to identify team and player form trends and performance insights."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 authors = [
     { name = "Isaac Cheng", email = "47993930+IsaacCheng9@users.noreply.github.com" },
 ]
@@ -17,7 +17,20 @@ build-backend = "hatchling.build"
 packages = ["src/fpl_analytics_engine"]
 
 [dependency-groups]
-dev = ["pytest>=8.4.1", "pytest-cov>=6.2.1"]
+dev = ["pytest>=8.4.1", "pytest-cov>=6.2.1", "ruff>=0.11.0", "ty"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP", "D"]
+# The Google docstring convention disables D401, so re-enable it to enforce
+# imperative summaries (e.g. 'Fetch', not 'Fetches').
+extend-select = ["D401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Avoid enforcing docstrings in test files.
+"tests/**" = ["D"]
 
 [tool.commitizen]
 version = "0.1.1"
