@@ -1,6 +1,7 @@
 """Tests for the FPL data-fetching layer."""
 
 import pytest
+import requests
 
 from fpl_analytics_engine import app
 
@@ -26,8 +27,8 @@ def test_get_fpl_data_returns_decoded_json(
     fake_response = _FakeResponse(payload)
 
     # Capture the call arguments to assert the URL and timeout are passed.
-    def fake_get(url: str, timeout: int) -> _FakeResponse:
-        assert url == app.FPL_BASE_URL
+    def fake_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        assert url == app.BOOTSTRAP_ENDPOINT
         assert timeout == app.REQUEST_TIMEOUT_SECONDS
         return fake_response
 
@@ -38,3 +39,40 @@ def test_get_fpl_data_returns_decoded_json(
     assert result == payload
     # The fetch must surface HTTP errors before returning.
     assert fake_response.raise_for_status_called
+
+
+def test_get_player_history_returns_history_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = [{"round": 1, "total_points": 6}, {"round": 2, "total_points": 2}]
+    payload = {"history": history, "fixtures": [], "history_past": []}
+
+    def fake_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        assert "element-summary/100/" in url
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(app.requests, "get", fake_get)
+
+    assert app.get_player_history(100) == history
+
+
+def test_get_json_retries_on_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {"ok": True}
+    calls = {"count": 0}
+
+    def flaky_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise requests.ConnectionError("transient")
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(app.requests, "get", flaky_get)
+    # Avoid real backoff sleeps during the test.
+    monkeypatch.setattr(app.time, "sleep", lambda _seconds: None)
+
+    result = app._get_json("https://example.test/")
+
+    assert result == payload
+    assert calls["count"] == 2
