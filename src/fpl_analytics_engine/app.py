@@ -1,12 +1,14 @@
 """Fetch raw data from the Fantasy Premier League API."""
 
 import time
+from typing import cast
 
 import requests
 
 FPL_BASE_URL = "https://fantasy.premierleague.com/api"
 BOOTSTRAP_ENDPOINT = f"{FPL_BASE_URL}/bootstrap-static/"
 ELEMENT_SUMMARY_ENDPOINT = f"{FPL_BASE_URL}/element-summary/{{element_id}}/"
+FIXTURES_ENDPOINT = f"{FPL_BASE_URL}/fixtures/"
 REQUEST_TIMEOUT_SECONDS = 10
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2.0
@@ -66,6 +68,16 @@ def get_player_history(element_id: int) -> list[dict]:
     """
     data = _get_json(ELEMENT_SUMMARY_ENDPOINT.format(element_id=element_id))
     return data["history"]
+
+
+def get_fixtures() -> list[dict]:
+    """Fetch the season's fixtures from the FPL API.
+
+    Returns:
+        A list of fixture records, each carrying the gameweek (``event``),
+        the home and away team ids, and their fixture-difficulty ratings.
+    """
+    return cast(list[dict], _get_json(FIXTURES_ENDPOINT))
 
 
 if __name__ == "__main__":

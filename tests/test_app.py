@@ -9,14 +9,14 @@ from fpl_analytics_engine import app
 class _FakeResponse:
     """Minimal stand-in for a requests.Response."""
 
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: dict | list) -> None:
         self._payload = payload
         self.raise_for_status_called = False
 
     def raise_for_status(self) -> None:
         self.raise_for_status_called = True
 
-    def json(self) -> dict:
+    def json(self) -> dict | list:
         return self._payload
 
 
@@ -54,6 +54,20 @@ def test_get_player_history_returns_history_list(
     monkeypatch.setattr(app.requests, "get", fake_get)
 
     assert app.get_player_history(100) == history
+
+
+def test_get_fixtures_returns_fixture_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = [{"event": 1, "team_h": 1, "team_a": 2}, {"event": 1}]
+
+    def fake_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        assert url == app.FIXTURES_ENDPOINT
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(app.requests, "get", fake_get)
+
+    assert app.get_fixtures() == payload
 
 
 def test_get_json_retries_on_transient_failure(
