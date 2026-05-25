@@ -105,3 +105,46 @@ def test_flag_defcon_probabilities_filters_and_ranks() -> None:
     top = defcon.flag_defcon_probabilities(probs, top_k=1)
     assert top.height == 1
     assert top["element"][0] == 2
+
+
+def _count_game(
+    element: int,
+    round_: int,
+    *,
+    count: int,
+    threshold: int = 10,
+    position: str = "DEF",
+) -> dict:
+    """Build one row carrying the DefCon contribution count for tests."""
+    return {
+        "element": element,
+        "round": round_,
+        "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+        "minutes": 90,
+        "defensive_contribution": count,
+        "defcon_threshold": threshold,
+        "defcon_hit": count >= threshold,
+        "position": position,
+        "web_name": f"P{element}",
+        "team_name": "T",
+    }
+
+
+def test_count_model_rewards_higher_contribution_counts() -> None:
+    rows: list[dict] = []
+    # P1 clears the threshold comfortably; P2 scrapes it - same 5/6 hit rate.
+    rows += [_count_game(1, r, count=20) for r in range(1, 6)] + [
+        _count_game(1, 6, count=5)
+    ]
+    rows += [_count_game(2, r, count=10) for r in range(1, 6)] + [
+        _count_game(2, 6, count=5)
+    ]
+    frame = pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+    table = defcon.defcon_count_probabilities(frame, as_of_gw=6)
+    by_element = {row["element"]: row for row in table.to_dicts()}
+
+    # Identical binary hit rate...
+    assert by_element[1]["raw_rate"] == by_element[2]["raw_rate"]
+    # ...but the higher-margin player is judged more likely to hit.
+    assert by_element[1]["prob"] > by_element[2]["prob"]

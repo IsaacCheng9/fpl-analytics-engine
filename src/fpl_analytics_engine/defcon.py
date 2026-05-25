@@ -13,6 +13,7 @@ sample is too small to estimate the spread. Everything is point-in-time - only
 games up to and including ``as_of_gw`` inform either the prior or the player.
 """
 
+import math
 from typing import cast
 
 import polars as pl
@@ -302,3 +303,136 @@ def calibration_table(
         )
         .sort("bin")
     )
+
+
+def _negbin_at_least(threshold: int, shape: float, prob: float) -> float:
+    """Return P(X >= threshold) for X ~ NegativeBinomial(shape, prob).
+
+    Computed by summing the PMF over 0..threshold-1 with ``math.lgamma`` so it
+    works for a non-integer shape without SciPy.
+    """
+    log_prob = math.log(prob)
+    log_complement = math.log1p(-prob)
+    cdf = 0.0
+    for k in range(threshold):
+        log_pmf = (
+            math.lgamma(k + shape)
+            - math.lgamma(shape)
+            - math.lgamma(k + 1)
+            + shape * log_prob
+            + k * log_complement
+        )
+        cdf += math.exp(log_pmf)
+    return max(0.0, 1.0 - cdf)
+
+
+def _gamma_position_priors(
+    per_player: pl.DataFrame,
+    min_games_for_prior: int,
+    fallback_strength: float,
+    empirical_bayes: bool,
+) -> dict[str, tuple[float, float]]:
+    """Estimate a Gamma(shape, rate) prior on the per-game count per position.
+
+    The rate (concentration in games) follows the between-player spread in
+    per-game counts via method of moments, mirroring the binary model.
+    """
+    priors: dict[str, tuple[float, float]] = {}
+    for position in per_player["position"].unique().to_list():
+        group = per_player.filter(pl.col("position") == position)
+        total_games = int(group["games"].sum())
+        if total_games == 0:
+            continue
+        mean = int(group["total_count"].sum()) / total_games
+        rate = fallback_strength
+        if empirical_bayes and mean > 0:
+            rated = group.filter(pl.col("games") >= min_games_for_prior)
+            if rated.height >= 2:
+                rates = rated["total_count"] / rated["games"]
+                observed_var = rates.var()
+                sampling_var = (mean / rated["games"]).mean()
+                if observed_var is not None and sampling_var is not None:
+                    between_var = cast(float, observed_var) - cast(float, sampling_var)
+                    if between_var > 0:
+                        rate = min(
+                            max(mean / between_var, MIN_CONCENTRATION),
+                            MAX_CONCENTRATION,
+                        )
+        priors[position] = (mean * rate, rate)
+    return priors
+
+
+def defcon_count_probabilities(
+    history: pl.DataFrame,
+    as_of_gw: int,
+    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
+    min_minutes: int = 1,
+    empirical_bayes: bool = True,
+    min_games_for_prior: int = 3,
+) -> pl.DataFrame:
+    """Estimate DefCon hit probability from the contribution count.
+
+    Models per-game ``defensive_contribution`` as Gamma-Poisson (empirical
+    Bayes per position), then returns ``P(count >= positional threshold)`` from
+    the Negative-Binomial predictive. Unlike :func:`defcon_probabilities`, this
+    uses the size of each contribution, so comfortably-over-threshold players
+    score higher than those who scrape it. Columns mirror that function, with a
+    null ``prob_std``.
+
+    Note: back-testing shows this is sharper than the binary model (lower Brier)
+    but overconfident at the extremes (worse calibration), so the binary model
+    is the one surfaced. Kept as the basis for a future recalibrated version.
+
+    Args:
+        history: Enriched per-gameweek history.
+        as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
+        prior_strength: Fallback Gamma rate (in games) for small samples.
+        min_minutes: Minimum minutes for a game to count as an appearance.
+        empirical_bayes: Estimate the Gamma rate per position from the data.
+        min_games_for_prior: Minimum games for a player to inform the prior.
+
+    Returns:
+        One row per eligible player with the empirical hit rate and the
+        count-model probability.
+    """
+    eligible = history.filter(
+        (pl.col("round") <= as_of_gw)
+        & (pl.col("minutes") >= min_minutes)
+        & pl.col("defcon_hit").is_not_null()
+    )
+    per_player = eligible.group_by("element").agg(
+        pl.col("web_name").last(),
+        pl.col("position").last(),
+        pl.col("team_name").last(),
+        pl.col("defcon_threshold").first().alias("threshold"),
+        pl.col("defensive_contribution").sum().alias("total_count"),
+        pl.col("defcon_hit").sum().alias("hits"),
+        pl.len().alias("games"),
+    )
+    priors = _gamma_position_priors(
+        per_player, min_games_for_prior, prior_strength, empirical_bayes
+    )
+
+    records = []
+    for row in per_player.iter_rows(named=True):
+        shape_prior, rate_prior = priors.get(row["position"], (prior_strength, 1.0))
+        post_shape = shape_prior + row["total_count"]
+        post_rate = rate_prior + row["games"]
+        prob = _negbin_at_least(
+            int(row["threshold"]), post_shape, post_rate / (post_rate + 1.0)
+        )
+        records.append(
+            {
+                "element": row["element"],
+                "web_name": row["web_name"],
+                "position": row["position"],
+                "team_name": row["team_name"],
+                "games": row["games"],
+                "hits": row["hits"],
+                "raw_rate": row["hits"] / row["games"],
+                "prob": prob,
+                "prob_std": None,
+                "as_of_gw": as_of_gw,
+            }
+        )
+    return pl.DataFrame(records, schema_overrides={"prob_std": pl.Float64})
