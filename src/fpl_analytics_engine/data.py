@@ -107,3 +107,16 @@ def prepare_history(data_dir: Path) -> pl.DataFrame:
         load_players(data_dir),
         load_teams(data_dir),
     )
+
+
+def load_enriched(data_dir: Path) -> pl.DataFrame:
+    """Read a pre-archived enriched season snapshot.
+
+    Args:
+        data_dir: Season directory holding an ``enriched.parquet`` (e.g. a
+            backfilled historical season).
+
+    Returns:
+        The enriched per-gameweek history for that season.
+    """
+    return pl.read_parquet(data_dir / "enriched.parquet")
