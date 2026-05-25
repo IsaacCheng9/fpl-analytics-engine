@@ -92,3 +92,19 @@ def test_defcon_endpoint_ranks_eligible_and_excludes_keepers(
     # Keepers are ineligible and never appear, even with no hit-rate floor.
     everyone = client.get("/players/defcon").json()
     assert "P4" not in [r["web_name"] for r in everyone]
+
+
+def test_defcon_probability_endpoint_ranks_and_excludes_keepers(
+    client: TestClient,
+) -> None:
+    body = client.get("/players/defcon-probability").json()
+    names = [row["web_name"] for row in body]
+    assert "P4" not in names  # keepers are ineligible
+    # P3 hits most often, so leads the probability ranking.
+    assert body[0]["web_name"] == "P3"
+    assert body[0]["raw_rate"] == pytest.approx(0.75)
+    assert 0.0 <= body[0]["prob"] <= 1.0
+
+    # Everyone has four games, so a higher floor returns nothing.
+    too_few = client.get("/players/defcon-probability", params={"min_games": 5})
+    assert too_few.json() == []

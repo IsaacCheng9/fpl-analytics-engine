@@ -35,3 +35,18 @@ class DefconPlayer(BaseModel):
     window_defcon_games: int | None
     window_defcon_hit_rate: float | None
     as_of_gw: int
+
+
+class DefconProbabilityPlayer(BaseModel):
+    """A player's modelled probability of hitting the DefCon threshold."""
+
+    element: int
+    web_name: str
+    position: str | None
+    team_name: str | None
+    games: int
+    hits: int
+    raw_rate: float | None
+    prob: float | None
+    prob_std: float | None
+    as_of_gw: int

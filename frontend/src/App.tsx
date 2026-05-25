@@ -3,8 +3,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import {
 	type DefconPlayer,
+	type DefconProbabilityPlayer,
 	type FormPlayer,
 	fetchDefcon,
+	fetchDefconProbability,
 	fetchForm,
 	fetchMeta,
 	type Position,
@@ -13,8 +15,14 @@ import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { fmtNum, fmtPct, fmtPrice } from "./lib/format";
 
-type Tab = "form" | "defcon";
+type Tab = "form" | "defcon" | "defconProb";
 
+const TAB_LABELS: Record<Tab, string> = {
+	form: "Attacking Form",
+	defcon: "DefCon Form",
+	defconProb: "DefCon Probability",
+};
+const TABS: Tab[] = ["form", "defcon", "defconProb"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
@@ -95,6 +103,29 @@ const defconColumns: ColumnDef<DefconPlayer>[] = [
 	},
 ];
 
+const defconProbColumns: ColumnDef<DefconProbabilityPlayer>[] = [
+	{ accessorKey: "web_name", header: "Player" },
+	{ accessorKey: "position", header: "Pos" },
+	{ accessorKey: "team_name", header: "Team" },
+	{ accessorKey: "games", header: "Games" },
+	{ accessorKey: "hits", header: "Hits" },
+	{
+		accessorKey: "raw_rate",
+		header: "Raw Rate",
+		cell: (info) => fmtPct(info.getValue<number | null>()),
+	},
+	{
+		accessorKey: "prob",
+		header: "P(Hit Next GW)",
+		cell: (info) => fmtPct(info.getValue<number | null>()),
+	},
+	{
+		accessorKey: "prob_std",
+		header: "+/-",
+		cell: (info) => fmtNum(info.getValue<number | null>()),
+	},
+];
+
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
 const inputClass =
 	"mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
@@ -108,6 +139,7 @@ export default function App() {
 	const [minMinutes, setMinMinutes] = useState(270);
 	const [minDelta, setMinDelta] = useState(0);
 	const [minHitRate, setMinHitRate] = useState(0);
+	const [minGames, setMinGames] = useState(5);
 	const [asOfGw, setAsOfGw] = useState<number | null>(null);
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
@@ -124,8 +156,18 @@ export default function App() {
 		queryFn: () => fetchDefcon({ ...base, minHitRate }),
 		enabled: tab === "defcon",
 	});
+	const defconProbQuery = useQuery({
+		queryKey: ["defconProb", position, minGames, asOfGw],
+		queryFn: () => fetchDefconProbability({ position, minGames, asOfGw }),
+		enabled: tab === "defconProb",
+	});
 
-	const active = tab === "form" ? formQuery : defconQuery;
+	const active =
+		tab === "form"
+			? formQuery
+			: tab === "defcon"
+				? defconQuery
+				: defconProbQuery;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
@@ -147,6 +189,11 @@ export default function App() {
 		playerSearch,
 		teamFilter,
 	);
+	const filteredDefconProb = filterPlayers(
+		defconProbQuery.data ?? [],
+		playerSearch,
+		teamFilter,
+	);
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -163,7 +210,7 @@ export default function App() {
 				</header>
 
 				<div className="mb-4 flex gap-2">
-					{(["form", "defcon"] as Tab[]).map((value) => (
+					{TABS.map((value) => (
 						<button
 							key={value}
 							type="button"
@@ -174,7 +221,7 @@ export default function App() {
 									: "bg-white text-zinc-700 ring-1 ring-zinc-200"
 							}`}
 						>
-							{value === "form" ? "Attacking Form" : "DefCon Form"}
+							{TAB_LABELS[value]}
 						</button>
 					))}
 				</div>
@@ -223,33 +270,37 @@ export default function App() {
 						</select>
 					</label>
 
-					<label className={labelClass}>
-						Window (Games)
-						<select
-							className={inputClass}
-							value={windowSize}
-							onChange={(e) => setWindowSize(Number(e.target.value))}
-						>
-							{WINDOWS.map((n) => (
-								<option key={n} value={n}>
-									{n}
-								</option>
-							))}
-						</select>
-					</label>
+					{tab !== "defconProb" && (
+						<>
+							<label className={labelClass}>
+								Window (Games)
+								<select
+									className={inputClass}
+									value={windowSize}
+									onChange={(e) => setWindowSize(Number(e.target.value))}
+								>
+									{WINDOWS.map((n) => (
+										<option key={n} value={n}>
+											{n}
+										</option>
+									))}
+								</select>
+							</label>
 
-					<label className={labelClass}>
-						Min Minutes
-						<input
-							type="number"
-							min={0}
-							className={`${inputClass} w-24`}
-							value={minMinutes}
-							onChange={(e) => setMinMinutes(Number(e.target.value))}
-						/>
-					</label>
+							<label className={labelClass}>
+								Min Minutes
+								<input
+									type="number"
+									min={0}
+									className={`${inputClass} w-24`}
+									value={minMinutes}
+									onChange={(e) => setMinMinutes(Number(e.target.value))}
+								/>
+							</label>
+						</>
+					)}
 
-					{tab === "form" ? (
+					{tab === "form" && (
 						<label className={labelClass}>
 							Min Delta xGI per 90
 							<input
@@ -260,7 +311,9 @@ export default function App() {
 								onChange={(e) => setMinDelta(Number(e.target.value))}
 							/>
 						</label>
-					) : (
+					)}
+
+					{tab === "defcon" && (
 						<label className={labelClass}>
 							Min Hit Rate
 							<select
@@ -274,6 +327,19 @@ export default function App() {
 									</option>
 								))}
 							</select>
+						</label>
+					)}
+
+					{tab === "defconProb" && (
+						<label className={labelClass}>
+							Min Games
+							<input
+								type="number"
+								min={0}
+								className={`${inputClass} w-24`}
+								value={minGames}
+								onChange={(e) => setMinGames(Number(e.target.value))}
+							/>
 						</label>
 					)}
 
@@ -315,8 +381,10 @@ export default function App() {
 						<FormScatter players={filteredForm} />
 						<DataTable data={filteredForm} columns={formColumns} />
 					</>
-				) : (
+				) : tab === "defcon" ? (
 					<DataTable data={filteredDefcon} columns={defconColumns} />
+				) : (
+					<DataTable data={filteredDefconProb} columns={defconProbColumns} />
 				)}
 			</div>
 		</div>
