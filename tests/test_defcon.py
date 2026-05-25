@@ -84,3 +84,24 @@ def test_backtest_scores_against_next_gameweek() -> None:
     # Last round (4) has no following gameweek to score against.
     assert all(gw <= 3 for gw in scored["as_of_gw"].to_list())
     assert set(scored["hit"].unique()).issubset({0.0, 1.0})
+
+
+def test_flag_defcon_probabilities_filters_and_ranks() -> None:
+    probs = pl.DataFrame(
+        {
+            "element": [1, 2, 3],
+            "position": ["DEF", "MID", "DEF"],
+            "games": [10, 2, 8],
+            "prob": [0.3, 0.6, 0.5],
+        }
+    )
+    # min_games drops the 2-game player; the rest rank by prob descending.
+    ranked = defcon.flag_defcon_probabilities(probs, min_games=5)
+    assert ranked["element"].to_list() == [3, 1]
+
+    defenders = defcon.flag_defcon_probabilities(probs, position="DEF")
+    assert set(defenders["position"].to_list()) == {"DEF"}
+
+    top = defcon.flag_defcon_probabilities(probs, top_k=1)
+    assert top.height == 1
+    assert top["element"][0] == 2
