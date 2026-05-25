@@ -1,9 +1,7 @@
 import {
 	type ColumnDef,
-	type ColumnFiltersState,
 	flexRender,
 	getCoreRowModel,
-	getFilteredRowModel,
 	getSortedRowModel,
 	type SortingState,
 	useReactTable,
@@ -13,20 +11,17 @@ import { useState } from "react";
 export function DataTable<T>({
 	data,
 	columns,
-	columnFilters,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
-	columnFilters?: ColumnFiltersState;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const table = useReactTable({
 		data,
 		columns,
-		state: { sorting, columnFilters },
+		state: { sorting },
 		onSortingChange: setSorting,
 		getCoreRowModel: getCoreRowModel(),
-		getFilteredRowModel: getFilteredRowModel(),
 		getSortedRowModel: getSortedRowModel(),
 	});
 

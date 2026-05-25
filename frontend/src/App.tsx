@@ -10,6 +10,7 @@ import {
 	type Position,
 } from "./api";
 import { DataTable } from "./components/DataTable";
+import { FormScatter } from "./components/FormScatter";
 import { fmtNum, fmtPct, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon";
@@ -17,6 +18,19 @@ type Tab = "form" | "defcon";
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
+
+// Apply the client-side player and team filters so the chart and table stay
+// in sync from a single source.
+function filterPlayers<
+	T extends { web_name: string; team_name: string | null },
+>(rows: T[], playerSearch: string, teamFilter: string): T[] {
+	const query = playerSearch.trim().toLowerCase();
+	return rows.filter(
+		(row) =>
+			(query === "" || row.web_name.toLowerCase().includes(query)) &&
+			(teamFilter === "" || row.team_name === teamFilter),
+	);
+}
 
 function DeltaCell({ value }: { value: number | null }) {
 	if (value === null) {
@@ -123,10 +137,16 @@ export default function App() {
 		return Array.from(new Set(names)).sort();
 	}, [active.data]);
 
-	const columnFilters = [
-		...(playerSearch ? [{ id: "web_name", value: playerSearch }] : []),
-		...(teamFilter ? [{ id: "team_name", value: teamFilter }] : []),
-	];
+	const filteredForm = filterPlayers(
+		formQuery.data ?? [],
+		playerSearch,
+		teamFilter,
+	);
+	const filteredDefcon = filterPlayers(
+		defconQuery.data ?? [],
+		playerSearch,
+		teamFilter,
+	);
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -291,17 +311,12 @@ export default function App() {
 						Failed to load - is the API running on port 8000?
 					</p>
 				) : tab === "form" ? (
-					<DataTable
-						data={formQuery.data ?? []}
-						columns={formColumns}
-						columnFilters={columnFilters}
-					/>
+					<>
+						<FormScatter players={filteredForm} />
+						<DataTable data={filteredForm} columns={formColumns} />
+					</>
 				) : (
-					<DataTable
-						data={defconQuery.data ?? []}
-						columns={defconColumns}
-						columnFilters={columnFilters}
-					/>
+					<DataTable data={filteredDefcon} columns={defconColumns} />
 				)}
 			</div>
 		</div>
