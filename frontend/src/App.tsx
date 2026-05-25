@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
 	type DefconPlayer,
 	type FormPlayer,
@@ -87,6 +87,8 @@ const inputClass =
 
 export default function App() {
 	const [tab, setTab] = useState<Tab>("form");
+	const [playerSearch, setPlayerSearch] = useState("");
+	const [teamFilter, setTeamFilter] = useState("");
 	const [windowSize, setWindowSize] = useState(5);
 	const [position, setPosition] = useState<Position | "">("");
 	const [minMinutes, setMinMinutes] = useState(270);
@@ -110,6 +112,21 @@ export default function App() {
 	});
 
 	const active = tab === "form" ? formQuery : defconQuery;
+
+	// Team dropdown options derived from the loaded players, independent of the
+	// client-side player/team filters so the list stays stable.
+	const teamOptions = useMemo(() => {
+		const players = (active.data ?? []) as Array<{ team_name: string | null }>;
+		const names = players
+			.map((player) => player.team_name)
+			.filter((name): name is string => name !== null);
+		return Array.from(new Set(names)).sort();
+	}, [active.data]);
+
+	const columnFilters = [
+		...(playerSearch ? [{ id: "web_name", value: playerSearch }] : []),
+		...(teamFilter ? [{ id: "team_name", value: teamFilter }] : []),
+	];
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -143,6 +160,33 @@ export default function App() {
 				</div>
 
 				<div className="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-white p-4">
+					<label className={labelClass}>
+						Player
+						<input
+							type="search"
+							placeholder="e.g. Saka"
+							className={`${inputClass} w-40`}
+							value={playerSearch}
+							onChange={(e) => setPlayerSearch(e.target.value)}
+						/>
+					</label>
+
+					<label className={labelClass}>
+						Team
+						<select
+							className={inputClass}
+							value={teamFilter}
+							onChange={(e) => setTeamFilter(e.target.value)}
+						>
+							<option value="">All</option>
+							{teamOptions.map((team) => (
+								<option key={team} value={team}>
+									{team}
+								</option>
+							))}
+						</select>
+					</label>
+
 					<label className={labelClass}>
 						Window (Games)
 						<select
@@ -247,9 +291,17 @@ export default function App() {
 						Failed to load - is the API running on port 8000?
 					</p>
 				) : tab === "form" ? (
-					<DataTable data={formQuery.data ?? []} columns={formColumns} />
+					<DataTable
+						data={formQuery.data ?? []}
+						columns={formColumns}
+						columnFilters={columnFilters}
+					/>
 				) : (
-					<DataTable data={defconQuery.data ?? []} columns={defconColumns} />
+					<DataTable
+						data={defconQuery.data ?? []}
+						columns={defconColumns}
+						columnFilters={columnFilters}
+					/>
 				)}
 			</div>
 		</div>

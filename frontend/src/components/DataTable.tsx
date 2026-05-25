@@ -1,7 +1,9 @@
 import {
 	type ColumnDef,
+	type ColumnFiltersState,
 	flexRender,
 	getCoreRowModel,
+	getFilteredRowModel,
 	getSortedRowModel,
 	type SortingState,
 	useReactTable,
@@ -11,19 +13,24 @@ import { useState } from "react";
 export function DataTable<T>({
 	data,
 	columns,
+	columnFilters,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
+	columnFilters?: ColumnFiltersState;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const table = useReactTable({
 		data,
 		columns,
-		state: { sorting },
+		state: { sorting, columnFilters },
 		onSortingChange: setSorting,
 		getCoreRowModel: getCoreRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
 		getSortedRowModel: getSortedRowModel(),
 	});
+
+	const rows = table.getRowModel().rows;
 
 	return (
 		<div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
@@ -55,18 +62,29 @@ export function DataTable<T>({
 					))}
 				</thead>
 				<tbody>
-					{table.getRowModel().rows.map((row) => (
-						<tr
-							key={row.id}
-							className="border-zinc-100 border-t hover:bg-zinc-50"
-						>
-							{row.getVisibleCells().map((cell) => (
-								<td key={cell.id} className="px-3 py-2 whitespace-nowrap">
-									{flexRender(cell.column.columnDef.cell, cell.getContext())}
-								</td>
-							))}
+					{rows.length === 0 ? (
+						<tr>
+							<td
+								className="px-3 py-6 text-center text-zinc-400"
+								colSpan={columns.length}
+							>
+								No players match.
+							</td>
 						</tr>
-					))}
+					) : (
+						rows.map((row) => (
+							<tr
+								key={row.id}
+								className="border-zinc-100 border-t hover:bg-zinc-50"
+							>
+								{row.getVisibleCells().map((cell) => (
+									<td key={cell.id} className="px-3 py-2 whitespace-nowrap">
+										{flexRender(cell.column.columnDef.cell, cell.getContext())}
+									</td>
+								))}
+							</tr>
+						))
+					)}
 				</tbody>
 			</table>
 		</div>
