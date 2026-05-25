@@ -1,8 +1,11 @@
-"""Archive a full FPL season of per-gameweek data before the API rollover.
+"""Archive and refresh FPL per-gameweek data via the live API.
 
 The FPL API only retains the current season's per-gameweek detail. When the
 next season launches (around mid-July) the element-summary history is wiped, so
-this module snapshots the season to local Parquet files for later analysis.
+this module snapshots the season to local Parquet files for later analysis. The
+same ingestion is re-runnable through the season: it auto-detects the current
+season label, refreshes the served ``enriched.parquet`` snapshot, and is
+resilient to the early-season cold start when no gameweeks have been played.
 """
 
 import json
@@ -11,11 +14,37 @@ from pathlib import Path
 
 import polars as pl
 
-from fpl_analytics_engine import app
+from fpl_analytics_engine import app, data
 
 # Politeness delay between element-summary requests (community norm ~1 req/s).
 REQUEST_DELAY_SECONDS = 1.0
-DEFAULT_OUTPUT_DIR = Path("data/2025-26")
+DEFAULT_DATA_ROOT = Path("data")
+
+
+def detect_season(events: list[dict]) -> str:
+    """Derive the season label (e.g. '2025-26') from the bootstrap events.
+
+    Use the earliest gameweek deadline year as the season start, so the label
+    follows the live API across the July rollover without manual edits.
+
+    Args:
+        events: The bootstrap ``events`` records, each with a deadline time.
+
+    Returns:
+        The season label in ``YYYY-YY`` form.
+
+    Raises:
+        ValueError: If no event carries a parseable deadline time.
+    """
+    years = [
+        int(event["deadline_time"][:4])
+        for event in events
+        if event.get("deadline_time")
+    ]
+    if not years:
+        raise ValueError("No event deadline times to infer the season from")
+    start = min(years)
+    return f"{start}-{(start + 1) % 100:02d}"
 
 
 def _flatten_nested(records: list[dict]) -> list[dict]:
@@ -41,15 +70,42 @@ def _flatten_nested(records: list[dict]) -> list[dict]:
     ]
 
 
+def _build_enriched(output_dir: Path) -> Path | None:
+    """Build the served ``enriched.parquet`` snapshot from the raw Parquet.
+
+    The enriched view joins player and team metadata onto the per-gameweek
+    history and derives the DefCon hit flag, so the API and UI read it directly.
+
+    Args:
+        output_dir: Season directory holding the raw Parquet files.
+
+    Returns:
+        The path written, or ``None`` if there is no per-gameweek history yet
+        (the early-season cold start before any matches are played).
+    """
+    history = data.load_player_history(output_dir)
+    if history.height == 0:
+        print("No per-gameweek history yet (early season); skipped enriched build")
+        return None
+    enriched = data.prepare_history(output_dir)
+    path = output_dir / "enriched.parquet"
+    enriched.write_parquet(path)
+    return path
+
+
 def archive_season(
     output_dir: Path,
     request_delay: float = REQUEST_DELAY_SECONDS,
     limit: int | None = None,
+    *,
+    bootstrap: dict | None = None,
+    enrich: bool = True,
 ) -> dict[str, Path]:
     """Archive the current FPL season to Parquet files.
 
-    Fetch the bootstrap-static snapshot (players, teams, gameweeks) and every
-    player's per-gameweek history, then write them to ``output_dir``.
+    Fetch the bootstrap-static snapshot (players, teams, gameweeks), the
+    fixtures, and every player's per-gameweek history, then write them to
+    ``output_dir``. Re-runnable: each call overwrites the season's snapshot.
 
     Args:
         output_dir: Directory to write the Parquet files into; created if it
@@ -58,19 +114,28 @@ def archive_season(
             within polite rate limits.
         limit: Optional cap on the number of players to fetch, useful for a
             quick smoke test before a full run.
+        bootstrap: A pre-fetched bootstrap payload to reuse, avoiding a second
+            request when the caller has already fetched it (e.g. to detect the
+            season). Fetched if not supplied.
+        enrich: Whether to also build the served ``enriched.parquet`` snapshot.
 
     Returns:
-        A mapping of dataset name to the Parquet file path written.
+        A mapping of dataset name to the Parquet file path written. Includes
+        ``enriched`` only when the snapshot was built.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    bootstrap = app.get_fpl_data()
+    if bootstrap is None:
+        bootstrap = app.get_fpl_data()
     players = pl.DataFrame(
         _flatten_nested(bootstrap["elements"]), infer_schema_length=None
     )
     teams = pl.DataFrame(_flatten_nested(bootstrap["teams"]), infer_schema_length=None)
     events = pl.DataFrame(
         _flatten_nested(bootstrap["events"]), infer_schema_length=None
+    )
+    fixtures = pl.DataFrame(
+        _flatten_nested(app.get_fixtures()), infer_schema_length=None
     )
 
     element_ids = [element["id"] for element in bootstrap["elements"]]
@@ -93,18 +158,59 @@ def archive_season(
         "players": output_dir / "players.parquet",
         "teams": output_dir / "teams.parquet",
         "events": output_dir / "events.parquet",
+        "fixtures": output_dir / "fixtures.parquet",
         "player_gw_history": output_dir / "player_gw_history.parquet",
     }
     players.write_parquet(paths["players"])
     teams.write_parquet(paths["teams"])
     events.write_parquet(paths["events"])
+    fixtures.write_parquet(paths["fixtures"])
     history.write_parquet(paths["player_gw_history"])
+
+    if enrich:
+        enriched_path = _build_enriched(output_dir)
+        if enriched_path is not None:
+            paths["enriched"] = enriched_path
     return paths
 
 
+def ingest_current_season(
+    data_root: Path = DEFAULT_DATA_ROOT,
+    request_delay: float = REQUEST_DELAY_SECONDS,
+    limit: int | None = None,
+    enrich: bool = True,
+) -> tuple[str, dict[str, Path]]:
+    """Refresh the current season into its auto-detected ``data/<season>/`` dir.
+
+    Fetch the bootstrap once, derive the season label from it, then archive into
+    the matching season directory. This is the live data path: the same command
+    targets the right season across the July rollover with no manual edits.
+
+    Args:
+        data_root: Root directory holding per-season folders.
+        request_delay: Seconds to sleep between per-player requests.
+        limit: Optional cap on the number of players to fetch.
+        enrich: Whether to also build the served ``enriched.parquet`` snapshot.
+
+    Returns:
+        The detected season label and the mapping of dataset name to path.
+    """
+    bootstrap = app.get_fpl_data()
+    season = detect_season(bootstrap["events"])
+    paths = archive_season(
+        data_root / season,
+        request_delay,
+        limit,
+        bootstrap=bootstrap,
+        enrich=enrich,
+    )
+    return season, paths
+
+
 def main() -> None:
-    """Archive the current season to the default output directory."""
-    paths = archive_season(DEFAULT_OUTPUT_DIR)
+    """Refresh the current season into its auto-detected season directory."""
+    season, paths = ingest_current_season()
+    print(f"Ingested season {season}")
     for name, path in paths.items():
         print(f"Wrote {name} -> {path}")
 
