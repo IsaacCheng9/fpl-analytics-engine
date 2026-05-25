@@ -7,9 +7,13 @@ from typing import Annotated, cast
 import polars as pl
 from fastapi import Depends, FastAPI, Query
 
-from fpl_analytics_engine import data, form
+from fpl_analytics_engine import data, defcon, form
 from fpl_analytics_engine.domain import Position
-from fpl_analytics_engine.schemas import DefconPlayer, FormPlayer
+from fpl_analytics_engine.schemas import (
+    DefconPlayer,
+    DefconProbabilityPlayer,
+    FormPlayer,
+)
 
 DATA_DIR = Path("data/2025-26")
 
@@ -40,6 +44,18 @@ DEFCON_COLUMNS = [
     "window_defcon_hits",
     "window_defcon_games",
     "window_defcon_hit_rate",
+    "as_of_gw",
+]
+DEFCON_PROBABILITY_COLUMNS = [
+    "element",
+    "web_name",
+    "position",
+    "team_name",
+    "games",
+    "hits",
+    "raw_rate",
+    "prob",
+    "prob_std",
     "as_of_gw",
 ]
 
@@ -121,3 +137,31 @@ def players_defcon(
         top_k=top_k,
     )
     return [DefconPlayer(**row) for row in flagged.select(DEFCON_COLUMNS).to_dicts()]
+
+
+@app.get("/players/defcon-probability")
+def players_defcon_probability(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    position: Position | None = None,
+    min_games: int = Query(0, ge=0),
+    min_minutes: int = Query(60, ge=0),
+    top_k: int | None = Query(None, ge=1),
+    as_of_gw: int | None = Query(None, ge=1),
+) -> list[DefconProbabilityPlayer]:
+    """Rank players by their modelled probability of hitting DefCon next GW.
+
+    Uses an empirical-Bayes estimate over all eligible appearances up to
+    ``as_of_gw`` (defaults to the latest gameweek).
+    """
+    gw = as_of_gw if as_of_gw is not None else _latest_gw(history)
+    probabilities = defcon.defcon_probabilities(history, gw, min_minutes=min_minutes)
+    ranked = defcon.flag_defcon_probabilities(
+        probabilities,
+        min_games=min_games,
+        position=position.value if position is not None else None,
+        top_k=top_k,
+    )
+    return [
+        DefconProbabilityPlayer(**row)
+        for row in ranked.select(DEFCON_PROBABILITY_COLUMNS).to_dicts()
+    ]

@@ -37,6 +37,19 @@ export interface DefconPlayer {
 	as_of_gw: number;
 }
 
+export interface DefconProbabilityPlayer {
+	element: number;
+	web_name: string;
+	position: string | null;
+	team_name: string | null;
+	games: number;
+	hits: number;
+	raw_rate: number | null;
+	prob: number | null;
+	prob_std: number | null;
+	as_of_gw: number;
+}
+
 interface BaseParams {
 	window: number;
 	position: Position | "";
@@ -50,6 +63,12 @@ export interface FormParams extends BaseParams {
 
 export interface DefconParams extends BaseParams {
 	minHitRate: number;
+}
+
+export interface DefconProbabilityParams {
+	position: Position | "";
+	minGames: number;
+	asOfGw: number | null;
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -87,4 +106,20 @@ export function fetchDefcon(params: DefconParams): Promise<DefconPlayer[]> {
 	const search = baseSearchParams(params);
 	search.set("min_hit_rate", String(params.minHitRate));
 	return getJson<DefconPlayer[]>(`/players/defcon?${search.toString()}`);
+}
+
+export function fetchDefconProbability(
+	params: DefconProbabilityParams,
+): Promise<DefconProbabilityPlayer[]> {
+	const search = new URLSearchParams();
+	search.set("min_games", String(params.minGames));
+	if (params.position) {
+		search.set("position", params.position);
+	}
+	if (params.asOfGw !== null) {
+		search.set("as_of_gw", String(params.asOfGw));
+	}
+	return getJson<DefconProbabilityPlayer[]>(
+		`/players/defcon-probability?${search.toString()}`,
+	);
 }
