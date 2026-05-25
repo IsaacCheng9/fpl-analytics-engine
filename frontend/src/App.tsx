@@ -172,6 +172,22 @@ export default function App() {
 					</label>
 
 					<label className={labelClass}>
+						Position
+						<select
+							className={inputClass}
+							value={position}
+							onChange={(e) => setPosition(e.target.value as Position | "")}
+						>
+							<option value="">All</option>
+							{POSITIONS.map((p) => (
+								<option key={p} value={p}>
+									{p}
+								</option>
+							))}
+						</select>
+					</label>
+
+					<label className={labelClass}>
 						Team
 						<select
 							className={inputClass}
@@ -197,22 +213,6 @@ export default function App() {
 							{WINDOWS.map((n) => (
 								<option key={n} value={n}>
 									{n}
-								</option>
-							))}
-						</select>
-					</label>
-
-					<label className={labelClass}>
-						Position
-						<select
-							className={inputClass}
-							value={position}
-							onChange={(e) => setPosition(e.target.value as Position | "")}
-						>
-							<option value="">All</option>
-							{POSITIONS.map((p) => (
-								<option key={p} value={p}>
-									{p}
 								</option>
 							))}
 						</select>
