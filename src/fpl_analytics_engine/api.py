@@ -214,9 +214,7 @@ def players_form(
         position=position.value if position is not None else None,
         top_k=top_k,
     )
-    flagged = _attach_context(
-        flagged, fixtures_data, teams, players, gw, fdr_horizon
-    )
+    flagged = _attach_context(flagged, fixtures_data, teams, players, gw, fdr_horizon)
     return [FormPlayer(**row) for row in flagged.select(FORM_COLUMNS).to_dicts()]
 
 
@@ -249,9 +247,7 @@ def players_defcon(
         position=position.value if position is not None else None,
         top_k=top_k,
     )
-    flagged = _attach_context(
-        flagged, fixtures_data, teams, players, gw, fdr_horizon
-    )
+    flagged = _attach_context(flagged, fixtures_data, teams, players, gw, fdr_horizon)
     return [DefconPlayer(**row) for row in flagged.select(DEFCON_COLUMNS).to_dicts()]
 
 
