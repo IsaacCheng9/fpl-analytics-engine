@@ -50,6 +50,12 @@ def compute_form_table(
         One row per player with window and season-to-date per-90 expected
         stats, their deltas, the window DefCon hit-rate, and ``as_of_gw``.
     """
+    # The per-gameweek start flag is absent from older canonical snapshots; when
+    # missing, the start rate is reported null rather than a misleading zero.
+    has_starts = "starts" in history.columns
+    if not has_starts:
+        history = history.with_columns(pl.lit(None, dtype=pl.Int64).alias("starts"))
+
     point_in_time = history.filter(pl.col("round") <= as_of_gw)
     recent = (
         point_in_time.sort("kickoff_time")
@@ -65,6 +71,10 @@ def compute_form_table(
         pl.col("expected_goal_involvements").sum().alias("window_xgi"),
         pl.col("expected_goals_conceded").sum().alias("window_xgc"),
         pl.col("total_points").sum().alias("window_points"),
+        pl.col("starts").sum().alias("window_starts"),
+        # Appearances exclude 0-minute games, so a cameo counts but an unused
+        # substitute does not.
+        (pl.col("minutes") > 0).sum().alias("window_appearances"),
         pl.col("defcon_hit").sum().alias("window_defcon_hits"),
         pl.col("defcon_hit").count().alias("window_defcon_games"),
     )
@@ -109,6 +119,26 @@ def compute_form_table(
             .then(pl.col("window_defcon_hits") / pl.col("window_defcon_games"))
             .otherwise(None)
             .alias("window_defcon_hit_rate"),
+            # Value efficiency, point-in-time on the window's closing price.
+            pl.when(pl.col("price") > 0)
+            .then(pl.col("window_xgi90") / pl.col("price"))
+            .otherwise(None)
+            .alias("window_xgi90_per_million"),
+            pl.when(pl.col("price") > 0)
+            .then(pl.col("season_points") / pl.col("price"))
+            .otherwise(None)
+            .alias("season_points_per_million"),
+            # Window start rate as a point-in-time rotation signal.
+            pl.when(pl.lit(has_starts) & (pl.col("window_games") > 0))
+            .then(pl.col("window_starts") / pl.col("window_games"))
+            .otherwise(None)
+            .alias("window_start_rate"),
+            # Average minutes per appearance, point-in-time (0-minute games
+            # excluded from the denominator).
+            pl.when(pl.col("window_appearances") > 0)
+            .then(pl.col("window_minutes") / pl.col("window_appearances"))
+            .otherwise(None)
+            .alias("window_mins_per_appearance"),
             pl.lit(as_of_gw).alias("as_of_gw"),
         )
     )

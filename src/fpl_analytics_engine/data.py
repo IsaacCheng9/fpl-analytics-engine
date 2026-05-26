@@ -51,6 +51,35 @@ def load_teams(data_dir: Path) -> pl.DataFrame:
     return pl.read_parquet(data_dir / "teams.parquet")
 
 
+# Minimal fixtures schema, used when no fixtures have been archived yet.
+_FIXTURES_SCHEMA = {
+    "event": pl.Int64,
+    "team_h": pl.Int64,
+    "team_a": pl.Int64,
+    "team_h_difficulty": pl.Int64,
+    "team_a_difficulty": pl.Int64,
+}
+
+
+def load_fixtures(data_dir: Path) -> pl.DataFrame:
+    """Read the archived fixtures, or an empty frame if none are archived yet.
+
+    Snapshots taken before fixtures were captured (or an early-season cold
+    start) have no ``fixtures.parquet``; returning an empty, correctly-typed
+    frame lets the FDR path degrade gracefully rather than error.
+
+    Args:
+        data_dir: Directory holding the archived Parquet files.
+
+    Returns:
+        The fixture records, or an empty frame with the fixtures schema.
+    """
+    path = data_dir / "fixtures.parquet"
+    if not path.exists():
+        return pl.DataFrame(schema=_FIXTURES_SCHEMA)
+    return pl.read_parquet(path)
+
+
 def enrich_history(
     history: pl.DataFrame, players: pl.DataFrame, teams: pl.DataFrame
 ) -> pl.DataFrame:

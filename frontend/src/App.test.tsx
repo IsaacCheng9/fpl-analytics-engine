@@ -19,6 +19,13 @@ const formRows = [
 		window_xgi90: 0.97,
 		season_xgi90: 0.56,
 		delta_xgi90: 0.41,
+		window_xgi90_per_million: 0.12,
+		season_points_per_million: 5.0,
+		window_start_rate: 1.0,
+		window_mins_per_appearance: 88,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.6,
+		current_ownership: 25.5,
 		as_of_gw: 38,
 	},
 	{
@@ -34,6 +41,30 @@ const formRows = [
 		window_xgi90: 0.8,
 		season_xgi90: 0.62,
 		delta_xgi90: 0.18,
+		window_xgi90_per_million: 0.08,
+		season_points_per_million: 4.2,
+		window_start_rate: 0.8,
+		window_mins_per_appearance: 79,
+		upcoming_fixtures: 5,
+		avg_fdr: 3.4,
+		current_ownership: 40.1,
+		as_of_gw: 38,
+	},
+];
+
+// Deliberately omits the fixture/value context fields to mimic an older API
+// payload; the view must degrade to dashes rather than crash on missing fields.
+const probRows = [
+	{
+		element: 1,
+		web_name: "Senesi",
+		position: "DEF",
+		team_name: "Bournemouth",
+		games: 15,
+		hits: 12,
+		raw_rate: 0.8,
+		prob: 0.52,
+		prob_std: 0.1,
 		as_of_gw: 38,
 	},
 ];
@@ -42,7 +73,14 @@ beforeEach(() => {
 	vi.stubGlobal(
 		"fetch",
 		vi.fn((input: string) => {
-			const body = input.includes("/players/form") ? formRows : meta;
+			let body: unknown = meta;
+			if (input.includes("/players/form")) {
+				body = formRows;
+			} else if (input.includes("/players/defcon-probability")) {
+				body = probRows;
+			} else if (input.includes("/players/")) {
+				body = [];
+			}
 			return Promise.resolve(
 				new Response(JSON.stringify(body), {
 					status: 200,
@@ -80,4 +118,12 @@ test("filters the table by the player search box", async () => {
 
 	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+});
+
+test("renders the DefCon Probability tab even when context fields are absent", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(screen.getByText("DefCon Probability"));
+	await waitFor(() => {
+		expect(screen.getByText("Senesi")).toBeInTheDocument();
+	});
 });

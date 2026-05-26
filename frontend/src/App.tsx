@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import {
 	type DefconPlayer,
@@ -13,7 +13,8 @@ import {
 } from "./api";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
-import { fmtNum, fmtPct, fmtPrice } from "./lib/format";
+import { InfoTooltip } from "./components/InfoTooltip";
+import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb";
 
@@ -40,91 +41,393 @@ function filterPlayers<
 	);
 }
 
-function DeltaCell({ value }: { value: number | null }) {
-	if (value === null) {
+type Range = { min: number; max: number };
+
+// Metric columns that get heat shading. The range is computed league-wide from
+// an unfiltered query so a player's colour stays fixed as you filter.
+const FORM_HEAT_KEYS = [
+	"window_xgi90",
+	"season_xgi90",
+	"delta_xgi90",
+	"window_xgi90_per_million",
+	"season_points_per_million",
+	"window_start_rate",
+	"window_mins_per_appearance",
+	"avg_fdr",
+];
+const DEFCON_HEAT_KEYS = [
+	"window_defcon_hit_rate",
+	"season_points_per_million",
+	"window_start_rate",
+	"window_mins_per_appearance",
+	"avg_fdr",
+];
+const DEFCON_PROB_HEAT_KEYS = [
+	"raw_rate",
+	"prob",
+	"season_points_per_million",
+	"window_start_rate",
+	"window_mins_per_appearance",
+	"avg_fdr",
+];
+
+// Min/max per metric across the supplied (league-wide) rows.
+function computeRanges(
+	rows: readonly unknown[],
+	keys: string[],
+): Record<string, Range> {
+	const ranges: Record<string, Range> = {};
+	for (const key of keys) {
+		const values = rows
+			.map((row) => (row as Record<string, unknown>)[key])
+			.filter((value): value is number => typeof value === "number");
+		ranges[key] =
+			values.length > 0
+				? { min: Math.min(...values), max: Math.max(...values) }
+				: { min: 0, max: 0 };
+	}
+	return ranges;
+}
+
+// Shade a cell red (worst) to green (best) by its position in the league-wide
+// range, so relative standing is readable at a glance.
+function HeatCell({
+	value,
+	range,
+	lowerIsBetter,
+	text,
+}: {
+	value: number | null | undefined;
+	range: Range;
+	lowerIsBetter: boolean;
+	text: string;
+}) {
+	if (value == null) {
 		return <span className="text-zinc-400">-</span>;
 	}
-	const tone =
-		value > 0
-			? "text-emerald-600"
-			: value < 0
-				? "text-red-600"
-				: "text-zinc-500";
+	const { min, max } = range;
+	const t = max > min ? (value - min) / (max - min) : 0.5;
+	const score = lowerIsBetter ? 1 - t : t;
+	const hue = score * 120; // 0 = red (worst), 120 = green (best).
 	return (
-		<span className={tone}>
-			{value > 0 ? "+" : ""}
-			{value.toFixed(2)}
+		<span
+			className="-mx-3 -my-2 block px-3 py-2"
+			style={{ backgroundColor: `hsl(${hue}, 68%, 80%)` }}
+		>
+			{text}
 		</span>
 	);
 }
 
-const formColumns: ColumnDef<FormPlayer>[] = [
-	{ accessorKey: "web_name", header: "Player" },
-	{ accessorKey: "position", header: "Pos" },
-	{ accessorKey: "team_name", header: "Team" },
-	{
-		accessorKey: "price",
-		header: "Price",
-		cell: (info) => fmtPrice(info.getValue<number>()),
-	},
-	{ accessorKey: "window_minutes", header: "Mins" },
-	{
-		accessorKey: "window_xgi90",
-		header: "Window xGI per 90",
-		cell: (info) => fmtNum(info.getValue<number | null>()),
-	},
-	{
-		accessorKey: "season_xgi90",
-		header: "Season xGI per 90",
-		cell: (info) => fmtNum(info.getValue<number | null>()),
-	},
-	{
-		accessorKey: "delta_xgi90",
-		header: "Delta xGI per 90",
-		cell: (info) => <DeltaCell value={info.getValue<number | null>()} />,
-	},
-];
+// Build a heat-shaded cell renderer scaled against a fixed league-wide range.
+function heatCell<T>(
+	range: Range,
+	opts: {
+		lowerIsBetter?: boolean;
+		format?: (value: number | null) => string;
+	} = {},
+) {
+	const format = opts.format ?? ((value: number | null) => fmtNum(value));
+	const lowerIsBetter = opts.lowerIsBetter ?? false;
+	return (info: CellContext<T, unknown>) => {
+		const value = info.getValue<number | null>();
+		return (
+			<HeatCell
+				value={value}
+				range={range}
+				lowerIsBetter={lowerIsBetter}
+				text={format(value)}
+			/>
+		);
+	};
+}
 
-const defconColumns: ColumnDef<DefconPlayer>[] = [
-	{ accessorKey: "web_name", header: "Player" },
-	{ accessorKey: "position", header: "Pos" },
-	{ accessorKey: "team_name", header: "Team" },
-	{
-		accessorKey: "price",
-		header: "Price",
-		cell: (info) => fmtPrice(info.getValue<number>()),
-	},
-	{ accessorKey: "window_games", header: "Games" },
-	{ accessorKey: "window_defcon_hits", header: "Hits" },
-	{
-		accessorKey: "window_defcon_hit_rate",
-		header: "Hit Rate",
-		cell: (info) => fmtPct(info.getValue<number | null>()),
-	},
-];
+function buildFormColumns(
+	ranges: Record<string, Range>,
+): ColumnDef<FormPlayer>[] {
+	return [
+		{ accessorKey: "web_name", header: "Player" },
+		{ accessorKey: "position", header: "Pos" },
+		{ accessorKey: "team_name", header: "Team" },
+		{
+			accessorKey: "price",
+			header: "Price",
+			cell: (info) => fmtPrice(info.getValue<number>()),
+		},
+		{
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+			},
+		},
+		{
+			accessorKey: "window_start_rate",
+			header: "Start %",
+			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
+			meta: { tooltip: "Share of window games the player started" },
+		},
+		{
+			accessorKey: "window_xgi90",
+			header: "Window xGI per 90",
+			cell: heatCell<FormPlayer>(ranges.window_xgi90),
+			meta: {
+				tooltip:
+					"Expected goal involvements per 90 minutes over the recent window",
+			},
+		},
+		{
+			accessorKey: "season_xgi90",
+			header: "Season xGI per 90",
+			cell: heatCell<FormPlayer>(ranges.season_xgi90),
+			meta: {
+				tooltip: "Expected goal involvements per 90 minutes, season to date",
+			},
+		},
+		{
+			accessorKey: "delta_xgi90",
+			header: "Delta xGI per 90",
+			cell: heatCell<FormPlayer>(ranges.delta_xgi90, { format: fmtDelta }),
+			meta: {
+				tooltip:
+					"Window xGI per 90 minus season xGI per 90; positive means recent form beats the season baseline",
+			},
+		},
+		{
+			accessorKey: "window_xgi90_per_million",
+			header: "xGI per 90 per £m",
+			cell: heatCell<FormPlayer>(ranges.window_xgi90_per_million),
+			meta: { tooltip: "Window xGI per 90 divided by price" },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points per £m",
+			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: { tooltip: "Total season points divided by price" },
+		},
+		{
+			accessorKey: "avg_fdr",
+			header: "FDR (Next 5)",
+			cell: heatCell<FormPlayer>(ranges.avg_fdr, {
+				lowerIsBetter: true,
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
+		},
+		{
+			accessorKey: "current_ownership",
+			header: "Owned %",
+			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
+		},
+	];
+}
 
-const defconProbColumns: ColumnDef<DefconProbabilityPlayer>[] = [
-	{ accessorKey: "web_name", header: "Player" },
-	{ accessorKey: "position", header: "Pos" },
-	{ accessorKey: "team_name", header: "Team" },
-	{ accessorKey: "games", header: "Games" },
-	{ accessorKey: "hits", header: "Hits" },
-	{
-		accessorKey: "raw_rate",
-		header: "Raw Rate",
-		cell: (info) => fmtPct(info.getValue<number | null>()),
-	},
-	{
-		accessorKey: "prob",
-		header: "P(Hit Next GW)",
-		cell: (info) => fmtPct(info.getValue<number | null>()),
-	},
-	{
-		accessorKey: "prob_std",
-		header: "+/-",
-		cell: (info) => fmtNum(info.getValue<number | null>()),
-	},
-];
+function buildDefconColumns(
+	ranges: Record<string, Range>,
+): ColumnDef<DefconPlayer>[] {
+	return [
+		{ accessorKey: "web_name", header: "Player" },
+		{ accessorKey: "position", header: "Pos" },
+		{ accessorKey: "team_name", header: "Team" },
+		{
+			accessorKey: "price",
+			header: "Price",
+			cell: (info) => fmtPrice(info.getValue<number | null>()),
+		},
+		{
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+			},
+		},
+		{
+			accessorKey: "window_start_rate",
+			header: "Start %",
+			cell: heatCell<DefconPlayer>(ranges.window_start_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Share of window games the player started" },
+		},
+		{
+			accessorKey: "window_games",
+			header: "Games",
+			meta: { tooltip: "Eligible games in the window" },
+		},
+		{
+			accessorKey: "window_defcon_hits",
+			header: "Hits",
+			meta: { tooltip: "Window games clearing the DefCon threshold" },
+		},
+		{
+			accessorKey: "window_defcon_hit_rate",
+			header: "Hit Rate",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Share of window games clearing the DefCon threshold" },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points per £m",
+			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: { tooltip: "Total season points divided by price" },
+		},
+		{
+			accessorKey: "avg_fdr",
+			header: "FDR (Next 5)",
+			cell: heatCell<DefconPlayer>(ranges.avg_fdr, {
+				lowerIsBetter: true,
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
+		},
+		{
+			accessorKey: "current_ownership",
+			header: "Owned %",
+			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
+		},
+	];
+}
+
+function buildDefconProbColumns(
+	ranges: Record<string, Range>,
+): ColumnDef<DefconProbabilityPlayer>[] {
+	return [
+		{ accessorKey: "web_name", header: "Player" },
+		{ accessorKey: "position", header: "Pos" },
+		{ accessorKey: "team_name", header: "Team" },
+		{
+			accessorKey: "price",
+			header: "Price",
+			cell: (info) => fmtPrice(info.getValue<number | null>()),
+		},
+		{
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the recent window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<DefconProbabilityPlayer>(
+				ranges.window_mins_per_appearance,
+				{ format: (v) => fmtNum(v, 0) },
+			),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the recent window; 0-minute games are excluded",
+			},
+		},
+		{
+			accessorKey: "window_start_rate",
+			header: "Start %",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.window_start_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Share of recent window games the player started" },
+		},
+		{
+			accessorKey: "games",
+			header: "Games",
+			meta: { tooltip: "Eligible appearances up to this gameweek" },
+		},
+		{
+			accessorKey: "hits",
+			header: "Hits",
+			meta: { tooltip: "Appearances clearing the DefCon threshold" },
+		},
+		{
+			accessorKey: "raw_rate",
+			header: "Raw Rate",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.raw_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Observed DefCon hit rate (hits / games)" },
+		},
+		{
+			accessorKey: "prob",
+			header: "P(Hit Next GW)",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
+			meta: {
+				tooltip:
+					"Modelled probability of clearing the DefCon threshold next gameweek",
+			},
+		},
+		{
+			accessorKey: "prob_std",
+			header: "+/-",
+			cell: (info) => fmtNum(info.getValue<number | null>()),
+			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points per £m",
+			cell: heatCell<DefconProbabilityPlayer>(
+				ranges.season_points_per_million,
+				{ format: (v) => fmtNum(v, 1) },
+			),
+			meta: { tooltip: "Total season points divided by price" },
+		},
+		{
+			accessorKey: "avg_fdr",
+			header: "FDR (Next 5)",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.avg_fdr, {
+				lowerIsBetter: true,
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
+		},
+		{
+			accessorKey: "current_ownership",
+			header: "Owned %",
+			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
+		},
+	];
+}
 
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
 const inputClass =
@@ -162,6 +465,59 @@ export default function App() {
 		enabled: tab === "defconProb",
 	});
 
+	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
+	// colour scale, so a player's colour is fixed regardless of the active filters.
+	const formBaseline = useQuery({
+		queryKey: ["formBaseline", windowSize, minMinutes, asOfGw],
+		queryFn: () =>
+			fetchForm({
+				window: windowSize,
+				position: "",
+				minMinutes,
+				minDelta: -1000,
+				asOfGw,
+			}),
+		enabled: tab === "form",
+	});
+	const defconBaseline = useQuery({
+		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
+		queryFn: () =>
+			fetchDefcon({
+				window: windowSize,
+				position: "",
+				minMinutes,
+				minHitRate: 0,
+				asOfGw,
+			}),
+		enabled: tab === "defcon",
+	});
+	const defconProbBaseline = useQuery({
+		queryKey: ["defconProbBaseline", asOfGw],
+		queryFn: () =>
+			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
+		enabled: tab === "defconProb",
+	});
+
+	const formColumns = useMemo(
+		() =>
+			buildFormColumns(computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS)),
+		[formBaseline.data],
+	);
+	const defconColumns = useMemo(
+		() =>
+			buildDefconColumns(
+				computeRanges(defconBaseline.data ?? [], DEFCON_HEAT_KEYS),
+			),
+		[defconBaseline.data],
+	);
+	const defconProbColumns = useMemo(
+		() =>
+			buildDefconProbColumns(
+				computeRanges(defconProbBaseline.data ?? [], DEFCON_PROB_HEAT_KEYS),
+			),
+		[defconProbBaseline.data],
+	);
+
 	const active =
 		tab === "form"
 			? formQuery
@@ -197,7 +553,7 @@ export default function App() {
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
-			<div className="mx-auto max-w-6xl px-4 py-8">
+			<div className="mx-auto max-w-[90rem] px-6 py-8">
 				<header className="mb-6">
 					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
 					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
@@ -344,12 +700,9 @@ export default function App() {
 					)}
 
 					<label className={labelClass}>
-						<span
-							className="flex cursor-help items-center gap-1"
-							title="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead."
-						>
+						<span className="flex items-center gap-1">
 							As Of GW
-							<span className="text-zinc-400">(?)</span>
+							<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
 						</span>
 						<select
 							className={inputClass}

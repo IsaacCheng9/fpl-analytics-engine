@@ -3,10 +3,19 @@ import {
 	flexRender,
 	getCoreRowModel,
 	getSortedRowModel,
+	type RowData,
 	type SortingState,
 	useReactTable,
 } from "@tanstack/react-table";
 import { useState } from "react";
+import { InfoTooltip } from "./InfoTooltip";
+
+declare module "@tanstack/react-table" {
+	// A tooltip explaining what a column means.
+	interface ColumnMeta<TData extends RowData, TValue> {
+		tooltip?: string;
+	}
+}
 
 export function DataTable<T>({
 	data,
@@ -35,21 +44,34 @@ export function DataTable<T>({
 						<tr key={group.id}>
 							{group.headers.map((header) => {
 								const sorted = header.column.getIsSorted();
+								const tooltip = header.column.columnDef.meta?.tooltip;
 								return (
-									<th key={header.id} className="px-3 py-2 font-medium">
-										<button
-											type="button"
-											className="flex cursor-pointer select-none items-center gap-1 whitespace-nowrap"
-											onClick={header.column.getToggleSortingHandler()}
-										>
-											{flexRender(
-												header.column.columnDef.header,
-												header.getContext(),
-											)}
-											<span className="text-zinc-400">
-												{sorted === "asc" ? "^" : sorted === "desc" ? "v" : ""}
-											</span>
-										</button>
+									<th
+										key={header.id}
+										className="px-3 py-2 align-bottom font-medium"
+									>
+										<div className="flex w-full items-end gap-1">
+											<button
+												type="button"
+												className="flex cursor-pointer select-none items-end gap-1 text-left"
+												onClick={header.column.getToggleSortingHandler()}
+											>
+												<span>
+													{flexRender(
+														header.column.columnDef.header,
+														header.getContext(),
+													)}
+												</span>
+												<span className="text-zinc-400">
+													{sorted === "asc"
+														? "^"
+														: sorted === "desc"
+															? "v"
+															: ""}
+												</span>
+											</button>
+											{tooltip ? <InfoTooltip text={tooltip} /> : null}
+										</div>
 									</th>
 								);
 							})}
