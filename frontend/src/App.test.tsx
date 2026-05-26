@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
@@ -88,6 +94,7 @@ const playerDetail = {
 	position: "MID",
 	team_name: "Man Utd",
 	rolling_window: 5,
+	selected_season: "2025-26",
 	gameweeks: [
 		{
 			round: 1,
@@ -98,6 +105,7 @@ const playerDetail = {
 			expected_goals: 0.5,
 			expected_assists: 0.4,
 			expected_goal_involvements: 0.9,
+			defensive_contribution: 11,
 			defcon_hit: false,
 			rolling_xg90: 0.5,
 			rolling_xa90: 0.4,
@@ -106,6 +114,17 @@ const playerDetail = {
 		},
 	],
 	seasons: [
+		{
+			season: "2025-26",
+			games: 1,
+			minutes: 90,
+			points: 6,
+			xg90: 0.5,
+			xa90: 0.4,
+			xgi90: 0.9,
+			points_per_million: 0.75,
+			defcon_hit_rate: 0,
+		},
 		{
 			season: "2024-25",
 			games: 38,
@@ -246,5 +265,9 @@ test("clicking a row opens the player detail panel", async () => {
 	expect(screen.getByText("Rolling xG Per 90")).toBeInTheDocument();
 	expect(screen.getByText("Rolling xA Per 90")).toBeInTheDocument();
 	expect(screen.getByText("Rolling xGI Per 90")).toBeInTheDocument();
-	expect(screen.getByText("2024-25")).toBeInTheDocument();
+	expect(screen.getAllByText("2024-25")).toHaveLength(2);
+	const gameweekTable = screen.getByRole("heading", {
+		name: "2025-26 by Gameweek",
+	}).nextElementSibling as HTMLElement;
+	expect(within(gameweekTable).getByText("11")).toBeInTheDocument();
 });

@@ -208,6 +208,7 @@ def _detail_rows() -> pl.DataFrame:
             "expected_goals": xgi / 2,
             "expected_assists": xgi / 2,
             "expected_goal_involvements": xgi,
+            "defensive_contribution": 12 if hit else 8 if hit is False else None,
             "web_name": "Saka",
             "position": "MID",
             "team_name": "Arsenal",
@@ -232,11 +233,28 @@ def test_player_detail_returns_gameweeks_and_cross_season(client: TestClient) ->
     assert body["web_name"] == "Saka"
     assert body["code"] == 500
     assert body["rolling_window"] == 3
+    assert body["selected_season"] == "2025-26"
     # Current-season gameweeks only (element 7), with rolling fields present.
     assert len(body["gameweeks"]) == 2
     assert body["gameweeks"][-1]["rolling_xgi90"] is not None
+    assert body["gameweeks"][0]["defensive_contribution"] == 12
     # Cross-season summary tracks the player by code across both seasons.
     assert {s["season"] for s in body["seasons"]} == {"2024-25", "2025-26"}
+
+
+def test_player_detail_can_return_prior_season_gameweeks(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+
+    body = client.get("/players/7", params={"window": 3, "season": "2024-25"}).json()
+
+    assert body["selected_season"] == "2024-25"
+    assert len(body["gameweeks"]) == 1
+    assert body["gameweeks"][0]["round"] == 1
+
+
+def test_player_detail_404_for_unknown_season(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+    assert client.get("/players/7", params={"season": "2023-24"}).status_code == 404
 
 
 def test_player_detail_404_for_unknown_element(client: TestClient) -> None:

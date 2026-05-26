@@ -67,7 +67,7 @@ class DefconPlayer(PlayerContext):
 
 
 class PlayerGameweek(BaseModel):
-    """One gameweek of a player's current season, with rolling form."""
+    """One gameweek of a player's selected season, with rolling form."""
 
     round: int
     kickoff_time: str | None
@@ -77,6 +77,7 @@ class PlayerGameweek(BaseModel):
     expected_goals: float | None
     expected_assists: float | None
     expected_goal_involvements: float | None
+    defensive_contribution: int | None
     defcon_hit: bool | None
     rolling_xg90: float | None
     rolling_xa90: float | None
@@ -111,6 +112,7 @@ class PlayerDetail(BaseModel):
     position: str | None
     team_name: str | None
     rolling_window: int
+    selected_season: str
     gameweeks: list[PlayerGameweek]
     seasons: list[PlayerSeasonSummary]
 

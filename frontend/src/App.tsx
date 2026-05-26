@@ -890,6 +890,7 @@ export default function App() {
 
 			{selectedElement !== null ? (
 				<PlayerPanel
+					key={selectedElement}
 					element={selectedElement}
 					onClose={() => setSelectedElement(null)}
 				/>

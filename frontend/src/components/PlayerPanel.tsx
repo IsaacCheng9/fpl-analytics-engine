@@ -62,9 +62,11 @@ export function PlayerPanel({
 	onClose: () => void;
 }) {
 	const [window, setWindow] = useState(5);
+	const [season, setSeason] = useState<string | null>(null);
+
 	const query = useQuery({
-		queryKey: ["player", element, window],
-		queryFn: () => fetchPlayerDetail(element, window),
+		queryKey: ["player", element, window, season],
+		queryFn: () => fetchPlayerDetail(element, window, season),
 	});
 	const detail = query.data;
 
@@ -103,20 +105,37 @@ export function PlayerPanel({
 					<p className="text-red-600 text-sm">Failed to load player.</p>
 				) : (
 					<>
-						<label className="mb-3 flex w-40 flex-col text-xs font-medium text-zinc-600">
-							Rolling Window (Games)
-							<select
-								className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
-								value={window}
-								onChange={(e) => setWindow(Number(e.target.value))}
-							>
-								{WINDOWS.map((n) => (
-									<option key={n} value={n}>
-										{n}
-									</option>
-								))}
-							</select>
-						</label>
+						<div className="mb-3 flex flex-wrap gap-3">
+							<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+								Season
+								<select
+									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+									value={detail.selected_season}
+									onChange={(e) => setSeason(e.target.value)}
+								>
+									{[...detail.seasons].reverse().map((s) => (
+										<option key={s.season} value={s.season}>
+											{s.season}
+										</option>
+									))}
+								</select>
+							</label>
+
+							<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+								Rolling Window (Games)
+								<select
+									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+									value={window}
+									onChange={(e) => setWindow(Number(e.target.value))}
+								>
+									{WINDOWS.map((n) => (
+										<option key={n} value={n}>
+											{n}
+										</option>
+									))}
+								</select>
+							</label>
+						</div>
 
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<Chart
@@ -200,7 +219,7 @@ export function PlayerPanel({
 						</div>
 
 						<h3 className="mb-2 font-medium text-sm text-zinc-700">
-							This Season by Gameweek
+							{detail.selected_season} by Gameweek
 						</h3>
 						<div className="max-h-64 overflow-auto rounded-md border border-zinc-200">
 							<table className="w-full text-sm">
@@ -231,11 +250,9 @@ export function PlayerPanel({
 											</td>
 											<td className="px-3 py-2">{fmtPrice(g.price)}</td>
 											<td className="px-3 py-2">
-												{g.defcon_hit === null
+												{g.defensive_contribution === null
 													? fmtPctPoints(null)
-													: g.defcon_hit
-														? "Yes"
-														: "No"}
+													: fmtNum(g.defensive_contribution, 0)}
 											</td>
 										</tr>
 									))}

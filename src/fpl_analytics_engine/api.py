@@ -318,8 +318,9 @@ def player_detail(
     element: int,
     all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
     window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
+    season: str | None = None,
 ) -> PlayerDetail:
-    """Return a player's current-season per-gameweek form and season history.
+    """Return a player's selected-season per-gameweek form and season history.
 
     ``element`` is the current-season FPL id; the player is tracked across
     seasons by their stable ``code``. Rolling figures use a trailing ``window``.
@@ -332,14 +333,18 @@ def player_detail(
 
     latest = current.sort("round").row(-1, named=True)
     code = latest["code"]
-    gameweeks = player.player_gameweeks(current, window)
     # Track the player across seasons by code; fall back to the current season
     # when the code is missing.
     history = (
         all_seasons.filter(pl.col("code") == code) if code is not None else current
     )
     seasons = player.season_summaries(history)
+    selected_season = season or CURRENT_SEASON
+    season_history = history.filter(pl.col("season") == selected_season)
+    if season_history.is_empty():
+        raise HTTPException(status_code=404, detail="Season not found for player")
 
+    gameweeks = player.player_gameweeks(season_history, window)
     gw_cols = list(PlayerGameweek.model_fields)
     season_cols = list(PlayerSeasonSummary.model_fields)
     return PlayerDetail(
@@ -349,6 +354,7 @@ def player_detail(
         position=latest["position"],
         team_name=latest["team_name"],
         rolling_window=window,
+        selected_season=selected_season,
         gameweeks=[
             PlayerGameweek(**row) for row in gameweeks.select(gw_cols).to_dicts()
         ],

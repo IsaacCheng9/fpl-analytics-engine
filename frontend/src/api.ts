@@ -83,6 +83,7 @@ export interface PlayerGameweek {
 	expected_goals: number | null;
 	expected_assists: number | null;
 	expected_goal_involvements: number | null;
+	defensive_contribution: number | null;
 	defcon_hit: boolean | null;
 	rolling_xg90: number | null;
 	rolling_xa90: number | null;
@@ -109,6 +110,7 @@ export interface PlayerDetail {
 	position: string | null;
 	team_name: string | null;
 	rolling_window: number;
+	selected_season: string;
 	gameweeks: PlayerGameweek[];
 	seasons: PlayerSeasonSummary[];
 }
@@ -190,6 +192,11 @@ export function fetchDefconProbability(
 export function fetchPlayerDetail(
 	element: number,
 	window: number,
+	season?: string | null,
 ): Promise<PlayerDetail> {
-	return getJson<PlayerDetail>(`/players/${element}?window=${window}`);
+	const params = new URLSearchParams({ window: String(window) });
+	if (season) {
+		params.set("season", season);
+	}
+	return getJson<PlayerDetail>(`/players/${element}?${params}`);
 }
