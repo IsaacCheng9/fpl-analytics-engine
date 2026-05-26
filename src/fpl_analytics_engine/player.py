@@ -54,7 +54,7 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             pl.when(pl.col("_rolling_min") > 0)
             .then(pl.col("_rolling_xgi") / pl.col("_rolling_min") * 90)
             .otherwise(None)
-            .alias("rolling_xgi90")
+            .alias("rolling_xgi90"),
         )
         .drop("_rolling_xg", "_rolling_xa", "_rolling_xgi", "_rolling_min")
     )
