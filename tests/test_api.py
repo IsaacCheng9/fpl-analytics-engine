@@ -192,3 +192,53 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     assert p3["upcoming_fixtures"] == 2
     assert p3["avg_fdr"] == pytest.approx(2.5)
     assert p3["current_ownership"] == pytest.approx(12.0)
+
+
+def _detail_rows() -> pl.DataFrame:
+    def r(season: str, element: int, code: int, round_: int, xgi: float, hit) -> dict:
+        return {
+            "season": season,
+            "element": element,
+            "code": code,
+            "round": round_,
+            "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+            "minutes": 90,
+            "total_points": 5,
+            "value": 60,
+            "expected_goals": xgi / 2,
+            "expected_assists": xgi / 2,
+            "expected_goal_involvements": xgi,
+            "web_name": "Saka",
+            "position": "MID",
+            "team_name": "Arsenal",
+            "defcon_hit": hit,
+        }
+
+    rows = [
+        r("2025-26", 7, 500, 1, 0.4, True),
+        r("2025-26", 7, 500, 2, 0.6, False),
+        # Same player, prior season, different element id - tracked by code.
+        r("2024-25", 3, 500, 1, 0.5, None),
+        # A different player, must be excluded.
+        r("2025-26", 9, 501, 1, 0.1, True),
+    ]
+    return pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+
+def test_player_detail_returns_gameweeks_and_cross_season(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+
+    body = client.get("/players/7", params={"window": 3}).json()
+    assert body["web_name"] == "Saka"
+    assert body["code"] == 500
+    assert body["rolling_window"] == 3
+    # Current-season gameweeks only (element 7), with rolling fields present.
+    assert len(body["gameweeks"]) == 2
+    assert body["gameweeks"][-1]["rolling_xgi90"] is not None
+    # Cross-season summary tracks the player by code across both seasons.
+    assert {s["season"] for s in body["seasons"]} == {"2024-25", "2025-26"}
+
+
+def test_player_detail_404_for_unknown_element(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+    assert client.get("/players/999").status_code == 404

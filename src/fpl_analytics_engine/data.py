@@ -87,14 +87,15 @@ def enrich_history(
 
     Args:
         history: Raw per-gameweek history from the snapshot.
-        players: Bootstrap player records (id, web_name, element_type, team).
+        players: Bootstrap player records (id, code, web_name, element_type,
+            team).
         teams: Bootstrap team records (id, name).
 
     Returns:
         The history with float expected stats, web_name, position, team_name
         and a per-gameweek ``defcon_hit`` flag (null for ineligible positions).
     """
-    player_meta = players.select("id", "web_name", "element_type", "team")
+    player_meta = players.select("id", "code", "web_name", "element_type", "team")
     team_meta = teams.select(
         pl.col("id").alias("team"), pl.col("name").alias("team_name")
     )
@@ -149,3 +150,26 @@ def load_enriched(data_dir: Path) -> pl.DataFrame:
         The enriched per-gameweek history for that season.
     """
     return pl.read_parquet(data_dir / "enriched.parquet")
+
+
+def load_all_seasons(data_root: Path) -> pl.DataFrame:
+    """Load every archived season's enriched snapshot into one frame.
+
+    Each season folder under ``data_root`` is expected to hold an
+    ``enriched.parquet`` sharing the canonical cross-season schema (carrying a
+    ``season`` label and the stable player ``code``), so players can be tracked
+    across seasons by code.
+
+    Args:
+        data_root: Root directory holding per-season folders.
+
+    Returns:
+        The per-gameweek history concatenated across seasons, or an empty frame
+        if no seasons are archived.
+    """
+    frames = [
+        pl.read_parquet(path) for path in sorted(data_root.glob("*/enriched.parquet"))
+    ]
+    if not frames:
+        return pl.DataFrame()
+    return pl.concat(frames, how="vertical_relaxed")

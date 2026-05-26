@@ -34,6 +34,7 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
     players = pl.DataFrame(
         {
             "id": [1, 2, 3],
+            "code": [101, 102, 103],
             "web_name": ["Def", "Mid", "Gk"],
             "element_type": [2, 3, 1],
             "team": [10, 10, 10],

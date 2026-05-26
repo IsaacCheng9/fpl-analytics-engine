@@ -60,6 +60,51 @@ class DefconPlayer(PlayerContext):
     as_of_gw: int
 
 
+class PlayerGameweek(BaseModel):
+    """One gameweek of a player's current season, with rolling form."""
+
+    round: int
+    kickoff_time: str | None
+    minutes: int
+    total_points: int
+    price: float | None
+    expected_goals: float | None
+    expected_assists: float | None
+    expected_goal_involvements: float | None
+    defcon_hit: bool | None
+    rolling_xgi90: float | None
+    rolling_defcon_hit_rate: float | None
+
+
+class PlayerSeasonSummary(BaseModel):
+    """A player's aggregate output for one season.
+
+    ``defcon_hit_rate`` is null where DefCon data does not exist (before
+    2025-26); 2022-23 covers only GW16-38, so its totals are partial.
+    """
+
+    season: str
+    games: int
+    minutes: int
+    points: int
+    xgi90: float | None
+    points_per_million: float | None
+    defcon_hit_rate: float | None
+
+
+class PlayerDetail(BaseModel):
+    """A single player's per-gameweek form and cross-season history."""
+
+    element: int
+    code: int | None
+    web_name: str
+    position: str | None
+    team_name: str | None
+    rolling_window: int
+    gameweeks: list[PlayerGameweek]
+    seasons: list[PlayerSeasonSummary]
+
+
 class DefconProbabilityPlayer(PlayerContext):
     """A player's modelled probability of hitting the DefCon threshold.
 

@@ -5,17 +5,22 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import polars as pl
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 
-from fpl_analytics_engine import data, defcon, fixtures, form
+from fpl_analytics_engine import data, defcon, fixtures, form, player
 from fpl_analytics_engine.domain import Position
 from fpl_analytics_engine.schemas import (
     DefconPlayer,
     DefconProbabilityPlayer,
     FormPlayer,
+    PlayerDetail,
+    PlayerGameweek,
+    PlayerSeasonSummary,
 )
 
-DATA_DIR = Path("data/2025-26")
+DATA_ROOT = Path("data")
+DATA_DIR = DATA_ROOT / "2025-26"
+CURRENT_SEASON = "2025-26"
 DEFAULT_FDR_HORIZON = 5
 AS_OF_GW_DESCRIPTION = (
     "Evaluate the point-in-time view as of this gameweek (defaults to the "
@@ -121,6 +126,12 @@ def _load_players_snapshot() -> pl.DataFrame:
     return data.load_players(DATA_DIR)
 
 
+@lru_cache
+def _load_all_seasons() -> pl.DataFrame:
+    """Load and cache every archived season's enriched snapshot."""
+    return data.load_all_seasons(DATA_ROOT)
+
+
 def get_history() -> pl.DataFrame:
     """Return the enriched history (dependency; overridden in tests)."""
     return _load_history()
@@ -139,6 +150,11 @@ def get_teams() -> pl.DataFrame:
 def get_players_snapshot() -> pl.DataFrame:
     """Return the current player metadata (dependency; overridden in tests)."""
     return _load_players_snapshot()
+
+
+def get_all_seasons() -> pl.DataFrame:
+    """Return the cross-season enriched history (dependency; overridden in tests)."""
+    return _load_all_seasons()
 
 
 def _latest_gw(history: pl.DataFrame) -> int:
@@ -289,3 +305,48 @@ def players_defcon_probability(
         DefconProbabilityPlayer(**row)
         for row in ranked.select(DEFCON_PROBABILITY_COLUMNS).to_dicts()
     ]
+
+
+@app.get("/players/{element}")
+def player_detail(
+    element: int,
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
+) -> PlayerDetail:
+    """Return a player's current-season per-gameweek form and season history.
+
+    ``element`` is the current-season FPL id; the player is tracked across
+    seasons by their stable ``code``. Rolling figures use a trailing ``window``.
+    """
+    current = all_seasons.filter(
+        pl.col("season") == CURRENT_SEASON, pl.col("element") == element
+    )
+    if current.is_empty():
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    latest = current.sort("round").row(-1, named=True)
+    code = latest["code"]
+    gameweeks = player.player_gameweeks(current, window)
+    # Track the player across seasons by code; fall back to the current season
+    # when the code is missing.
+    history = (
+        all_seasons.filter(pl.col("code") == code) if code is not None else current
+    )
+    seasons = player.season_summaries(history)
+
+    gw_cols = list(PlayerGameweek.model_fields)
+    season_cols = list(PlayerSeasonSummary.model_fields)
+    return PlayerDetail(
+        element=element,
+        code=code,
+        web_name=latest["web_name"],
+        position=latest["position"],
+        team_name=latest["team_name"],
+        rolling_window=window,
+        gameweeks=[
+            PlayerGameweek(**row) for row in gameweeks.select(gw_cols).to_dicts()
+        ],
+        seasons=[
+            PlayerSeasonSummary(**row) for row in seasons.select(season_cols).to_dicts()
+        ],
+    )
