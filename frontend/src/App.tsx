@@ -14,6 +14,7 @@ import {
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
+import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb";
@@ -444,6 +445,7 @@ export default function App() {
 	const [minHitRate, setMinHitRate] = useState(0);
 	const [minGames, setMinGames] = useState(5);
 	const [asOfGw, setAsOfGw] = useState<number | null>(null);
+	const [selectedElement, setSelectedElement] = useState<number | null>(null);
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const latestGw = meta.data?.latest_gw ?? 38;
@@ -732,14 +734,33 @@ export default function App() {
 				) : tab === "form" ? (
 					<>
 						<FormScatter players={filteredForm} />
-						<DataTable data={filteredForm} columns={formColumns} />
+						<DataTable
+							data={filteredForm}
+							columns={formColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
 					</>
 				) : tab === "defcon" ? (
-					<DataTable data={filteredDefcon} columns={defconColumns} />
+					<DataTable
+						data={filteredDefcon}
+						columns={defconColumns}
+						onRowClick={(row) => setSelectedElement(row.element)}
+					/>
 				) : (
-					<DataTable data={filteredDefconProb} columns={defconProbColumns} />
+					<DataTable
+						data={filteredDefconProb}
+						columns={defconProbColumns}
+						onRowClick={(row) => setSelectedElement(row.element)}
+					/>
 				)}
 			</div>
+
+			{selectedElement !== null ? (
+				<PlayerPanel
+					element={selectedElement}
+					onClose={() => setSelectedElement(null)}
+				/>
+			) : null}
 		</div>
 	);
 }

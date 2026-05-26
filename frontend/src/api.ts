@@ -68,6 +68,41 @@ export interface DefconProbabilityPlayer extends PlayerContext {
 	as_of_gw: number;
 }
 
+export interface PlayerGameweek {
+	round: number;
+	kickoff_time: string | null;
+	minutes: number;
+	total_points: number;
+	price: number | null;
+	expected_goals: number | null;
+	expected_assists: number | null;
+	expected_goal_involvements: number | null;
+	defcon_hit: boolean | null;
+	rolling_xgi90: number | null;
+	rolling_defcon_hit_rate: number | null;
+}
+
+export interface PlayerSeasonSummary {
+	season: string;
+	games: number;
+	minutes: number;
+	points: number;
+	xgi90: number | null;
+	points_per_million: number | null;
+	defcon_hit_rate: number | null;
+}
+
+export interface PlayerDetail {
+	element: number;
+	code: number | null;
+	web_name: string;
+	position: string | null;
+	team_name: string | null;
+	rolling_window: number;
+	gameweeks: PlayerGameweek[];
+	seasons: PlayerSeasonSummary[];
+}
+
 interface BaseParams {
 	window: number;
 	position: Position | "";
@@ -140,4 +175,11 @@ export function fetchDefconProbability(
 	return getJson<DefconProbabilityPlayer[]>(
 		`/players/defcon-probability?${search.toString()}`,
 	);
+}
+
+export function fetchPlayerDetail(
+	element: number,
+	window: number,
+): Promise<PlayerDetail> {
+	return getJson<PlayerDetail>(`/players/${element}?window=${window}`);
 }

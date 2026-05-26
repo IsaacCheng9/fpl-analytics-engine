@@ -20,9 +20,11 @@ declare module "@tanstack/react-table" {
 export function DataTable<T>({
 	data,
 	columns,
+	onRowClick,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
+	onRowClick?: (row: T) => void;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const table = useReactTable({
@@ -92,7 +94,12 @@ export function DataTable<T>({
 						rows.map((row) => (
 							<tr
 								key={row.id}
-								className="border-zinc-100 border-t hover:bg-zinc-50"
+								className={`border-zinc-100 border-t hover:bg-zinc-50${
+									onRowClick ? " cursor-pointer" : ""
+								}`}
+								onClick={
+									onRowClick ? () => onRowClick(row.original) : undefined
+								}
 							>
 								{row.getVisibleCells().map((cell) => (
 									<td key={cell.id} className="px-3 py-2 whitespace-nowrap">

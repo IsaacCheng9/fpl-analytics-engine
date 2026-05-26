@@ -69,6 +69,41 @@ const probRows = [
 	},
 ];
 
+const playerDetail = {
+	element: 1,
+	code: 9999,
+	web_name: "Mbeumo",
+	position: "MID",
+	team_name: "Man Utd",
+	rolling_window: 5,
+	gameweeks: [
+		{
+			round: 1,
+			kickoff_time: null,
+			minutes: 90,
+			total_points: 6,
+			price: 8,
+			expected_goals: 0.5,
+			expected_assists: 0.4,
+			expected_goal_involvements: 0.9,
+			defcon_hit: false,
+			rolling_xgi90: 0.9,
+			rolling_defcon_hit_rate: 0.2,
+		},
+	],
+	seasons: [
+		{
+			season: "2024-25",
+			games: 38,
+			minutes: 3000,
+			points: 200,
+			xgi90: 0.7,
+			points_per_million: 30,
+			defcon_hit_rate: null,
+		},
+	],
+};
+
 beforeEach(() => {
 	vi.stubGlobal(
 		"fetch",
@@ -78,6 +113,8 @@ beforeEach(() => {
 				body = formRows;
 			} else if (input.includes("/players/defcon-probability")) {
 				body = probRows;
+			} else if (/\/players\/\d+/.test(input)) {
+				body = playerDetail;
 			} else if (input.includes("/players/")) {
 				body = [];
 			}
@@ -126,4 +163,19 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	await waitFor(() => {
 		expect(screen.getByText("Senesi")).toBeInTheDocument();
 	});
+});
+
+test("clicking a row opens the player detail panel", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	fireEvent.click(screen.getByText("Mbeumo"));
+
+	await waitFor(() => {
+		expect(screen.getByText("Season History")).toBeInTheDocument();
+	});
+	expect(screen.getByText("Rolling xGI per 90")).toBeInTheDocument();
+	expect(screen.getByText("2024-25")).toBeInTheDocument();
 });
