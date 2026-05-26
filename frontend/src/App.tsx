@@ -538,21 +538,45 @@ export default function App() {
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const latestGw = meta.data?.latest_gw ?? 38;
+	const hasPlayerSearch = playerSearch.trim() !== "";
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const formQuery = useQuery({
-		queryKey: ["form", windowSize, position, minMinutes, minDelta, asOfGw],
-		queryFn: () => fetchForm({ ...base, minDelta }),
+		queryKey: [
+			"form",
+			windowSize,
+			position,
+			minMinutes,
+			minDelta,
+			asOfGw,
+			hasPlayerSearch,
+		],
+		queryFn: () =>
+			fetchForm({ ...base, minDelta: hasPlayerSearch ? -1000 : minDelta }),
 		enabled: tab === "form",
 	});
 	const defconQuery = useQuery({
-		queryKey: ["defcon", windowSize, position, minMinutes, minHitRate, asOfGw],
-		queryFn: () => fetchDefcon({ ...base, minHitRate }),
+		queryKey: [
+			"defcon",
+			windowSize,
+			position,
+			minMinutes,
+			minHitRate,
+			asOfGw,
+			hasPlayerSearch,
+		],
+		queryFn: () =>
+			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
 		enabled: tab === "defcon",
 	});
 	const defconProbQuery = useQuery({
-		queryKey: ["defconProb", position, minGames, asOfGw],
-		queryFn: () => fetchDefconProbability({ position, minGames, asOfGw }),
+		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
+		queryFn: () =>
+			fetchDefconProbability({
+				position,
+				minGames: hasPlayerSearch ? 0 : minGames,
+				asOfGw,
+			}),
 		enabled: tab === "defconProb",
 	});
 

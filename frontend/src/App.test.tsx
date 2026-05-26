@@ -69,6 +69,37 @@ const formRows = [
 		as_of_gw: 38,
 	},
 ];
+const broadFormRows = [
+	...formRows,
+	{
+		element: 3,
+		web_name: "Haaland",
+		position: "FWD",
+		team_name: "Man City",
+		price: 14,
+		window_games: 5,
+		window_minutes: 450,
+		window_xg90: 0.7,
+		window_xa90: 0.1,
+		window_xgi90: 0.8,
+		season_xg90: 0.8,
+		season_xa90: 0.15,
+		season_xgi90: 0.95,
+		delta_xg90: -0.1,
+		delta_xa90: -0.05,
+		delta_xgi90: -0.15,
+		window_xg90_per_million: 0.05,
+		window_xa90_per_million: 0.01,
+		window_xgi90_per_million: 0.06,
+		season_points_per_million: 4.8,
+		window_start_rate: 1.0,
+		window_mins_per_appearance: 90,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.8,
+		current_ownership: 55.2,
+		as_of_gw: 38,
+	},
+];
 
 // Deliberately omits the fixture/value context fields to mimic an older API
 // payload; the view must degrade to dashes rather than crash on missing fields.
@@ -145,7 +176,8 @@ beforeEach(() => {
 		vi.fn((input: string) => {
 			let body: unknown = meta;
 			if (input.includes("/players/form")) {
-				body = formRows;
+				const params = new URL(input, "http://test").searchParams;
+				body = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
 			} else if (input.includes("/players/defcon-probability")) {
 				body = probRows;
 			} else if (/\/players\/\d+/.test(input)) {
@@ -188,8 +220,28 @@ test("filters the table by the player search box", async () => {
 		target: { value: "Mbe" },
 	});
 
-	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+});
+
+test("searches the broad form pool instead of only flagged players", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+
+	fireEvent.change(screen.getByPlaceholderText("e.g. Saka"), {
+		target: { value: "Haaland" },
+	});
+
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
 });
 
 test("toggles attacking form metric columns", async () => {
