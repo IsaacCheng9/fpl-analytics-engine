@@ -7,20 +7,20 @@ export interface Meta {
 	latest_gw: number;
 }
 
-// Fixture difficulty and live-snapshot overlay shared by every player view.
-// The current_* fields are populated only on the latest-GW view.
+// Fixture difficulty and the live ownership overlay shared by every player
+// view. current_ownership is always the present-day snapshot, not point-in-time.
 export interface FixtureContext {
 	upcoming_fixtures: number | null;
 	avg_fdr: number | null;
 	current_ownership: number | null;
-	current_chance_of_playing: number | null;
 }
 
-// Adds point-in-time value efficiency, for the form-derived tables.
+// Adds point-in-time value efficiency and playing time, for the form tables.
 export interface PlayerContext extends FixtureContext {
 	window_xgi90_per_million: number | null;
 	season_points_per_million: number | null;
 	window_start_rate: number | null;
+	window_mins_per_appearance: number | null;
 }
 
 export interface FormPlayer extends PlayerContext {
@@ -53,11 +53,13 @@ export interface DefconPlayer extends PlayerContext {
 	as_of_gw: number;
 }
 
-export interface DefconProbabilityPlayer extends FixtureContext {
+export interface DefconProbabilityPlayer extends PlayerContext {
 	element: number;
 	web_name: string;
 	position: string | null;
 	team_name: string | null;
+	price: number | null;
+	window_minutes: number | null;
 	games: number;
 	hits: number;
 	raw_rate: number | null;

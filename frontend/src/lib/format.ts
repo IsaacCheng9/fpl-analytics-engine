@@ -7,7 +7,10 @@ export function fmtNum(value: Maybe, digits = 2): string {
 	return value == null ? "-" : value.toFixed(digits);
 }
 
-export function fmtPrice(value: number): string {
+export function fmtPrice(value: Maybe): string {
+	if (value == null) {
+		return "-";
+	}
 	// £ is the pound sign; kept as an escape to keep the source ASCII.
 	return `£${value.toFixed(1)}m`;
 }

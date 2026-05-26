@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
+import { InfoTooltip } from "./components/InfoTooltip";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb";
@@ -51,21 +52,23 @@ const FORM_HEAT_KEYS = [
 	"window_xgi90_per_million",
 	"season_points_per_million",
 	"window_start_rate",
+	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_chance_of_playing",
 ];
 const DEFCON_HEAT_KEYS = [
 	"window_defcon_hit_rate",
 	"season_points_per_million",
 	"window_start_rate",
+	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_chance_of_playing",
 ];
 const DEFCON_PROB_HEAT_KEYS = [
 	"raw_rate",
 	"prob",
+	"season_points_per_million",
+	"window_start_rate",
+	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_chance_of_playing",
 ];
 
 // Min/max per metric across the supplied (league-wide) rows.
@@ -151,26 +154,59 @@ function buildFormColumns(
 			header: "Price",
 			cell: (info) => fmtPrice(info.getValue<number>()),
 		},
-		{ accessorKey: "window_minutes", header: "Mins" },
+		{
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+			},
+		},
+		{
+			accessorKey: "window_start_rate",
+			header: "Start %",
+			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
+			meta: { tooltip: "Share of window games the player started" },
+		},
 		{
 			accessorKey: "window_xgi90",
 			header: "Window xGI per 90",
 			cell: heatCell<FormPlayer>(ranges.window_xgi90),
+			meta: {
+				tooltip:
+					"Expected goal involvements per 90 minutes over the recent window",
+			},
 		},
 		{
 			accessorKey: "season_xgi90",
 			header: "Season xGI per 90",
 			cell: heatCell<FormPlayer>(ranges.season_xgi90),
+			meta: {
+				tooltip: "Expected goal involvements per 90 minutes, season to date",
+			},
 		},
 		{
 			accessorKey: "delta_xgi90",
 			header: "Delta xGI per 90",
 			cell: heatCell<FormPlayer>(ranges.delta_xgi90, { format: fmtDelta }),
+			meta: {
+				tooltip:
+					"Window xGI per 90 minus season xGI per 90; positive means recent form beats the season baseline",
+			},
 		},
 		{
 			accessorKey: "window_xgi90_per_million",
 			header: "xGI per 90 per £m",
 			cell: heatCell<FormPlayer>(ranges.window_xgi90_per_million),
+			meta: { tooltip: "Window xGI per 90 divided by price" },
 		},
 		{
 			accessorKey: "season_points_per_million",
@@ -178,11 +214,7 @@ function buildFormColumns(
 			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
-		},
-		{
-			accessorKey: "window_start_rate",
-			header: "Start %",
-			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
+			meta: { tooltip: "Total season points divided by price" },
 		},
 		{
 			accessorKey: "avg_fdr",
@@ -191,18 +223,19 @@ function buildFormColumns(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
 		},
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
 			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
-		},
-		{
-			accessorKey: "current_chance_of_playing",
-			header: "Fit %",
-			cell: heatCell<FormPlayer>(ranges.current_chance_of_playing, {
-				format: (v) => fmtPctPoints(v, 0),
-			}),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
 		},
 	];
 }
@@ -217,23 +250,23 @@ function buildDefconColumns(
 		{
 			accessorKey: "price",
 			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number>()),
-		},
-		{ accessorKey: "window_games", header: "Games" },
-		{ accessorKey: "window_defcon_hits", header: "Hits" },
-		{
-			accessorKey: "window_defcon_hit_rate",
-			header: "Hit Rate",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
-				format: fmtPct,
-			}),
+			cell: (info) => fmtPrice(info.getValue<number | null>()),
 		},
 		{
-			accessorKey: "season_points_per_million",
-			header: "Points per £m",
-			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
-				format: (v) => fmtNum(v, 1),
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
+				format: (v) => fmtNum(v, 0),
 			}),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+			},
 		},
 		{
 			accessorKey: "window_start_rate",
@@ -241,6 +274,33 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_start_rate, {
 				format: fmtPct,
 			}),
+			meta: { tooltip: "Share of window games the player started" },
+		},
+		{
+			accessorKey: "window_games",
+			header: "Games",
+			meta: { tooltip: "Eligible games in the window" },
+		},
+		{
+			accessorKey: "window_defcon_hits",
+			header: "Hits",
+			meta: { tooltip: "Window games clearing the DefCon threshold" },
+		},
+		{
+			accessorKey: "window_defcon_hit_rate",
+			header: "Hit Rate",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Share of window games clearing the DefCon threshold" },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points per £m",
+			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: { tooltip: "Total season points divided by price" },
 		},
 		{
 			accessorKey: "avg_fdr",
@@ -249,18 +309,19 @@ function buildDefconColumns(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
 		},
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
 			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
-		},
-		{
-			accessorKey: "current_chance_of_playing",
-			header: "Fit %",
-			cell: heatCell<DefconPlayer>(ranges.current_chance_of_playing, {
-				format: (v) => fmtPctPoints(v, 0),
-			}),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
 		},
 	];
 }
@@ -272,24 +333,77 @@ function buildDefconProbColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		{ accessorKey: "games", header: "Games" },
-		{ accessorKey: "hits", header: "Hits" },
+		{
+			accessorKey: "price",
+			header: "Price",
+			cell: (info) => fmtPrice(info.getValue<number | null>()),
+		},
+		{
+			accessorKey: "window_minutes",
+			header: "Mins",
+			meta: { tooltip: "Total minutes played across the recent window" },
+		},
+		{
+			accessorKey: "window_mins_per_appearance",
+			header: "Mins per App",
+			cell: heatCell<DefconProbabilityPlayer>(
+				ranges.window_mins_per_appearance,
+				{ format: (v) => fmtNum(v, 0) },
+			),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the recent window; 0-minute games are excluded",
+			},
+		},
+		{
+			accessorKey: "window_start_rate",
+			header: "Start %",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.window_start_rate, {
+				format: fmtPct,
+			}),
+			meta: { tooltip: "Share of recent window games the player started" },
+		},
+		{
+			accessorKey: "games",
+			header: "Games",
+			meta: { tooltip: "Eligible appearances up to this gameweek" },
+		},
+		{
+			accessorKey: "hits",
+			header: "Hits",
+			meta: { tooltip: "Appearances clearing the DefCon threshold" },
+		},
 		{
 			accessorKey: "raw_rate",
 			header: "Raw Rate",
 			cell: heatCell<DefconProbabilityPlayer>(ranges.raw_rate, {
 				format: fmtPct,
 			}),
+			meta: { tooltip: "Observed DefCon hit rate (hits / games)" },
 		},
 		{
 			accessorKey: "prob",
 			header: "P(Hit Next GW)",
 			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
+			meta: {
+				tooltip:
+					"Modelled probability of clearing the DefCon threshold next gameweek",
+			},
 		},
 		{
 			accessorKey: "prob_std",
 			header: "+/-",
 			cell: (info) => fmtNum(info.getValue<number | null>()),
+			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points per £m",
+			cell: heatCell<DefconProbabilityPlayer>(
+				ranges.season_points_per_million,
+				{ format: (v) => fmtNum(v, 1) },
+			),
+			meta: { tooltip: "Total season points divided by price" },
 		},
 		{
 			accessorKey: "avg_fdr",
@@ -298,21 +412,19 @@ function buildDefconProbColumns(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
 		},
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
 			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
-		},
-		{
-			accessorKey: "current_chance_of_playing",
-			header: "Fit %",
-			cell: heatCell<DefconProbabilityPlayer>(
-				ranges.current_chance_of_playing,
-				{
-					format: (v) => fmtPctPoints(v, 0),
-				},
-			),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+			},
 		},
 	];
 }
@@ -588,12 +700,9 @@ export default function App() {
 					)}
 
 					<label className={labelClass}>
-						<span
-							className="flex cursor-help items-center gap-1"
-							title="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead."
-						>
+						<span className="flex items-center gap-1">
 							As Of GW
-							<span className="text-zinc-400">(?)</span>
+							<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
 						</span>
 						<select
 							className={inputClass}

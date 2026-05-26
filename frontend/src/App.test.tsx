@@ -22,10 +22,10 @@ const formRows = [
 		window_xgi90_per_million: 0.12,
 		season_points_per_million: 5.0,
 		window_start_rate: 1.0,
+		window_mins_per_appearance: 88,
 		upcoming_fixtures: 5,
 		avg_fdr: 2.6,
 		current_ownership: 25.5,
-		current_chance_of_playing: 100,
 		as_of_gw: 38,
 	},
 	{
@@ -44,10 +44,10 @@ const formRows = [
 		window_xgi90_per_million: 0.08,
 		season_points_per_million: 4.2,
 		window_start_rate: 0.8,
+		window_mins_per_appearance: 79,
 		upcoming_fixtures: 5,
 		avg_fdr: 3.4,
 		current_ownership: 40.1,
-		current_chance_of_playing: 75,
 		as_of_gw: 38,
 	},
 ];
