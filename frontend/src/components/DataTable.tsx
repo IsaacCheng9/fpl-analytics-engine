@@ -36,16 +36,21 @@ export function DataTable<T>({
 							{group.headers.map((header) => {
 								const sorted = header.column.getIsSorted();
 								return (
-									<th key={header.id} className="px-3 py-2 font-medium">
+									<th
+										key={header.id}
+										className="px-3 py-2 align-bottom font-medium"
+									>
 										<button
 											type="button"
-											className="flex cursor-pointer select-none items-center gap-1 whitespace-nowrap"
+											className="flex w-full cursor-pointer select-none items-end gap-1 text-left"
 											onClick={header.column.getToggleSortingHandler()}
 										>
-											{flexRender(
-												header.column.columnDef.header,
-												header.getContext(),
-											)}
+											<span>
+												{flexRender(
+													header.column.columnDef.header,
+													header.getContext(),
+												)}
+											</span>
 											<span className="text-zinc-400">
 												{sorted === "asc" ? "^" : sorted === "desc" ? "v" : ""}
 											</span>
