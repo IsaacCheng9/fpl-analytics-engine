@@ -16,6 +16,7 @@ def _game(
     defcon_hit: bool | None = False,
     position: str = "MID",
     value: int = 50,
+    starts: int = 1,
 ) -> dict:
     """Build one enriched per-gameweek history row for tests."""
     return {
@@ -25,6 +26,7 @@ def _game(
         "minutes": minutes,
         "total_points": points,
         "value": value,
+        "starts": starts,
         "expected_goals": 0.0,
         "expected_assists": 0.0,
         "expected_goal_involvements": xgi,
@@ -61,6 +63,24 @@ def test_form_table_is_point_in_time() -> None:
     # With the later data visible the baseline and delta both change.
     assert at_gw6["season_xgi90"] == pytest.approx(0.50)
     assert at_gw6["delta_xgi90"] == pytest.approx(0.40)
+
+
+def test_form_table_reports_value_and_start_rate() -> None:
+    # Started three of four window games; price closes at 6.0m.
+    rows = [_game(1, r, xgi=0.6, points=6, value=60) for r in (1, 2, 3)]
+    rows += [_game(1, 4, xgi=0.6, points=6, value=60, minutes=20, starts=0)]
+    row = _player_row(_frame(rows), as_of_gw=4, window=4, element=1)
+
+    assert row["window_xgi90_per_million"] == pytest.approx(row["window_xgi90"] / 6.0)
+    assert row["season_points_per_million"] == pytest.approx(24 / 6.0)
+    assert row["window_start_rate"] == pytest.approx(0.75)
+
+
+def test_form_table_null_start_rate_without_starts_column() -> None:
+    # Older canonical snapshots lack per-gameweek starts; rate must be null.
+    history = _frame([_game(1, 1, xgi=0.5)]).drop("starts")
+    row = _player_row(history, as_of_gw=1, window=3, element=1)
+    assert row["window_start_rate"] is None
 
 
 def test_flag_players_ranks_and_filters() -> None:

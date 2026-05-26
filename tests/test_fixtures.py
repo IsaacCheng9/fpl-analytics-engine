@@ -76,3 +76,46 @@ def test_team_fixture_difficulty_skips_unscheduled_fixtures() -> None:
 
     assert by_team[10]["n_fixtures"] == 1
     assert isinstance(table, pl.DataFrame)
+
+
+def _form_row(element: int, team_name: str) -> dict:
+    return {"element": element, "web_name": f"P{element}", "team_name": team_name}
+
+
+def test_attach_team_fdr_joins_by_team_name() -> None:
+    form_table = pl.DataFrame([_form_row(1, "Arsenal"), _form_row(2, "Spurs")])
+    teams = pl.DataFrame({"id": [10, 20], "name": ["Arsenal", "Spurs"]})
+    feed = pl.DataFrame(
+        [
+            _fixture(2, home=10, away=20, h_diff=2, a_diff=5),
+            _fixture(3, home=20, away=10, h_diff=4, a_diff=3),
+        ]
+    )
+
+    out = fixtures.attach_team_fdr(form_table, feed, teams, as_of_gw=1, horizon=5)
+    by_element = {row["element"]: row for row in out.to_dicts()}
+
+    # Arsenal (id 10): home difficulty 2 then away difficulty 3 -> mean 2.5.
+    assert by_element[1]["upcoming_fixtures"] == 2
+    assert by_element[1]["avg_fdr"] == 2.5
+    # Spurs (id 20): away difficulty 5 then home difficulty 4 -> mean 4.5.
+    assert by_element[2]["avg_fdr"] == 4.5
+
+
+def test_attach_team_fdr_nulls_when_no_fixtures() -> None:
+    form_table = pl.DataFrame([_form_row(1, "Arsenal")])
+    teams = pl.DataFrame({"id": [10], "name": ["Arsenal"]})
+    empty = pl.DataFrame(
+        schema={
+            "event": pl.Int64,
+            "team_h": pl.Int64,
+            "team_a": pl.Int64,
+            "team_h_difficulty": pl.Int64,
+            "team_a_difficulty": pl.Int64,
+        }
+    )
+
+    out = fixtures.attach_team_fdr(form_table, empty, teams, as_of_gw=1, horizon=5)
+
+    assert out["upcoming_fixtures"].to_list() == [None]
+    assert out["avg_fdr"].to_list() == [None]

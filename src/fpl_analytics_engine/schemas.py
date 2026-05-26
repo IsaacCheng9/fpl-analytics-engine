@@ -3,7 +3,28 @@
 from pydantic import BaseModel
 
 
-class FormPlayer(BaseModel):
+class FixtureContext(BaseModel):
+    """Fixture and live-snapshot context shared by every player view.
+
+    ``current_*`` fields are a live snapshot populated only on the latest-
+    gameweek view (null for historical views), keeping the rest point-in-time.
+    """
+
+    upcoming_fixtures: int | None
+    avg_fdr: float | None
+    current_ownership: float | None
+    current_chance_of_playing: float | None
+
+
+class PlayerContext(FixtureContext):
+    """Adds point-in-time value efficiency to the fixture context."""
+
+    window_xgi90_per_million: float | None
+    season_points_per_million: float | None
+    window_start_rate: float | None
+
+
+class FormPlayer(PlayerContext):
     """A player's recent attacking form versus their season-to-date baseline."""
 
     element: int
@@ -21,7 +42,7 @@ class FormPlayer(BaseModel):
     as_of_gw: int
 
 
-class DefconPlayer(BaseModel):
+class DefconPlayer(PlayerContext):
     """A player's recent defensive-contribution form."""
 
     element: int
@@ -37,7 +58,7 @@ class DefconPlayer(BaseModel):
     as_of_gw: int
 
 
-class DefconProbabilityPlayer(BaseModel):
+class DefconProbabilityPlayer(FixtureContext):
     """A player's modelled probability of hitting the DefCon threshold."""
 
     element: int

@@ -50,9 +50,18 @@ def _history() -> pl.DataFrame:
     return pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
 
 
+def _empty_teams() -> pl.DataFrame:
+    return pl.DataFrame(schema={"id": pl.Int64, "name": pl.String})
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
+    # Default to empty fixture/overlay context so endpoints never touch disk;
+    # individual tests override these where the context is under test.
     api.app.dependency_overrides[api.get_history] = _history
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame()
+    api.app.dependency_overrides[api.get_teams] = _empty_teams
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame()
     yield TestClient(api.app)
     api.app.dependency_overrides.clear()
 
@@ -78,6 +87,59 @@ def test_form_endpoint_filters_by_position(client: TestClient) -> None:
 
 def test_form_endpoint_validates_window(client: TestClient) -> None:
     assert client.get("/players/form", params={"window": 0}).status_code == 422
+
+
+def test_form_includes_point_in_time_value_efficiency(client: TestClient) -> None:
+    body = client.get("/players/form", params={"window": 2}).json()
+    p1 = next(row for row in body if row["web_name"] == "P1")
+    # Price is the window's closing value (50 -> 5.0m), so the ratio is exact.
+    assert p1["price"] == pytest.approx(5.0)
+    assert p1["window_xgi90_per_million"] == pytest.approx(p1["window_xgi90"] / 5.0)
+    assert p1["season_points_per_million"] is not None
+
+
+def test_form_attaches_upcoming_fixture_difficulty(client: TestClient) -> None:
+    # Team 1 maps to the players' team name "T"; two upcoming fixtures past GW4.
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {"id": [1], "name": ["T"]}
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "event": [5, 6],
+            "team_h": [1, 9],
+            "team_a": [9, 1],
+            "team_h_difficulty": [2, 5],
+            "team_a_difficulty": [5, 3],
+        }
+    )
+
+    body = client.get("/players/form", params={"window": 2}).json()
+    p1 = next(row for row in body if row["web_name"] == "P1")
+    # Home difficulty 2 (GW5) and away difficulty 3 (GW6) average to 2.5.
+    assert p1["upcoming_fixtures"] == 2
+    assert p1["avg_fdr"] == pytest.approx(2.5)
+
+
+def test_ownership_overlay_only_on_latest_gameweek(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [1],
+            "selected_by_percent": ["15.5"],
+            "chance_of_playing_next_round": [75],
+        }
+    )
+
+    # Latest gameweek (4): the live overlay is populated.
+    latest = client.get("/players/form", params={"window": 2}).json()
+    p1 = next(row for row in latest if row["web_name"] == "P1")
+    assert p1["current_ownership"] == pytest.approx(15.5)
+    assert p1["current_chance_of_playing"] == pytest.approx(75.0)
+
+    # Historical view: the overlay would be anachronistic, so it is null.
+    historical = client.get("/players/form", params={"window": 2, "as_of_gw": 2}).json()
+    p1_past = next(row for row in historical if row["web_name"] == "P1")
+    assert p1_past["current_ownership"] is None
+    assert p1_past["current_chance_of_playing"] is None
 
 
 def test_defcon_endpoint_ranks_eligible_and_excludes_keepers(
@@ -108,3 +170,35 @@ def test_defcon_probability_endpoint_ranks_and_excludes_keepers(
     # Everyone has four games, so a higher floor returns nothing.
     too_few = client.get("/players/defcon-probability", params={"min_games": 5})
     assert too_few.json() == []
+
+
+def test_defcon_probability_carries_fixture_and_overlay_context(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {"id": [1], "name": ["T"]}
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "event": [5, 6],
+            "team_h": [1, 9],
+            "team_a": [9, 1],
+            "team_h_difficulty": [2, 4],
+            "team_a_difficulty": [4, 3],
+        }
+    )
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [3],
+            "selected_by_percent": ["12.0"],
+            "chance_of_playing_next_round": [100],
+        }
+    )
+
+    body = client.get("/players/defcon-probability").json()
+    p3 = next(row for row in body if row["web_name"] == "P3")
+    # Team T plays GW5 (home, 2) and GW6 (away, 3) -> two fixtures averaging 2.5.
+    assert p3["upcoming_fixtures"] == 2
+    assert p3["avg_fdr"] == pytest.approx(2.5)
+    assert p3["current_ownership"] == pytest.approx(12.0)
+    assert p3["current_chance_of_playing"] == pytest.approx(100.0)

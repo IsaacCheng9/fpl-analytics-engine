@@ -1,8 +1,23 @@
 """Tests for loading and enriching archived season data."""
 
+from pathlib import Path
+
 import polars as pl
 
 from fpl_analytics_engine import data
+
+
+def test_load_fixtures_returns_empty_frame_when_absent(tmp_path: Path) -> None:
+    fixtures = data.load_fixtures(tmp_path)
+    assert fixtures.height == 0
+    # The empty frame keeps the schema the FDR transform expects.
+    assert {"event", "team_h", "team_a"} <= set(fixtures.columns)
+
+
+def test_load_fixtures_reads_archived_file(tmp_path: Path) -> None:
+    written = pl.DataFrame({"event": [1], "team_h": [10], "team_a": [20]})
+    written.write_parquet(tmp_path / "fixtures.parquet")
+    assert data.load_fixtures(tmp_path).equals(written)
 
 
 def test_enrich_history_casts_stats_and_labels_positions() -> None:
