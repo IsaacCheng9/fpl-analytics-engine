@@ -72,6 +72,8 @@ class PlayerGameweek(BaseModel):
     expected_assists: float | None
     expected_goal_involvements: float | None
     defcon_hit: bool | None
+    rolling_xg90: float | None
+    rolling_xa90: float | None
     rolling_xgi90: float | None
     rolling_defcon_hit_rate: float | None
 
@@ -87,6 +89,8 @@ class PlayerSeasonSummary(BaseModel):
     games: int
     minutes: int
     points: int
+    xg90: float | None
+    xa90: float | None
     xgi90: float | None
     points_per_million: float | None
     defcon_hit_rate: float | None

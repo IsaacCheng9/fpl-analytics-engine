@@ -76,7 +76,7 @@ export function PlayerPanel({
 				className="fixed inset-0 cursor-default bg-black/40"
 				onClick={onClose}
 			/>
-			<div className="relative mx-auto mt-8 w-full max-w-3xl rounded-lg bg-white p-5 shadow-xl">
+			<div className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl">
 				<div className="mb-4 flex items-start justify-between">
 					<div>
 						<h2 className="font-semibold text-xl">
@@ -121,8 +121,18 @@ export function PlayerPanel({
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<Chart
 								data={detail.gameweeks}
+								dataKey="rolling_xg90"
+								title="Rolling xG Per 90"
+							/>
+							<Chart
+								data={detail.gameweeks}
+								dataKey="rolling_xa90"
+								title="Rolling xA Per 90"
+							/>
+							<Chart
+								data={detail.gameweeks}
 								dataKey="rolling_xgi90"
-								title="Rolling xGI per 90"
+								title="Rolling xGI Per 90"
 							/>
 							<Chart
 								data={detail.gameweeks}
@@ -141,7 +151,9 @@ export function PlayerPanel({
 									<tr>
 										<th className="px-3 py-2 font-medium">Season</th>
 										<th className="px-3 py-2 font-medium">Games</th>
-										<th className="px-3 py-2 font-medium">xGI per 90</th>
+										<th className="px-3 py-2 font-medium">xG/90</th>
+										<th className="px-3 py-2 font-medium">xA/90</th>
+										<th className="px-3 py-2 font-medium">xGI/90</th>
 										<th className="px-3 py-2 font-medium">Points</th>
 										<th className="px-3 py-2 font-medium">Points per £m</th>
 										<th className="px-3 py-2 font-medium">DefCon Hit Rate</th>
@@ -162,6 +174,8 @@ export function PlayerPanel({
 												) : null}
 											</td>
 											<td className="px-3 py-2">{s.games}</td>
+											<td className="px-3 py-2">{fmtNum(s.xg90)}</td>
+											<td className="px-3 py-2">{fmtNum(s.xa90)}</td>
 											<td className="px-3 py-2">{fmtNum(s.xgi90)}</td>
 											<td className="px-3 py-2">{s.points}</td>
 											<td className="px-3 py-2">
@@ -188,13 +202,15 @@ export function PlayerPanel({
 						<h3 className="mb-2 font-medium text-sm text-zinc-700">
 							This Season by Gameweek
 						</h3>
-						<div className="max-h-64 overflow-y-auto rounded-md border border-zinc-200">
+						<div className="max-h-64 overflow-auto rounded-md border border-zinc-200">
 							<table className="w-full text-sm">
 								<thead className="sticky top-0 bg-zinc-100 text-left text-zinc-600">
 									<tr>
 										<th className="px-3 py-2 font-medium">GW</th>
 										<th className="px-3 py-2 font-medium">Mins</th>
 										<th className="px-3 py-2 font-medium">Pts</th>
+										<th className="px-3 py-2 font-medium">xG</th>
+										<th className="px-3 py-2 font-medium">xA</th>
 										<th className="px-3 py-2 font-medium">xGI</th>
 										<th className="px-3 py-2 font-medium">Price</th>
 										<th className="px-3 py-2 font-medium">DefCon</th>
@@ -206,6 +222,10 @@ export function PlayerPanel({
 											<td className="px-3 py-2">{g.round}</td>
 											<td className="px-3 py-2">{g.minutes}</td>
 											<td className="px-3 py-2">{g.total_points}</td>
+											<td className="px-3 py-2">{fmtNum(g.expected_goals)}</td>
+											<td className="px-3 py-2">
+												{fmtNum(g.expected_assists)}
+											</td>
 											<td className="px-3 py-2">
 												{fmtNum(g.expected_goal_involvements)}
 											</td>

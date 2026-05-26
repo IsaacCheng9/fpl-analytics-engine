@@ -87,6 +87,8 @@ const playerDetail = {
 			expected_assists: 0.4,
 			expected_goal_involvements: 0.9,
 			defcon_hit: false,
+			rolling_xg90: 0.5,
+			rolling_xa90: 0.4,
 			rolling_xgi90: 0.9,
 			rolling_defcon_hit_rate: 0.2,
 		},
@@ -97,6 +99,8 @@ const playerDetail = {
 			games: 38,
 			minutes: 3000,
 			points: 200,
+			xg90: 0.4,
+			xa90: 0.3,
 			xgi90: 0.7,
 			points_per_million: 30,
 			defcon_hit_rate: null,
@@ -176,6 +180,8 @@ test("clicking a row opens the player detail panel", async () => {
 	await waitFor(() => {
 		expect(screen.getByText("Season History")).toBeInTheDocument();
 	});
-	expect(screen.getByText("Rolling xGI per 90")).toBeInTheDocument();
+	expect(screen.getByText("Rolling xG Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Rolling xA Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Rolling xGI Per 90")).toBeInTheDocument();
 	expect(screen.getByText("2024-25")).toBeInTheDocument();
 });

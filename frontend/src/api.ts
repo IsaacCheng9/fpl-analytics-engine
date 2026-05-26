@@ -78,6 +78,8 @@ export interface PlayerGameweek {
 	expected_assists: number | null;
 	expected_goal_involvements: number | null;
 	defcon_hit: boolean | null;
+	rolling_xg90: number | null;
+	rolling_xa90: number | null;
 	rolling_xgi90: number | null;
 	rolling_defcon_hit_rate: number | null;
 }
@@ -87,6 +89,8 @@ export interface PlayerSeasonSummary {
 	games: number;
 	minutes: number;
 	points: number;
+	xg90: number | null;
+	xa90: number | null;
 	xgi90: number | null;
 	points_per_million: number | null;
 	defcon_hit_rate: number | null;
