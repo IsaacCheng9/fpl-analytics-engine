@@ -17,8 +17,14 @@ const formRows = [
 		window_xg90: 0.5,
 		window_xa90: 0.4,
 		window_xgi90: 0.97,
+		season_xg90: 0.3,
+		season_xa90: 0.26,
 		season_xgi90: 0.56,
+		delta_xg90: 0.2,
+		delta_xa90: 0.14,
 		delta_xgi90: 0.41,
+		window_xg90_per_million: 0.06,
+		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.12,
 		season_points_per_million: 5.0,
 		window_start_rate: 1.0,
@@ -39,8 +45,14 @@ const formRows = [
 		window_xg90: 0.3,
 		window_xa90: 0.5,
 		window_xgi90: 0.8,
+		season_xg90: 0.28,
+		season_xa90: 0.34,
 		season_xgi90: 0.62,
+		delta_xg90: 0.02,
+		delta_xa90: 0.16,
 		delta_xgi90: 0.18,
+		window_xg90_per_million: 0.03,
+		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.08,
 		season_points_per_million: 4.2,
 		window_start_rate: 0.8,
@@ -159,6 +171,57 @@ test("filters the table by the player search box", async () => {
 
 	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+});
+
+test("toggles attacking form metric columns", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	expect(screen.getByText("Window xG per 90")).toBeInTheDocument();
+	expect(screen.queryByText("Window xA per 90")).not.toBeInTheDocument();
+	expect(screen.getByText("Window xGI per 90")).toBeInTheDocument();
+	expect(screen.getByText("Season xG per 90")).toBeInTheDocument();
+	expect(screen.getByText("Season xGI per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xG per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xGI per 90")).toBeInTheDocument();
+	expect(screen.getByText("xG per 90 per £m")).toBeInTheDocument();
+	expect(screen.getByText("xGI per 90 per £m")).toBeInTheDocument();
+
+	fireEvent.click(screen.getByLabelText("xA"));
+
+	await waitFor(() => {
+		expect(screen.getByText("Window xA per 90")).toBeInTheDocument();
+	});
+	expect(screen.getByText("Season xA per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xA per 90")).toBeInTheDocument();
+	expect(screen.getByText("xA per 90 per £m")).toBeInTheDocument();
+
+	const headers = screen
+		.getAllByRole("columnheader")
+		.map((header) => header.textContent ?? "");
+	const headerIndex = (text: string) =>
+		headers.findIndex((header) => header.includes(text));
+	const metricLabels = screen
+		.getAllByRole("checkbox")
+		.map((checkbox) => checkbox.parentElement?.textContent ?? "");
+	expect(metricLabels).toEqual(["xGI", "xG", "xA"]);
+	expect(headerIndex("Window xGI per 90")).toBeLessThan(
+		headerIndex("Season xGI per 90"),
+	);
+	expect(headerIndex("Season xGI per 90")).toBeLessThan(
+		headerIndex("Delta xGI per 90"),
+	);
+	expect(headerIndex("Delta xGI per 90")).toBeLessThan(
+		headerIndex("xGI per 90 per £m"),
+	);
+	expect(headerIndex("xGI per 90 per £m")).toBeLessThan(
+		headerIndex("Window xG per 90"),
+	);
+	expect(headerIndex("xG per 90 per £m")).toBeLessThan(
+		headerIndex("Window xA per 90"),
+	);
 });
 
 test("renders the DefCon Probability tab even when context fields are absent", async () => {

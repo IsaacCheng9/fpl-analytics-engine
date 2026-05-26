@@ -14,6 +14,7 @@ declare module "@tanstack/react-table" {
 	// A tooltip explaining what a column means.
 	interface ColumnMeta<TData extends RowData, TValue> {
 		tooltip?: string;
+		headerClassName?: string;
 	}
 }
 
@@ -46,11 +47,12 @@ export function DataTable<T>({
 						<tr key={group.id}>
 							{group.headers.map((header) => {
 								const sorted = header.column.getIsSorted();
-								const tooltip = header.column.columnDef.meta?.tooltip;
+								const meta = header.column.columnDef.meta;
+								const tooltip = meta?.tooltip;
 								return (
 									<th
 										key={header.id}
-										className="px-3 py-2 align-bottom font-medium"
+										className={`px-3 py-2 align-bottom font-medium ${meta?.headerClassName ?? ""}`}
 									>
 										<div className="flex w-full items-end gap-1">
 											<button

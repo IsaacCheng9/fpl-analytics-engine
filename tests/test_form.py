@@ -11,6 +11,8 @@ def _game(
     round_: int,
     *,
     minutes: int = 90,
+    xg: float = 0.0,
+    xa: float = 0.0,
     xgi: float = 0.0,
     points: int = 0,
     defcon_hit: bool | None = False,
@@ -27,8 +29,8 @@ def _game(
         "total_points": points,
         "value": value,
         "starts": starts,
-        "expected_goals": 0.0,
-        "expected_assists": 0.0,
+        "expected_goals": xg,
+        "expected_assists": xa,
         "expected_goal_involvements": xgi,
         "expected_goals_conceded": 0.0,
         "web_name": f"P{element}",
@@ -67,10 +69,27 @@ def test_form_table_is_point_in_time() -> None:
 
 def test_form_table_reports_value_and_start_rate() -> None:
     # Started three of four window games; price closes at 6.0m.
-    rows = [_game(1, r, xgi=0.6, points=6, value=60) for r in (1, 2, 3)]
-    rows += [_game(1, 4, xgi=0.6, points=6, value=60, minutes=20, starts=0)]
+    rows = [
+        _game(1, r, xg=0.4, xa=0.2, xgi=0.6, points=6, value=60)
+        for r in (1, 2, 3)
+    ]
+    rows += [
+        _game(
+            1,
+            4,
+            xg=0.4,
+            xa=0.2,
+            xgi=0.6,
+            points=6,
+            value=60,
+            minutes=20,
+            starts=0,
+        )
+    ]
     row = _player_row(_frame(rows), as_of_gw=4, window=4, element=1)
 
+    assert row["window_xg90_per_million"] == pytest.approx(row["window_xg90"] / 6.0)
+    assert row["window_xa90_per_million"] == pytest.approx(row["window_xa90"] / 6.0)
     assert row["window_xgi90_per_million"] == pytest.approx(row["window_xgi90"] / 6.0)
     assert row["season_points_per_million"] == pytest.approx(24 / 6.0)
     assert row["window_start_rate"] == pytest.approx(0.75)

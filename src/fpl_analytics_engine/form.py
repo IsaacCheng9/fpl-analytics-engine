@@ -121,6 +121,14 @@ def compute_form_table(
             .alias("window_defcon_hit_rate"),
             # Value efficiency, point-in-time on the window's closing price.
             pl.when(pl.col("price") > 0)
+            .then(pl.col("window_xg90") / pl.col("price"))
+            .otherwise(None)
+            .alias("window_xg90_per_million"),
+            pl.when(pl.col("price") > 0)
+            .then(pl.col("window_xa90") / pl.col("price"))
+            .otherwise(None)
+            .alias("window_xa90_per_million"),
+            pl.when(pl.col("price") > 0)
             .then(pl.col("window_xgi90") / pl.col("price"))
             .otherwise(None)
             .alias("window_xgi90_per_million"),

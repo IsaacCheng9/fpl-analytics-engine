@@ -39,8 +39,14 @@ class FormPlayer(PlayerContext):
     window_xg90: float | None
     window_xa90: float | None
     window_xgi90: float | None
+    season_xg90: float | None
+    season_xa90: float | None
     season_xgi90: float | None
+    delta_xg90: float | None
+    delta_xa90: float | None
     delta_xgi90: float | None
+    window_xg90_per_million: float | None
+    window_xa90_per_million: float | None
     as_of_gw: int
 
 

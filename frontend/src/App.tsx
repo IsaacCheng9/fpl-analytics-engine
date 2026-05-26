@@ -18,6 +18,9 @@ import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb";
+type AttackingMetric = "xg" | "xa" | "xgi";
+type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
+type AttackingMetricColumn = "window" | "season" | "delta" | "value";
 
 const TAB_LABELS: Record<Tab, string> = {
 	form: "Attacking Form",
@@ -28,6 +31,63 @@ const TABS: Tab[] = ["form", "defcon", "defconProb"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
+const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
+const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
+const ATTACKING_METRIC_GROUP_LABELS: Record<AttackingMetricColumn, string> = {
+	window: "Window",
+	season: "Season",
+	delta: "Delta",
+	value: "",
+};
+const ATTACKING_METRIC_LABELS: Record<AttackingMetric, string> = {
+	xg: "xG",
+	xa: "xA",
+	xgi: "xGI",
+};
+const ATTACKING_METRIC_KEYS: Record<
+	AttackingMetric,
+	Record<AttackingMetricColumn, keyof FormPlayer & string>
+> = {
+	xg: {
+		window: "window_xg90",
+		season: "season_xg90",
+		delta: "delta_xg90",
+		value: "window_xg90_per_million",
+	},
+	xa: {
+		window: "window_xa90",
+		season: "season_xa90",
+		delta: "delta_xa90",
+		value: "window_xa90_per_million",
+	},
+	xgi: {
+		window: "window_xgi90",
+		season: "season_xgi90",
+		delta: "delta_xgi90",
+		value: "window_xgi90_per_million",
+	},
+};
+const ATTACKING_METRIC_NOUNS: Record<AttackingMetric, string> = {
+	xg: "goals",
+	xa: "assists",
+	xgi: "goal involvements",
+};
+const ATTACKING_METRIC_STYLES: Record<AttackingMetric, { header: string }> = {
+	xg: {
+		header: "bg-emerald-100/80",
+	},
+	xa: {
+		header: "bg-amber-100/80",
+	},
+	xgi: {
+		header: "bg-indigo-100/80",
+	},
+};
+const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
+	xg: true,
+	xa: false,
+	xgi: true,
+};
 
 // Apply the client-side player and team filters so the chart and table stay
 // in sync from a single source.
@@ -47,9 +107,17 @@ type Range = { min: number; max: number };
 // Metric columns that get heat shading. The range is computed league-wide from
 // an unfiltered query so a player's colour stays fixed as you filter.
 const FORM_HEAT_KEYS = [
+	"window_xg90",
+	"window_xa90",
 	"window_xgi90",
+	"season_xg90",
+	"season_xa90",
 	"season_xgi90",
+	"delta_xg90",
+	"delta_xa90",
 	"delta_xgi90",
+	"window_xg90_per_million",
+	"window_xa90_per_million",
 	"window_xgi90_per_million",
 	"season_points_per_million",
 	"window_start_rate",
@@ -143,8 +211,46 @@ function heatCell<T>(
 	};
 }
 
+function buildFormMetricColumns(
+	ranges: Record<string, Range>,
+	metric: AttackingMetric,
+): ColumnDef<FormPlayer>[] {
+	const label = ATTACKING_METRIC_LABELS[metric];
+	const noun = ATTACKING_METRIC_NOUNS[metric];
+	const styles = ATTACKING_METRIC_STYLES[metric];
+	return (
+		["window", "season", "delta", "value"] satisfies AttackingMetricColumn[]
+	).map((group) => {
+		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
+		const key = ATTACKING_METRIC_KEYS[metric][group];
+		const formatter = group === "delta" ? { format: fmtDelta } : {};
+		const tooltip =
+			group === "window"
+				? `Expected ${noun} per 90 minutes over the recent window`
+				: group === "season"
+					? `Expected ${noun} per 90 minutes, season to date`
+					: group === "delta"
+						? `Window ${label} per 90 minus season ${label} per 90; positive means recent form beats the season baseline`
+						: `Window ${label} per 90 divided by price`;
+		const header =
+			group === "value"
+				? `${label} per 90 per £m`
+				: `${groupLabel} ${label} per 90`;
+		return {
+			accessorKey: key,
+			header,
+			cell: heatCell<FormPlayer>(ranges[key], formatter),
+			meta: {
+				tooltip,
+				headerClassName: styles.header,
+			},
+		} satisfies ColumnDef<FormPlayer>;
+	});
+}
+
 function buildFormColumns(
 	ranges: Record<string, Range>,
+	visibleMetrics: AttackingMetricVisibility,
 ): ColumnDef<FormPlayer>[] {
 	return [
 		{ accessorKey: "web_name", header: "Player" },
@@ -177,38 +283,9 @@ function buildFormColumns(
 			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
 			meta: { tooltip: "Share of window games the player started" },
 		},
-		{
-			accessorKey: "window_xgi90",
-			header: "Window xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.window_xgi90),
-			meta: {
-				tooltip:
-					"Expected goal involvements per 90 minutes over the recent window",
-			},
-		},
-		{
-			accessorKey: "season_xgi90",
-			header: "Season xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.season_xgi90),
-			meta: {
-				tooltip: "Expected goal involvements per 90 minutes, season to date",
-			},
-		},
-		{
-			accessorKey: "delta_xgi90",
-			header: "Delta xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.delta_xgi90, { format: fmtDelta }),
-			meta: {
-				tooltip:
-					"Window xGI per 90 minus season xGI per 90; positive means recent form beats the season baseline",
-			},
-		},
-		{
-			accessorKey: "window_xgi90_per_million",
-			header: "xGI per 90 per £m",
-			cell: heatCell<FormPlayer>(ranges.window_xgi90_per_million),
-			meta: { tooltip: "Window xGI per 90 divided by price" },
-		},
+		...ATTACKING_METRIC_COLUMN_ORDER.filter(
+			(metric) => visibleMetrics[metric],
+		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
 		{
 			accessorKey: "season_points_per_million",
 			header: "Points per £m",
@@ -446,6 +523,18 @@ export default function App() {
 	const [minGames, setMinGames] = useState(5);
 	const [asOfGw, setAsOfGw] = useState<number | null>(null);
 	const [selectedElement, setSelectedElement] = useState<number | null>(null);
+	const [attackingMetrics, setAttackingMetrics] =
+		useState<AttackingMetricVisibility>(DEFAULT_ATTACKING_METRICS);
+
+	function toggleAttackingMetric(metric: AttackingMetric) {
+		setAttackingMetrics((current) => {
+			const enabledCount = Object.values(current).filter(Boolean).length;
+			if (current[metric] && enabledCount === 1) {
+				return current;
+			}
+			return { ...current, [metric]: !current[metric] };
+		});
+	}
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const latestGw = meta.data?.latest_gw ?? 38;
@@ -502,8 +591,11 @@ export default function App() {
 
 	const formColumns = useMemo(
 		() =>
-			buildFormColumns(computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS)),
-		[formBaseline.data],
+			buildFormColumns(
+				computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS),
+				attackingMetrics,
+			),
+		[formBaseline.data, attackingMetrics],
 	);
 	const defconColumns = useMemo(
 		() =>
@@ -552,6 +644,8 @@ export default function App() {
 		playerSearch,
 		teamFilter,
 	);
+	const enabledAttackingMetricCount =
+		Object.values(attackingMetrics).filter(Boolean).length;
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -584,7 +678,7 @@ export default function App() {
 					))}
 				</div>
 
-				<div className="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-white p-4">
+				<div className="mb-4 flex flex-wrap items-start gap-4 rounded-lg border border-zinc-200 bg-white p-4">
 					<label className={labelClass}>
 						Player
 						<input
@@ -659,16 +753,42 @@ export default function App() {
 					)}
 
 					{tab === "form" && (
-						<label className={labelClass}>
-							Min Delta xGI per 90
-							<input
-								type="number"
-								step={0.05}
-								className={`${inputClass} w-24`}
-								value={minDelta}
-								onChange={(e) => setMinDelta(Number(e.target.value))}
-							/>
-						</label>
+						<>
+							<label className={labelClass}>
+								Min Delta xGI per 90
+								<input
+									type="number"
+									step={0.05}
+									className={`${inputClass} w-24`}
+									value={minDelta}
+									onChange={(e) => setMinDelta(Number(e.target.value))}
+								/>
+							</label>
+
+							<div className={labelClass}>
+								<span>Metrics</span>
+								<div className="mt-1 flex h-[34px] items-center gap-4">
+									{ATTACKING_METRICS.map((metric) => (
+										<label
+											key={metric}
+											className="flex items-center gap-1 text-xs text-zinc-900"
+										>
+											<input
+												type="checkbox"
+												className="accent-blue-600"
+												checked={attackingMetrics[metric]}
+												disabled={
+													attackingMetrics[metric] &&
+													enabledAttackingMetricCount === 1
+												}
+												onChange={() => toggleAttackingMetric(metric)}
+											/>
+											{ATTACKING_METRIC_LABELS[metric]}
+										</label>
+									))}
+								</div>
+							</div>
+						</>
 					)}
 
 					{tab === "defcon" && (
@@ -734,6 +854,9 @@ export default function App() {
 				) : tab === "form" ? (
 					<>
 						<FormScatter players={filteredForm} />
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
 						<DataTable
 							data={filteredForm}
 							columns={formColumns}
@@ -741,17 +864,27 @@ export default function App() {
 						/>
 					</>
 				) : tab === "defcon" ? (
-					<DataTable
-						data={filteredDefcon}
-						columns={defconColumns}
-						onRowClick={(row) => setSelectedElement(row.element)}
-					/>
+					<>
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<DataTable
+							data={filteredDefcon}
+							columns={defconColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
+					</>
 				) : (
-					<DataTable
-						data={filteredDefconProb}
-						columns={defconProbColumns}
-						onRowClick={(row) => setSelectedElement(row.element)}
-					/>
+					<>
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<DataTable
+							data={filteredDefconProb}
+							columns={defconProbColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
+					</>
 				)}
 			</div>
 
