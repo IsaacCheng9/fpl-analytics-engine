@@ -120,26 +120,21 @@ def test_form_attaches_upcoming_fixture_difficulty(client: TestClient) -> None:
     assert p1["avg_fdr"] == pytest.approx(2.5)
 
 
-def test_ownership_overlay_only_on_latest_gameweek(client: TestClient) -> None:
+def test_ownership_is_always_current_regardless_of_gameweek(
+    client: TestClient,
+) -> None:
     api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
-        {
-            "id": [1],
-            "selected_by_percent": ["15.5"],
-            "chance_of_playing_next_round": [75],
-        }
+        {"id": [1], "selected_by_percent": ["15.5"]}
     )
 
-    # Latest gameweek (4): the live overlay is populated.
+    # The latest view and a historical view both show the same current snapshot.
     latest = client.get("/players/form", params={"window": 2}).json()
     p1 = next(row for row in latest if row["web_name"] == "P1")
     assert p1["current_ownership"] == pytest.approx(15.5)
-    assert p1["current_chance_of_playing"] == pytest.approx(75.0)
 
-    # Historical view: the overlay would be anachronistic, so it is null.
     historical = client.get("/players/form", params={"window": 2, "as_of_gw": 2}).json()
     p1_past = next(row for row in historical if row["web_name"] == "P1")
-    assert p1_past["current_ownership"] is None
-    assert p1_past["current_chance_of_playing"] is None
+    assert p1_past["current_ownership"] == pytest.approx(15.5)
 
 
 def test_defcon_endpoint_ranks_eligible_and_excludes_keepers(
@@ -188,11 +183,7 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
         }
     )
     api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
-        {
-            "id": [3],
-            "selected_by_percent": ["12.0"],
-            "chance_of_playing_next_round": [100],
-        }
+        {"id": [3], "selected_by_percent": ["12.0"]}
     )
 
     body = client.get("/players/defcon-probability").json()
@@ -201,4 +192,3 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     assert p3["upcoming_fixtures"] == 2
     assert p3["avg_fdr"] == pytest.approx(2.5)
     assert p3["current_ownership"] == pytest.approx(12.0)
-    assert p3["current_chance_of_playing"] == pytest.approx(100.0)

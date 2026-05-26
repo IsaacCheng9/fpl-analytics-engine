@@ -17,19 +17,25 @@ from fpl_analytics_engine.schemas import (
 
 DATA_DIR = Path("data/2025-26")
 DEFAULT_FDR_HORIZON = 5
+AS_OF_GW_DESCRIPTION = (
+    "Evaluate the point-in-time view as of this gameweek (defaults to the "
+    "latest). Current ownership is excluded from this - it is always the "
+    "present-day snapshot and does not change with as_of_gw."
+)
 
 # Fixture difficulty and live-snapshot overlay, attached to every player view.
 FIXTURE_CONTEXT_COLUMNS = [
     "upcoming_fixtures",
     "avg_fdr",
     "current_ownership",
-    "current_chance_of_playing",
 ]
-# Adds point-in-time value efficiency, for the form-derived tables.
+# Adds point-in-time value efficiency and playing time, for the form-derived
+# tables.
 CONTEXT_COLUMNS = [
     "window_xgi90_per_million",
     "season_points_per_million",
     "window_start_rate",
+    "window_mins_per_appearance",
     *FIXTURE_CONTEXT_COLUMNS,
 ]
 # Columns returned by each endpoint, matching the response models in schemas.
@@ -68,13 +74,26 @@ DEFCON_PROBABILITY_COLUMNS = [
     "web_name",
     "position",
     "team_name",
+    "price",
+    "window_minutes",
     "games",
     "hits",
     "raw_rate",
     "prob",
     "prob_std",
-    *FIXTURE_CONTEXT_COLUMNS,
+    *CONTEXT_COLUMNS,
     "as_of_gw",
+]
+# Price and playing-time / value context joined onto the probability table by
+# element, so it matches the DefCon form view.
+PROBABILITY_CONTEXT_COLUMNS = [
+    "element",
+    "price",
+    "window_minutes",
+    "window_xgi90_per_million",
+    "season_points_per_million",
+    "window_start_rate",
+    "window_mins_per_appearance",
 ]
 
 
@@ -127,27 +146,19 @@ def _latest_gw(history: pl.DataFrame) -> int:
     return cast(int, history["round"].max())
 
 
-def _attach_overlay(
-    table: pl.DataFrame, players: pl.DataFrame, gw: int, latest_gw: int
-) -> pl.DataFrame:
-    """Attach current ownership and availability, latest-GW view only.
+def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
+    """Attach current ownership, always the present-day snapshot.
 
-    Ownership and the fitness flag are live-snapshot fields with no per-gameweek
-    history, so attaching them to a historical ``as_of_gw`` would be
-    anachronistic. They are joined only when the view is the latest gameweek;
-    otherwise the columns are present but null to keep a stable schema.
+    Ownership has no per-gameweek history, so it is deliberately not made
+    point-in-time: the same current value is attached regardless of ``as_of_gw``.
     """
-    if gw != latest_gw or players.height == 0:
+    if players.height == 0:
         return table.with_columns(
             pl.lit(None, dtype=pl.Float64).alias("current_ownership"),
-            pl.lit(None, dtype=pl.Float64).alias("current_chance_of_playing"),
         )
     overlay = players.select(
         pl.col("id").alias("element"),
         pl.col("selected_by_percent").cast(pl.Float64).alias("current_ownership"),
-        pl.col("chance_of_playing_next_round")
-        .cast(pl.Float64)
-        .alias("current_chance_of_playing"),
     )
     return table.join(overlay, on="element", how="left")
 
@@ -158,12 +169,11 @@ def _attach_context(
     teams: pl.DataFrame,
     players: pl.DataFrame,
     gw: int,
-    latest_gw: int,
     horizon: int,
 ) -> pl.DataFrame:
-    """Attach fixture difficulty and the live ownership overlay to a table."""
+    """Attach fixture difficulty and the current-ownership overlay to a table."""
     with_fdr = fixtures.attach_team_fdr(table, fixtures_data, teams, gw, horizon)
-    return _attach_overlay(with_fdr, players, gw, latest_gw)
+    return _attach_overlay(with_fdr, players)
 
 
 app = FastAPI(title="FPL Analytics Engine")
@@ -186,7 +196,7 @@ def players_form(
     min_minutes: int = Query(0, ge=0),
     min_delta: float = 0.0,
     top_k: int | None = Query(None, ge=1),
-    as_of_gw: int | None = Query(None, ge=1),
+    as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[FormPlayer]:
     """Rank players by their recent-versus-season xGI90 form swing.
@@ -205,7 +215,7 @@ def players_form(
         top_k=top_k,
     )
     flagged = _attach_context(
-        flagged, fixtures_data, teams, players, gw, latest, fdr_horizon
+        flagged, fixtures_data, teams, players, gw, fdr_horizon
     )
     return [FormPlayer(**row) for row in flagged.select(FORM_COLUMNS).to_dicts()]
 
@@ -221,7 +231,7 @@ def players_defcon(
     min_minutes: int = Query(0, ge=0),
     min_hit_rate: float = Query(0.0, ge=0.0, le=1.0),
     top_k: int | None = Query(None, ge=1),
-    as_of_gw: int | None = Query(None, ge=1),
+    as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[DefconPlayer]:
     """Rank players by their recent DefCon threshold hit-rate.
@@ -240,7 +250,7 @@ def players_defcon(
         top_k=top_k,
     )
     flagged = _attach_context(
-        flagged, fixtures_data, teams, players, gw, latest, fdr_horizon
+        flagged, fixtures_data, teams, players, gw, fdr_horizon
     )
     return [DefconPlayer(**row) for row in flagged.select(DEFCON_COLUMNS).to_dicts()]
 
@@ -255,7 +265,7 @@ def players_defcon_probability(
     min_games: int = Query(0, ge=0),
     min_minutes: int = Query(60, ge=0),
     top_k: int | None = Query(None, ge=1),
-    as_of_gw: int | None = Query(None, ge=1),
+    as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[DefconProbabilityPlayer]:
     """Rank players by their modelled probability of hitting DefCon next GW.
@@ -272,9 +282,13 @@ def players_defcon_probability(
         position=position.value if position is not None else None,
         top_k=top_k,
     )
-    ranked = _attach_context(
-        ranked, fixtures_data, teams, players, gw, latest, fdr_horizon
+    # Join the price and value/playing-time context (over the default window) so
+    # the probability table matches the DefCon form columns.
+    context = form.compute_form_table(history, gw, form.DEFAULT_WINDOW).select(
+        PROBABILITY_CONTEXT_COLUMNS
     )
+    ranked = ranked.join(context, on="element", how="left")
+    ranked = _attach_context(ranked, fixtures_data, teams, players, gw, fdr_horizon)
     return [
         DefconProbabilityPlayer(**row)
         for row in ranked.select(DEFCON_PROBABILITY_COLUMNS).to_dicts()

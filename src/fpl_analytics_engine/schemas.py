@@ -1,27 +1,29 @@
 """Pydantic response models for the API endpoints."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FixtureContext(BaseModel):
-    """Fixture and live-snapshot context shared by every player view.
-
-    ``current_*`` fields are a live snapshot populated only on the latest-
-    gameweek view (null for historical views), keeping the rest point-in-time.
-    """
+    """Fixture and live-snapshot context shared by every player view."""
 
     upcoming_fixtures: int | None
     avg_fdr: float | None
-    current_ownership: float | None
-    current_chance_of_playing: float | None
+    current_ownership: float | None = Field(
+        description=(
+            "Live ownership percentage. Always the present-day snapshot - it is "
+            "not point-in-time and does not change with as_of_gw, because the FPL "
+            "API exposes no historical per-gameweek ownership."
+        ),
+    )
 
 
 class PlayerContext(FixtureContext):
-    """Adds point-in-time value efficiency to the fixture context."""
+    """Adds point-in-time value efficiency and playing time to the context."""
 
     window_xgi90_per_million: float | None
     season_points_per_million: float | None
     window_start_rate: float | None
+    window_mins_per_appearance: float | None
 
 
 class FormPlayer(PlayerContext):
@@ -58,13 +60,19 @@ class DefconPlayer(PlayerContext):
     as_of_gw: int
 
 
-class DefconProbabilityPlayer(FixtureContext):
-    """A player's modelled probability of hitting the DefCon threshold."""
+class DefconProbabilityPlayer(PlayerContext):
+    """A player's modelled probability of hitting the DefCon threshold.
+
+    Carries the same value and playing-time context as the DefCon form view, so
+    the two tables present a consistent set of columns.
+    """
 
     element: int
     web_name: str
     position: str | None
     team_name: str | None
+    price: float | None
+    window_minutes: int | None
     games: int
     hits: int
     raw_rate: float | None

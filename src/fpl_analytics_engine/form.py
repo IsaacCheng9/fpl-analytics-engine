@@ -72,6 +72,9 @@ def compute_form_table(
         pl.col("expected_goals_conceded").sum().alias("window_xgc"),
         pl.col("total_points").sum().alias("window_points"),
         pl.col("starts").sum().alias("window_starts"),
+        # Appearances exclude 0-minute games, so a cameo counts but an unused
+        # substitute does not.
+        (pl.col("minutes") > 0).sum().alias("window_appearances"),
         pl.col("defcon_hit").sum().alias("window_defcon_hits"),
         pl.col("defcon_hit").count().alias("window_defcon_games"),
     )
@@ -130,6 +133,12 @@ def compute_form_table(
             .then(pl.col("window_starts") / pl.col("window_games"))
             .otherwise(None)
             .alias("window_start_rate"),
+            # Average minutes per appearance, point-in-time (0-minute games
+            # excluded from the denominator).
+            pl.when(pl.col("window_appearances") > 0)
+            .then(pl.col("window_minutes") / pl.col("window_appearances"))
+            .otherwise(None)
+            .alias("window_mins_per_appearance"),
             pl.lit(as_of_gw).alias("as_of_gw"),
         )
     )

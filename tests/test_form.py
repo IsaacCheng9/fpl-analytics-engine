@@ -74,6 +74,19 @@ def test_form_table_reports_value_and_start_rate() -> None:
     assert row["window_xgi90_per_million"] == pytest.approx(row["window_xgi90"] / 6.0)
     assert row["season_points_per_million"] == pytest.approx(24 / 6.0)
     assert row["window_start_rate"] == pytest.approx(0.75)
+    # Four appearances (90, 90, 90, 20) average 72.5 minutes each.
+    assert row["window_mins_per_appearance"] == pytest.approx(72.5)
+
+
+def test_window_mins_per_appearance_excludes_blank_games() -> None:
+    rows = [
+        _game(1, 1, minutes=90),
+        _game(1, 2, minutes=0, starts=0),
+        _game(1, 3, minutes=30, starts=0),
+    ]
+    row = _player_row(_frame(rows), as_of_gw=3, window=3, element=1)
+    # The 0-minute game is not an appearance, so the mean is (90 + 30) / 2.
+    assert row["window_mins_per_appearance"] == pytest.approx(60.0)
 
 
 def test_form_table_null_start_rate_without_starts_column() -> None:
