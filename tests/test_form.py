@@ -69,10 +69,7 @@ def test_form_table_is_point_in_time() -> None:
 
 def test_form_table_reports_value_and_start_rate() -> None:
     # Started three of four window games; price closes at 6.0m.
-    rows = [
-        _game(1, r, xg=0.4, xa=0.2, xgi=0.6, points=6, value=60)
-        for r in (1, 2, 3)
-    ]
+    rows = [_game(1, r, xg=0.4, xa=0.2, xgi=0.6, points=6, value=60) for r in (1, 2, 3)]
     rows += [
         _game(
             1,
