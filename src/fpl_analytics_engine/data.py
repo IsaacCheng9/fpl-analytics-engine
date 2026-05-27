@@ -167,9 +167,12 @@ def load_all_seasons(data_root: Path) -> pl.DataFrame:
         The per-gameweek history concatenated across seasons, or an empty frame
         if no seasons are archived.
     """
-    frames = [
-        pl.read_parquet(path) for path in sorted(data_root.glob("*/enriched.parquet"))
-    ]
+    frames = []
+    for path in sorted(data_root.glob("*/enriched.parquet")):
+        frame = pl.read_parquet(path)
+        if "season" not in frame.columns:
+            frame = frame.with_columns(pl.lit(path.parent.name).alias("season"))
+        frames.append(frame)
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="vertical_relaxed")
