@@ -171,6 +171,7 @@ const playerDetail = {
 };
 
 beforeEach(() => {
+	window.history.replaceState(null, "", "/");
 	vi.stubGlobal(
 		"fetch",
 		vi.fn((input: string) => {
@@ -329,4 +330,101 @@ test("clicking a row opens the player detail panel", async () => {
 		name: "2025-26 by Gameweek",
 	}).nextElementSibling as HTMLElement;
 	expect(within(gameweekTable).getByText("11")).toBeInTheDocument();
+});
+
+test("initialises filters and player panel state from the URL", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?tab=defcon-prob&q=Sen&position=DEF&team=Bournemouth&min_games=10&as_of_gw=20&player=1&player_window=6&season=2024-25",
+	);
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Senesi")).toBeInTheDocument();
+	});
+	expect(screen.getByPlaceholderText("e.g. Saka")).toHaveValue("Sen");
+	expect(screen.getByLabelText("Position")).toHaveValue("DEF");
+	expect(screen.getByLabelText("Team")).toHaveValue("Bournemouth");
+	expect(screen.getByLabelText("Min Games")).toHaveValue(10);
+	expect(screen.getByLabelText(/As Of GW/)).toHaveValue("20");
+
+	await waitFor(() => {
+		expect(screen.getByText("Season History")).toBeInTheDocument();
+	});
+	const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+	expect(
+		calls.some((input) =>
+			input.includes("/api/players/1?window=6&season=2024-25"),
+		),
+	).toBe(true);
+});
+
+test("persists filter changes and player panel state to the URL", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByPlaceholderText("e.g. Saka"), {
+		target: { value: "Saka" },
+	});
+	fireEvent.change(screen.getByLabelText("Position"), {
+		target: { value: "MID" },
+	});
+	fireEvent.click(screen.getByLabelText("xA"));
+	fireEvent.click(screen.getByText("DefCon Form"));
+	fireEvent.change(screen.getByLabelText("Min Hit Rate"), {
+		target: { value: "0.4" },
+	});
+	fireEvent.change(screen.getByLabelText(/As Of GW/), {
+		target: { value: "20" },
+	});
+
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("tab")).toBe("defcon");
+		expect(params.get("q")).toBe("Saka");
+		expect(params.get("position")).toBe("MID");
+		expect(params.get("min_hit_rate")).toBe("0.4");
+		expect(params.get("as_of_gw")).toBe("20");
+		expect(params.get("metrics")).toBe("xgi,xg,xa");
+	});
+
+	fireEvent.click(screen.getByText("Attacking Form"));
+	await waitFor(() => {
+		expect(screen.getByText("Saka")).toBeInTheDocument();
+	});
+	fireEvent.click(screen.getByText("Saka"));
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("player")).toBe("2");
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Season History")).toBeInTheDocument();
+	});
+	fireEvent.change(screen.getByLabelText("Rolling Window (Games)"), {
+		target: { value: "6" },
+	});
+	await waitFor(() => {
+		expect(screen.getByLabelText("Season")).toBeInTheDocument();
+	});
+	fireEvent.change(screen.getByLabelText("Season"), {
+		target: { value: "2024-25" },
+	});
+
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("player")).toBe("2");
+		expect(params.get("player_window")).toBe("6");
+		expect(params.get("season")).toBe("2024-25");
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Close" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("player")).toBeNull();
+		expect(params.get("player_window")).toBeNull();
+		expect(params.get("season")).toBeNull();
+	});
 });
