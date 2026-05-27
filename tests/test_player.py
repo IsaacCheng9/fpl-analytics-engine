@@ -80,3 +80,27 @@ def test_season_summaries_aggregate_per_season_with_defcon_gap() -> None:
     # DefCon hit-rate exists only where the data does.
     assert by_season["2024-25"]["defcon_hit_rate"] is None
     assert by_season["2025-26"]["defcon_hit_rate"] == pytest.approx(0.5)
+
+
+def test_season_summaries_scope_2022_23_expected_stats_to_gw16_onward() -> None:
+    rows = [
+        # The 2022-23 archive has no expected stats before GW16. These minutes
+        # still count for season totals, but must not dilute xG/xA/xGI per 90.
+        _row(1, season="2022-23", xg=0.0, xa=0.0, xgi=0.0, points=7),
+        _row(2, season="2022-23", xg=0.0, xa=0.0, xgi=0.0, points=2),
+        _row(16, season="2022-23", xg=0.4, xa=0.2, xgi=0.6, points=5),
+        _row(17, season="2022-23", xg=0.6, xa=0.4, xgi=1.0, points=3),
+        # Later seasons should still use the full season.
+        _row(1, season="2023-24", xg=0.2, xa=0.2, xgi=0.4),
+        _row(2, season="2023-24", xg=0.4, xa=0.2, xgi=0.6),
+    ]
+    summaries = player.season_summaries(_frame(rows))
+    by_season = {row["season"]: row for row in summaries.to_dicts()}
+
+    assert by_season["2022-23"]["games"] == 4
+    assert by_season["2022-23"]["minutes"] == 360
+    assert by_season["2022-23"]["points"] == 17
+    assert by_season["2022-23"]["xg90"] == pytest.approx((1.0 / 180) * 90)
+    assert by_season["2022-23"]["xa90"] == pytest.approx((0.6 / 180) * 90)
+    assert by_season["2022-23"]["xgi90"] == pytest.approx((1.6 / 180) * 90)
+    assert by_season["2023-24"]["xgi90"] == pytest.approx((1.0 / 180) * 90)

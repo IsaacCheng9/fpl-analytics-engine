@@ -14,8 +14,8 @@ import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 
-// Expected stats only cover GW16-38 in the 2022-23 archive, so its season-long
-// figures are diluted by the missing early gameweeks.
+// Expected stats only cover GW16-38 in the 2022-23 archive, so its attacking
+// rates are scoped to that window rather than the full season.
 const PARTIAL_SEASON = "2022-23";
 
 function Chart({
@@ -190,7 +190,7 @@ export function PlayerPanel({
 												{s.season === PARTIAL_SEASON ? (
 													<span
 														className="ml-1 cursor-help text-zinc-400"
-														title="2022-23 expected stats only cover GW16-38, so the season figures are partial."
+														title="2022-23 expected-stat rates use GW16-38 only; games, minutes, and points remain full-season."
 													>
 														*
 													</span>
