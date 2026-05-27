@@ -58,6 +58,29 @@ def test_player_gameweeks_rolls_over_the_window() -> None:
     assert gw3["price"] == pytest.approx(5.0)
 
 
+def test_player_gameweeks_nulls_2022_23_expected_stats_before_gw16() -> None:
+    rows = [
+        _row(14, season="2022-23", xg=0.0, xa=0.0, xgi=0.0),
+        _row(15, season="2022-23", xg=0.0, xa=0.0, xgi=0.0),
+        _row(16, season="2022-23", xg=0.6, xa=0.3, xgi=0.9),
+    ]
+    out = player.player_gameweeks(_frame(rows), window=3).sort("round")
+    by_round = {row["round"]: row for row in out.to_dicts()}
+
+    assert by_round[15]["expected_goals"] is None
+    assert by_round[15]["expected_assists"] is None
+    assert by_round[15]["expected_goal_involvements"] is None
+    assert by_round[15]["rolling_xg90"] is None
+    assert by_round[15]["rolling_xa90"] is None
+    assert by_round[15]["rolling_xgi90"] is None
+    assert by_round[16]["expected_goals"] == pytest.approx(0.6)
+    assert by_round[16]["expected_assists"] == pytest.approx(0.3)
+    assert by_round[16]["expected_goal_involvements"] == pytest.approx(0.9)
+    assert by_round[16]["rolling_xg90"] == pytest.approx((0.6 / 90) * 90)
+    assert by_round[16]["rolling_xa90"] == pytest.approx((0.3 / 90) * 90)
+    assert by_round[16]["rolling_xgi90"] == pytest.approx((0.9 / 90) * 90)
+
+
 def test_season_summaries_aggregate_per_season_with_defcon_gap() -> None:
     rows = [
         # Prior season: no DefCon data (null), partial output.

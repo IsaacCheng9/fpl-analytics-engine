@@ -36,10 +36,29 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
     if "kickoff_time" in season_history.columns:
         sort_columns.append("kickoff_time")
 
+    has_expected_stats = _has_expected_stats()
     return (
         season_history.sort(sort_columns)
         .with_columns(
             (pl.col("value") / 10).alias("price"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goals"))
+            .otherwise(None)
+            .alias("expected_goals"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_assists"))
+            .otherwise(None)
+            .alias("expected_assists"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goal_involvements"))
+            .otherwise(None)
+            .alias("expected_goal_involvements"),
+            pl.when(has_expected_stats)
+            .then(pl.col("minutes"))
+            .otherwise(0)
+            .alias("_expected_minutes"),
+        )
+        .with_columns(
             pl.col("expected_goals")
             .rolling_sum(window, min_samples=1)
             .alias("_rolling_xg"),
@@ -49,7 +68,9 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             pl.col("expected_goal_involvements")
             .rolling_sum(window, min_samples=1)
             .alias("_rolling_xgi"),
-            pl.col("minutes").rolling_sum(window, min_samples=1).alias("_rolling_min"),
+            pl.col("_expected_minutes")
+            .rolling_sum(window, min_samples=1)
+            .alias("_rolling_expected_min"),
             # Mean defensive-contribution count per game - a continuous trend
             # that stays informative below the points threshold, unlike a
             # hit-rate that is flat at 0 for most attacking players.
@@ -59,20 +80,26 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             .alias("rolling_defcon"),
         )
         .with_columns(
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xg") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xg") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xg90"),
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xa") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xa") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xa90"),
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xgi") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xgi") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xgi90"),
         )
-        .drop("_rolling_xg", "_rolling_xa", "_rolling_xgi", "_rolling_min")
+        .drop(
+            "_expected_minutes",
+            "_rolling_xg",
+            "_rolling_xa",
+            "_rolling_xgi",
+            "_rolling_expected_min",
+        )
     )
 
 
