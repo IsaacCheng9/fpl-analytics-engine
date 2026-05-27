@@ -105,8 +105,22 @@ The club form view aggregates player histories into team-level attacking and
 defensive form. Team xG is summed from player xG, while team xGC uses the
 fixture-level concession context carried by players rather than summing every
 player's xGC and multiplying the same chance-concession signal across the XI.
-The view compares recent per-match xG, goals, xGC, and goals conceded against
-each club's season-to-date baseline, then joins the next-five-gameweek FDR.
+The view compares recent per-match xG and xGC against each club's season-to-date
+baseline, then joins the next-five-gameweek FDR. Actual goals and goals conceded
+are available as optional context, but expected data stays the default signal
+because finishing and concession outcomes are noisier.
+
+#### Validation Backtest Results (2025-26 Season)
+
+The validation path backtests that club-form context before it is used as a
+projection input. For each historical as-of gameweek, it trains simple FDR-only
+and FDR-plus-form baselines on earlier club/GW rows, then scores them against
+future club xG and xGC over the same horizon. Positive improvement means the
+club-form signal reduced error versus raw FDR alone. On the 2025-26 archive, FDR
+plus recent attacking club form improved future club xG prediction by 6.3% MAE
+and 3.2% RMSE versus FDR alone. Defensive club form was much weaker, improving
+future xGC prediction by only 0.9% MAE and 0.7% RMSE, so the defensive signal
+should be treated as contextual rather than recommendation grade.
 
 ### Data Availability Caveats
 
@@ -219,6 +233,12 @@ The smoke script uses Saka by default as a known cross-season player, verifies
 stable-code matching, and checks that 2022-23 expected-stat rates are scoped to
 GW16 onward.
 
+Run the opt-in club-form validation against the current-season archive:
+
+```bash
+uv run python scripts/club_form_validation.py
+```
+
 ### Running the API
 
 ```bash
@@ -243,14 +263,15 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ## API Endpoints
 
-| Endpoint                          | Description                                          | Parameters                                                                              |
-| --------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `GET /`                           | Service metadata and the latest gameweek in the data | –                                                                                       |
-| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon`    |
-| `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon`              |
-| `GET /clubs/form`                 | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon`                                            |
-| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | Path: `element`; query: `window`, `season`                                              |
+| Endpoint                          | Description                                           | Parameters                                                                              |
+| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /`                           | Service metadata and the latest gameweek in the data  | –                                                                                       |
+| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing    | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon`    |
+| `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate       | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability     | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon`              |
+| `GET /clubs/form`                 | Clubs ranked by recent-versus-season xG and xGC form  | `window`, `top_k`, `as_of_gw`, `fdr_horizon`                                            |
+| `GET /clubs/form-validation`      | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows`                                               |
+| `GET /players/{element}`          | Player gameweeks and cross-season season summaries    | Path: `element`; query: `window`, `season`                                              |
 
 The four table endpoints accept `as_of_gw` to evaluate the point-in-time view as
 it would have looked after an earlier gameweek; it defaults to the latest
