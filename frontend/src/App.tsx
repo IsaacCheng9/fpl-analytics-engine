@@ -23,6 +23,8 @@ type Tab = "form" | "defcon" | "defconProb" | "clubs";
 type AttackingMetric = "xg" | "xa" | "xgi";
 type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
+type ClubActualMetric = "goals" | "ga";
+type ClubActualMetricVisibility = Record<ClubActualMetric, boolean>;
 
 const TAB_LABELS: Record<Tab, string> = {
 	form: "Attacking Form",
@@ -105,6 +107,15 @@ const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
 	xa: false,
 	xgi: true,
 };
+const CLUB_ACTUAL_METRICS: ClubActualMetric[] = ["goals", "ga"];
+const CLUB_ACTUAL_METRIC_LABELS: Record<ClubActualMetric, string> = {
+	goals: "Goals",
+	ga: "Goals Conceded",
+};
+const DEFAULT_CLUB_ACTUAL_METRICS: ClubActualMetricVisibility = {
+	goals: false,
+	ga: false,
+};
 const TAB_QUERY_VALUES: Record<Tab, string> = {
 	form: "form",
 	defcon: "defcon",
@@ -134,6 +145,7 @@ type UrlState = {
 	playerWindow: number;
 	playerSeason: string | null;
 	attackingMetrics: AttackingMetricVisibility;
+	clubActualMetrics: ClubActualMetricVisibility;
 };
 
 const DEFAULT_URL_STATE: UrlState = {
@@ -151,6 +163,7 @@ const DEFAULT_URL_STATE: UrlState = {
 	playerWindow: DEFAULT_PLAYER_WINDOW,
 	playerSeason: DEFAULT_PLAYER_SEASON,
 	attackingMetrics: DEFAULT_ATTACKING_METRICS,
+	clubActualMetrics: DEFAULT_CLUB_ACTUAL_METRICS,
 };
 
 function isBrowser() {
@@ -223,6 +236,18 @@ function parseAttackingMetrics(
 		: { ...DEFAULT_ATTACKING_METRICS };
 }
 
+function parseClubActualMetrics(
+	value: string | null,
+): ClubActualMetricVisibility {
+	if (value === null) {
+		return { ...DEFAULT_CLUB_ACTUAL_METRICS };
+	}
+	const visible = new Set(value.split(","));
+	return Object.fromEntries(
+		CLUB_ACTUAL_METRICS.map((metric) => [metric, visible.has(metric)]),
+	) as ClubActualMetricVisibility;
+}
+
 function readUrlState(): UrlState {
 	if (!isBrowser()) {
 		return { ...DEFAULT_URL_STATE };
@@ -256,12 +281,21 @@ function readUrlState(): UrlState {
 		),
 		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
 		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
+		clubActualMetrics: parseClubActualMetrics(params.get("club_actuals")),
 	};
 }
 
 function metricsMatchDefault(metrics: AttackingMetricVisibility): boolean {
 	return ATTACKING_METRICS.every(
 		(metric) => metrics[metric] === DEFAULT_ATTACKING_METRICS[metric],
+	);
+}
+
+function clubActualMetricsMatchDefault(
+	metrics: ClubActualMetricVisibility,
+): boolean {
+	return CLUB_ACTUAL_METRICS.every(
+		(metric) => metrics[metric] === DEFAULT_CLUB_ACTUAL_METRICS[metric],
 	);
 }
 
@@ -310,6 +344,14 @@ function writeUrlState(state: UrlState) {
 			ATTACKING_METRICS.filter((metric) => state.attackingMetrics[metric]).join(
 				",",
 			),
+		);
+	}
+	if (!clubActualMetricsMatchDefault(state.clubActualMetrics)) {
+		params.set(
+			"club_actuals",
+			CLUB_ACTUAL_METRICS.filter(
+				(metric) => state.clubActualMetrics[metric],
+			).join(","),
 		);
 	}
 	if (
@@ -828,6 +870,7 @@ function buildDefconProbColumns(
 
 function buildClubColumns(
 	ranges: Record<string, Range>,
+	visibleActualMetrics: ClubActualMetricVisibility,
 ): ColumnDef<ClubForm>[] {
 	return [
 		{ accessorKey: "team_name", header: "Club" },
@@ -862,21 +905,33 @@ function buildClubColumns(
 					"Window xG per match minus season xG per match; positive means the attack is creating more",
 			},
 		},
+		...(visibleActualMetrics.goals
+			? [
+					{
+						accessorKey: "window_goals_for_per_match",
+						header: "Window Goals",
+						cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
+						meta: { tooltip: "Goals scored per match over the recent window" },
+					},
+					{
+						accessorKey: "delta_goals_for_per_match",
+						header: "Delta Goals",
+						cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
+							format: fmtDelta,
+						}),
+						meta: {
+							tooltip:
+								"Window goals per match minus season goals per match; useful context for finishing variance",
+						},
+					},
+				]
+			: []),
 		{
-			accessorKey: "window_goals_for_per_match",
-			header: "Window Goals",
-			cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
-			meta: { tooltip: "Goals scored per match over the recent window" },
-		},
-		{
-			accessorKey: "delta_goals_for_per_match",
-			header: "Delta Goals",
-			cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
-				format: fmtDelta,
-			}),
+			accessorKey: "attack_form",
+			header: "Attack Form",
+			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
 			meta: {
-				tooltip:
-					"Window goals per match minus season goals per match; useful context for finishing variance",
+				tooltip: "Recent xG per match improvement versus the season baseline",
 			},
 		},
 		{
@@ -909,36 +964,32 @@ function buildClubColumns(
 					"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
 			},
 		},
-		{
-			accessorKey: "window_goals_against_per_match",
-			header: "Window GA",
-			cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
-				lowerIsBetter: true,
-			}),
-			meta: {
-				tooltip: "Goals conceded per match over the recent window",
-			},
-		},
-		{
-			accessorKey: "delta_goals_against_per_match",
-			header: "Delta GA",
-			cell: heatCell<ClubForm>(ranges.delta_goals_against_per_match, {
-				lowerIsBetter: true,
-				format: fmtDelta,
-			}),
-			meta: {
-				tooltip:
-					"Window goals conceded per match minus season goals conceded per match",
-			},
-		},
-		{
-			accessorKey: "attack_form",
-			header: "Attack Form",
-			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
-			meta: {
-				tooltip: "Recent xG per match improvement versus the season baseline",
-			},
-		},
+		...(visibleActualMetrics.ga
+			? [
+					{
+						accessorKey: "window_goals_against_per_match",
+						header: "Window Goals Conceded",
+						cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
+							lowerIsBetter: true,
+						}),
+						meta: {
+							tooltip: "Goals conceded per match over the recent window",
+						},
+					},
+					{
+						accessorKey: "delta_goals_against_per_match",
+						header: "Delta Goals Conceded",
+						cell: heatCell<ClubForm>(ranges.delta_goals_against_per_match, {
+							lowerIsBetter: true,
+							format: fmtDelta,
+						}),
+						meta: {
+							tooltip:
+								"Window goals conceded per match minus season goals conceded per match",
+						},
+					},
+				]
+			: []),
 		{
 			accessorKey: "defence_form",
 			header: "Defence Form",
@@ -1008,6 +1059,8 @@ export default function App() {
 	);
 	const [attackingMetrics, setAttackingMetrics] =
 		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
+	const [clubActualMetrics, setClubActualMetrics] =
+		useState<ClubActualMetricVisibility>(initialUrlState.clubActualMetrics);
 
 	useEffect(() => {
 		function applyCurrentUrlState() {
@@ -1026,6 +1079,7 @@ export default function App() {
 			setPlayerWindow(next.playerWindow);
 			setPlayerSeason(next.playerSeason);
 			setAttackingMetrics(next.attackingMetrics);
+			setClubActualMetrics(next.clubActualMetrics);
 		}
 
 		window.addEventListener("popstate", applyCurrentUrlState);
@@ -1048,6 +1102,7 @@ export default function App() {
 			playerWindow,
 			playerSeason,
 			attackingMetrics,
+			clubActualMetrics,
 		});
 	}, [
 		tab,
@@ -1064,6 +1119,7 @@ export default function App() {
 		playerWindow,
 		playerSeason,
 		attackingMetrics,
+		clubActualMetrics,
 	]);
 
 	function toggleAttackingMetric(metric: AttackingMetric) {
@@ -1074,6 +1130,13 @@ export default function App() {
 			}
 			return { ...current, [metric]: !current[metric] };
 		});
+	}
+
+	function toggleClubActualMetric(metric: ClubActualMetric) {
+		setClubActualMetrics((current) => ({
+			...current,
+			[metric]: !current[metric],
+		}));
 	}
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
@@ -1200,8 +1263,11 @@ export default function App() {
 	);
 	const clubColumns = useMemo(
 		() =>
-			buildClubColumns(computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS)),
-		[clubBaseline.data],
+			buildClubColumns(
+				computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS),
+				clubActualMetrics,
+			),
+		[clubBaseline.data, clubActualMetrics],
 	);
 
 	const active =
@@ -1326,6 +1392,28 @@ export default function App() {
 								))}
 							</select>
 						</label>
+
+						{tab === "clubs" && (
+							<div className={labelClass}>
+								<span>Actual Metrics (Non-Expected)</span>
+								<div className="mt-1 flex h-[34px] items-center gap-4">
+									{CLUB_ACTUAL_METRICS.map((metric) => (
+										<label
+											key={metric}
+											className="flex items-center gap-1 text-xs text-zinc-900"
+										>
+											<input
+												type="checkbox"
+												className="accent-blue-600"
+												checked={clubActualMetrics[metric]}
+												onChange={() => toggleClubActualMetric(metric)}
+											/>
+											{CLUB_ACTUAL_METRIC_LABELS[metric]}
+										</label>
+									))}
+								</div>
+							</div>
+						)}
 
 						{tab !== "defconProb" && tab !== "clubs" && (
 							<label className={labelClass}>

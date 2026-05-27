@@ -376,6 +376,10 @@ test("renders the Club Form tab with team-level context", async () => {
 	expect(screen.getByText("Delta xGC")).toBeInTheDocument();
 	expect(screen.getByText("Defence Form")).toBeInTheDocument();
 	expect(screen.getByText("FDR (Next 5)")).toBeInTheDocument();
+	expect(screen.queryByText("Window Goals")).not.toBeInTheDocument();
+	expect(screen.queryByText("Delta Goals")).not.toBeInTheDocument();
+	expect(screen.queryByText("Window Goals Conceded")).not.toBeInTheDocument();
+	expect(screen.queryByText("Delta Goals Conceded")).not.toBeInTheDocument();
 
 	fireEvent.change(screen.getByLabelText("Team"), {
 		target: { value: "Chelsea" },
@@ -383,6 +387,29 @@ test("renders the Club Form tab with team-level context", async () => {
 	await waitFor(() => {
 		expect(screen.getAllByText("Chelsea").length).toBeGreaterThan(0);
 	});
+});
+
+test("shows club actual goal columns only when toggled on", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(screen.getByText("Club Form"));
+
+	await waitFor(() => {
+		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
+	});
+
+	const goalsToggle = screen.getByLabelText("Goals");
+	const goalsConcededToggle = screen.getByLabelText("Goals Conceded");
+	expect(goalsToggle).not.toBeChecked();
+	expect(goalsConcededToggle).not.toBeChecked();
+
+	fireEvent.click(goalsToggle);
+	expect(screen.getByText("Window Goals")).toBeInTheDocument();
+	expect(screen.getByText("Delta Goals")).toBeInTheDocument();
+	expect(screen.queryByText("Window Goals Conceded")).not.toBeInTheDocument();
+
+	fireEvent.click(goalsConcededToggle);
+	expect(screen.getByText("Window Goals Conceded")).toBeInTheDocument();
+	expect(screen.getByText("Delta Goals Conceded")).toBeInTheDocument();
 });
 
 test("clicking a row opens the player detail panel", async () => {
