@@ -161,7 +161,7 @@ export function PlayerPanel({
 							<Chart
 								data={detail.gameweeks}
 								dataKey="rolling_defcon"
-								title="Rolling DefCon (Mean per Game)"
+								title="Rolling DefCon (Mean Per Game)"
 							/>
 						</div>
 
@@ -178,7 +178,7 @@ export function PlayerPanel({
 										<th className="px-3 py-2 font-medium">xA/90</th>
 										<th className="px-3 py-2 font-medium">xGI/90</th>
 										<th className="px-3 py-2 font-medium">Points</th>
-										<th className="px-3 py-2 font-medium">Points per £m</th>
+										<th className="px-3 py-2 font-medium">Points Per £m</th>
 										<th className="px-3 py-2 font-medium">DefCon Hit Rate</th>
 									</tr>
 								</thead>

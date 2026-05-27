@@ -62,7 +62,7 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 	return (
 		<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
 			<h2 className="mb-3 font-medium text-sm text-zinc-700">
-				Recent vs season xGI per 90 (points above the line are improving)
+				Recent Vs Season xGI Per 90 (Points Above the Line Are Improving)
 			</h2>
 			<ResponsiveContainer width="100%" height={320} debounce={50}>
 				<ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>

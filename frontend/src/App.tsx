@@ -245,8 +245,8 @@ function buildFormMetricColumns(
 						: `Window ${label} per 90 divided by price`;
 		const header =
 			group === "value"
-				? `${label} per 90 per £m`
-				: `${groupLabel} ${label} per 90`;
+				? `${label} Per 90 Per £m`
+				: `${groupLabel} ${label} Per 90`;
 		return {
 			accessorKey: key,
 			header,
@@ -279,7 +279,7 @@ function buildFormColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
@@ -299,7 +299,7 @@ function buildFormColumns(
 		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
 		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
@@ -351,7 +351,7 @@ function buildDefconColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
@@ -405,7 +405,7 @@ function buildDefconColumns(
 		},
 		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
@@ -457,7 +457,7 @@ function buildDefconProbColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<DefconProbabilityPlayer>(
 				ranges.window_mins_per_appearance,
 				{ format: (v) => fmtNum(v, 0) },
@@ -529,7 +529,7 @@ function buildDefconProbColumns(
 		},
 		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<DefconProbabilityPlayer>(
 				ranges.season_points_per_million,
 				{ format: (v) => fmtNum(v, 1) },
@@ -842,7 +842,7 @@ export default function App() {
 						{tab === "form" && (
 							<>
 								<label className={labelClass}>
-									Min Delta xGI per 90
+									Min Delta xGI Per 90
 									<input
 										type="number"
 										step={0.05}

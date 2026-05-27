@@ -257,24 +257,24 @@ test("toggles attacking form metric columns", async () => {
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
 
-	expect(screen.getByText("Window xG per 90")).toBeInTheDocument();
-	expect(screen.queryByText("Window xA per 90")).not.toBeInTheDocument();
-	expect(screen.getByText("Window xGI per 90")).toBeInTheDocument();
-	expect(screen.getByText("Season xG per 90")).toBeInTheDocument();
-	expect(screen.getByText("Season xGI per 90")).toBeInTheDocument();
-	expect(screen.getByText("Delta xG per 90")).toBeInTheDocument();
-	expect(screen.getByText("Delta xGI per 90")).toBeInTheDocument();
-	expect(screen.getByText("xG per 90 per £m")).toBeInTheDocument();
-	expect(screen.getByText("xGI per 90 per £m")).toBeInTheDocument();
+	expect(screen.getByText("Window xG Per 90")).toBeInTheDocument();
+	expect(screen.queryByText("Window xA Per 90")).not.toBeInTheDocument();
+	expect(screen.getByText("Window xGI Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Season xG Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Season xGI Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xG Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xGI Per 90")).toBeInTheDocument();
+	expect(screen.getByText("xG Per 90 Per £m")).toBeInTheDocument();
+	expect(screen.getByText("xGI Per 90 Per £m")).toBeInTheDocument();
 
 	fireEvent.click(screen.getByLabelText("xA"));
 
 	await waitFor(() => {
-		expect(screen.getByText("Window xA per 90")).toBeInTheDocument();
+		expect(screen.getByText("Window xA Per 90")).toBeInTheDocument();
 	});
-	expect(screen.getByText("Season xA per 90")).toBeInTheDocument();
-	expect(screen.getByText("Delta xA per 90")).toBeInTheDocument();
-	expect(screen.getByText("xA per 90 per £m")).toBeInTheDocument();
+	expect(screen.getByText("Season xA Per 90")).toBeInTheDocument();
+	expect(screen.getByText("Delta xA Per 90")).toBeInTheDocument();
+	expect(screen.getByText("xA Per 90 Per £m")).toBeInTheDocument();
 
 	const headers = screen
 		.getAllByRole("columnheader")
@@ -285,20 +285,20 @@ test("toggles attacking form metric columns", async () => {
 		.getAllByRole("checkbox")
 		.map((checkbox) => checkbox.parentElement?.textContent ?? "");
 	expect(metricLabels).toEqual(["xGI", "xG", "xA"]);
-	expect(headerIndex("Window xGI per 90")).toBeLessThan(
-		headerIndex("Season xGI per 90"),
+	expect(headerIndex("Window xGI Per 90")).toBeLessThan(
+		headerIndex("Season xGI Per 90"),
 	);
-	expect(headerIndex("Season xGI per 90")).toBeLessThan(
-		headerIndex("Delta xGI per 90"),
+	expect(headerIndex("Season xGI Per 90")).toBeLessThan(
+		headerIndex("Delta xGI Per 90"),
 	);
-	expect(headerIndex("Delta xGI per 90")).toBeLessThan(
-		headerIndex("xGI per 90 per £m"),
+	expect(headerIndex("Delta xGI Per 90")).toBeLessThan(
+		headerIndex("xGI Per 90 Per £m"),
 	);
-	expect(headerIndex("xGI per 90 per £m")).toBeLessThan(
-		headerIndex("Window xG per 90"),
+	expect(headerIndex("xGI Per 90 Per £m")).toBeLessThan(
+		headerIndex("Window xG Per 90"),
 	);
-	expect(headerIndex("xG per 90 per £m")).toBeLessThan(
-		headerIndex("Window xA per 90"),
+	expect(headerIndex("xG Per 90 Per £m")).toBeLessThan(
+		headerIndex("Window xA Per 90"),
 	);
 });
 
