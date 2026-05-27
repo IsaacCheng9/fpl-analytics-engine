@@ -528,8 +528,18 @@ function buildDefconProbColumns(
 }
 
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
-const inputClass =
-	"mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
+const fieldClass =
+	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
+// Most controls sit below a label, so the shared input class adds the gap.
+const inputClass = `mt-1 ${fieldClass}`;
+
+// Keep the window within bounds and tolerate an empty/NaN number input.
+function clampWindowSize(value: number): number {
+	if (!Number.isFinite(value)) {
+		return WINDOW_MIN;
+	}
+	return Math.min(Math.max(value, WINDOW_MIN), WINDOW_MAX);
+}
 
 export default function App() {
 	const [tab, setTab] = useState<Tab>("form");
@@ -859,16 +869,8 @@ export default function App() {
 
 						{tab !== "defconProb" && (
 							<label htmlFor="window-size" className={labelClass}>
-								<span className="flex items-baseline gap-1">
-									Window
-									<span className="font-semibold text-zinc-900">
-										{windowSize}
-									</span>
-									<span className="font-normal text-zinc-400">
-										{windowSize === 1 ? "game" : "games"}
-									</span>
-								</span>
-								<span className="mt-1 flex h-[34px] items-center">
+								Window (Games)
+								<span className="mt-1 flex items-center gap-2">
 									<input
 										id="window-size"
 										type="range"
@@ -876,11 +878,25 @@ export default function App() {
 										max={WINDOW_MAX}
 										step={1}
 										value={windowSize}
-										onChange={(e) => setWindowSize(Number(e.target.value))}
-										className="range-slider w-40"
+										onChange={(e) =>
+											setWindowSize(clampWindowSize(Number(e.target.value)))
+										}
+										className="range-slider w-32"
 										style={{
 											background: `linear-gradient(to right, #18181b 0%, #18181b ${windowFillPct}%, #e4e4e7 ${windowFillPct}%, #e4e4e7 100%)`,
 										}}
+									/>
+									<input
+										type="number"
+										min={WINDOW_MIN}
+										max={WINDOW_MAX}
+										step={1}
+										aria-label="Window size in games"
+										className={`${fieldClass} w-14`}
+										value={windowSize}
+										onChange={(e) =>
+											setWindowSize(clampWindowSize(Number(e.target.value)))
+										}
 									/>
 								</span>
 							</label>
