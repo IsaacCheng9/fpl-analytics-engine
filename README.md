@@ -37,8 +37,9 @@ against what actually happened next.
   DefCon-probability views, plus a player-detail endpoint for selected-season
   gameweek detail and cross-season summaries
 - **Interactive web dashboard** – a React single-page app with sortable,
-  filterable tables across three views (Attacking Form, DefCon Form, DefCon
-  Probability), plus a form-versus-baseline scatter plot in Attacking Form
+  filterable tables across four views (Attacking Form, DefCon Form, DefCon
+  Probability, Club Form), plus a form-versus-baseline scatter plot in Attacking
+  Form
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
@@ -133,6 +134,9 @@ should be treated as contextual rather than recommendation grade.
   2022-23 form comparisons to GW16 onward
 - Cross-season player matching uses stable FPL `code`; historical `element` ids
   are season-local and are not safe for matching the same player across seasons
+- Curated Parquet snapshots under `data/` are committed for reproducible
+  deployment and personal/non-commercial use; they are sourced from the public
+  FPL API and public community archives
 
 ## Architecture
 
@@ -173,7 +177,7 @@ flowchart TD
 
 ## Data
 
-The engine reads from local Parquet snapshots under `data/` (gitignored):
+The engine reads from committed Parquet snapshots under `data/`:
 
 - **Live archive** – `archive.py` snapshots the current season from the FPL API
   (`bootstrap-static` and per-player `element-summary`) before the API rolls
@@ -211,13 +215,12 @@ Download and adapt the vaastav archive into `data/<season>/enriched.parquet`:
 uv run python -m fpl_analytics_engine.backfill
 ```
 
-Run this after a fresh checkout before using the player detail view; `data/` is
-gitignored, and the detail endpoint needs every archived season's
-`enriched.parquet` to include the stable `code` column.
+The committed snapshots make the dashboard usable immediately after checkout;
+rerun the archive/backfill commands when refreshing the data.
 
 ### Validating Local Data
 
-Check that the gitignored Parquet snapshots are present and internally usable:
+Check that the committed Parquet snapshots are present and internally usable:
 
 ```bash
 uv run python -m fpl_analytics_engine.data_health
@@ -260,6 +263,22 @@ bun run dev
 ```
 
 The dashboard is then served at [http://localhost:5173](http://localhost:5173).
+
+### Deploying To Vercel
+
+The repository includes a Vercel configuration for a single-project deployment:
+
+- `frontend/` builds the static React dashboard
+- `api/index.py` exposes the FastAPI app as a Python ASGI function mounted under
+  `/api`
+- `vercel.json` routes `/api/*` to the Python function and all other paths to
+  the Vite single-page app
+- `data/` is included in the Python function bundle so the deployed API can
+  read the same Parquet snapshots as local development
+
+In Vercel, import the repository with the project root set to the repository
+root. The checked-in `vercel.json` supplies the install command, build command,
+output directory, API routing, and data-file inclusion.
 
 ## API Endpoints
 

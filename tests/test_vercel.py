@@ -1,0 +1,55 @@
+"""Tests for the Vercel deployment entrypoint."""
+
+import importlib.util
+from collections.abc import Iterator
+from pathlib import Path
+
+import polars as pl
+import pytest
+from fastapi.testclient import TestClient
+
+from fpl_analytics_engine import api as backend_api
+
+SPEC = importlib.util.spec_from_file_location(
+    "vercel_entrypoint", Path("api") / "index.py"
+)
+assert SPEC is not None
+assert SPEC.loader is not None
+vercel_entrypoint = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(vercel_entrypoint)
+
+
+def _history() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "element": [1],
+            "round": [1],
+            "kickoff_time": ["2025-08-01T15:00:00Z"],
+            "minutes": [90],
+            "total_points": [5],
+            "value": [50],
+            "expected_goals": [0.1],
+            "expected_assists": [0.2],
+            "expected_goal_involvements": [0.3],
+            "expected_goals_conceded": [1.0],
+            "web_name": ["Saka"],
+            "position": ["MID"],
+            "team_name": ["Arsenal"],
+            "defcon_hit": [False],
+        },
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    backend_api.app.dependency_overrides[backend_api.get_history] = _history
+    yield TestClient(vercel_entrypoint.app)
+    backend_api.app.dependency_overrides.clear()
+
+
+def test_vercel_entrypoint_mounts_api_prefix(client: TestClient) -> None:
+    response = client.get("/api/")
+
+    assert response.status_code == 200
+    assert response.json()["latest_gw"] == 1

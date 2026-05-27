@@ -206,5 +206,15 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Archived FPL data snapshots
-data/
+# Commit only the curated runtime Parquet snapshots needed by the public
+# deployment; keep raw/source dumps and local experiments ignored.
+data/**
+!data/
+!data/2022-23/
+!data/2022-23/enriched.parquet
+!data/2023-24/
+!data/2023-24/enriched.parquet
+!data/2024-25/
+!data/2024-25/enriched.parquet
+!data/2025-26/
+!data/2025-26/*.parquet
