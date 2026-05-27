@@ -42,6 +42,8 @@ against what actually happened next.
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
+- **Club form context** – compares each club's recent attacking and defensive
+  output with its season baseline, then shows that form next to upcoming FDR
 
 ### Planned Features
 
@@ -96,6 +98,15 @@ backtest – Brier score for sharpness and a calibration table to check that
 predicted probabilities match observed frequencies. The UI also surfaces average
 defensive-contribution counts, which show whether a player is trending near the
 threshold even when their binary hit-rate is flat.
+
+### Club Form
+
+The club form view aggregates player histories into team-level attacking and
+defensive form. Team xG is summed from player xG, while team xGC uses the
+fixture-level concession context carried by players rather than summing every
+player's xGC and multiplying the same chance-concession signal across the XI.
+The view compares recent per-match xG, goals, xGC, and goals conceded against
+each club's season-to-date baseline, then joins the next-five-gameweek FDR.
 
 ### Data Availability Caveats
 
@@ -238,10 +249,11 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 | `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon`    |
 | `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon`              |
+| `GET /clubs/form`                 | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon`                                            |
 | `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | Path: `element`; query: `window`, `season`                                              |
 
-The three table endpoints accept `as_of_gw` to evaluate the point-in-time view
-as it would have looked after an earlier gameweek; it defaults to the latest
+The four table endpoints accept `as_of_gw` to evaluate the point-in-time view as
+it would have looked after an earlier gameweek; it defaults to the latest
 gameweek in the data. Current ownership is deliberately not point-in-time,
 because the FPL API exposes only the live ownership snapshot. The player-detail
 endpoint is keyed by the current-season `element` id, tracks the player across
