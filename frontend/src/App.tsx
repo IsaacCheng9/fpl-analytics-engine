@@ -124,15 +124,18 @@ const FORM_HEAT_KEYS = [
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 const DEFCON_HEAT_KEYS = [
 	"window_games",
 	"window_defcon_hits",
 	"window_defcon_hit_rate",
+	"window_defcon",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 const DEFCON_PROB_HEAT_KEYS = [
 	"games",
@@ -140,10 +143,12 @@ const DEFCON_PROB_HEAT_KEYS = [
 	"raw_rate",
 	"prob",
 	"prob_std",
+	"window_defcon",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 
 // Min/max per metric across the supplied (league-wide) rows.
@@ -315,7 +320,10 @@ function buildFormColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<FormPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",
@@ -385,6 +393,17 @@ function buildDefconColumns(
 			meta: { tooltip: "Share of window games clearing the DefCon threshold" },
 		},
 		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average defensive-contribution count per game over the window",
+			},
+		},
+		{
 			accessorKey: "season_points_per_million",
 			header: "Points per £m",
 			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
@@ -407,7 +426,10 @@ function buildDefconColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<DefconPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",
@@ -495,6 +517,17 @@ function buildDefconProbColumns(
 			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
 		},
 		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.window_defcon, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average defensive-contribution count per game over the recent window",
+			},
+		},
+		{
 			accessorKey: "season_points_per_million",
 			header: "Points per £m",
 			cell: heatCell<DefconProbabilityPlayer>(
@@ -518,7 +551,10 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<DefconProbabilityPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",

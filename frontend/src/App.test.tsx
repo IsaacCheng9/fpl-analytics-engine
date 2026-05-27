@@ -141,7 +141,7 @@ const playerDetail = {
 			rolling_xg90: 0.5,
 			rolling_xa90: 0.4,
 			rolling_xgi90: 0.9,
-			rolling_defcon_hit_rate: 0.2,
+			rolling_defcon: 1.5,
 		},
 	],
 	seasons: [

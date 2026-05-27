@@ -56,6 +56,7 @@ export interface DefconPlayer extends PlayerContext {
 	window_defcon_hits: number | null;
 	window_defcon_games: number | null;
 	window_defcon_hit_rate: number | null;
+	window_defcon: number | null;
 	as_of_gw: number;
 }
 
@@ -66,6 +67,7 @@ export interface DefconProbabilityPlayer extends PlayerContext {
 	team_name: string | null;
 	price: number | null;
 	window_minutes: number | null;
+	window_defcon: number | null;
 	games: number;
 	hits: number;
 	raw_rate: number | null;
@@ -88,7 +90,7 @@ export interface PlayerGameweek {
 	rolling_xg90: number | null;
 	rolling_xa90: number | null;
 	rolling_xgi90: number | null;
-	rolling_defcon_hit_rate: number | null;
+	rolling_defcon: number | null;
 }
 
 export interface PlayerSeasonSummary {

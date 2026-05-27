@@ -156,9 +156,8 @@ export function PlayerPanel({
 							/>
 							<Chart
 								data={detail.gameweeks}
-								dataKey="rolling_defcon_hit_rate"
-								title="Rolling DefCon Hit Rate"
-								domain={[0, 1]}
+								dataKey="rolling_defcon"
+								title="Rolling DefCon (Mean per Game)"
 							/>
 						</div>
 

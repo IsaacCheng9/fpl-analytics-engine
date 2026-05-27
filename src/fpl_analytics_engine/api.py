@@ -77,6 +77,7 @@ DEFCON_COLUMNS = [
     "window_defcon_hits",
     "window_defcon_games",
     "window_defcon_hit_rate",
+    "window_defcon",
     *CONTEXT_COLUMNS,
     "as_of_gw",
 ]
@@ -87,6 +88,7 @@ DEFCON_PROBABILITY_COLUMNS = [
     "team_name",
     "price",
     "window_minutes",
+    "window_defcon",
     "games",
     "hits",
     "raw_rate",
@@ -101,6 +103,7 @@ PROBABILITY_CONTEXT_COLUMNS = [
     "element",
     "price",
     "window_minutes",
+    "window_defcon",
     "window_xgi90_per_million",
     "season_points_per_million",
     "window_start_rate",

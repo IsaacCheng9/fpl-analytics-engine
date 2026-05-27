@@ -20,8 +20,8 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
 
     Returns:
         The rows sorted by gameweek, with a ``price`` column, rolling expected
-        attacking output per 90, and rolling DefCon hit-rate over the trailing
-        ``window`` games.
+        attacking output per 90, and the rolling mean defensive-contribution
+        count over the trailing ``window`` games.
     """
     sort_columns = ["round"]
     if "kickoff_time" in season_history.columns:
@@ -41,10 +41,13 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             .rolling_sum(window, min_samples=1)
             .alias("_rolling_xgi"),
             pl.col("minutes").rolling_sum(window, min_samples=1).alias("_rolling_min"),
-            pl.col("defcon_hit")
+            # Mean defensive-contribution count per game - a continuous trend
+            # that stays informative below the points threshold, unlike a
+            # hit-rate that is flat at 0 for most attacking players.
+            pl.col("defensive_contribution")
             .cast(pl.Float64)
             .rolling_mean(window, min_samples=1)
-            .alias("rolling_defcon_hit_rate"),
+            .alias("rolling_defcon"),
         )
         .with_columns(
             pl.when(pl.col("_rolling_min") > 0)

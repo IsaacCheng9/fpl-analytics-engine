@@ -18,6 +18,7 @@ def _row(
     points: int = 2,
     value: int = 50,
     defcon_hit: bool | None = None,
+    defcon: int | None = None,
 ) -> dict:
     return {
         "code": code,
@@ -30,6 +31,7 @@ def _row(
         "expected_assists": xgi / 2 if xa is None else xa,
         "expected_goal_involvements": xgi,
         "defcon_hit": defcon_hit,
+        "defensive_contribution": defcon,
     }
 
 
@@ -39,9 +41,9 @@ def _frame(rows: list[dict]) -> pl.DataFrame:
 
 def test_player_gameweeks_rolls_over_the_window() -> None:
     rows = [
-        _row(1, xgi=0.2, defcon_hit=True),
-        _row(2, xgi=0.4, defcon_hit=False),
-        _row(3, xgi=0.6, defcon_hit=True),
+        _row(1, xgi=0.2, defcon=10),
+        _row(2, xgi=0.4, defcon=4),
+        _row(3, xgi=0.6, defcon=8),
     ]
     out = player.player_gameweeks(_frame(rows), window=2).sort("round")
     gw3 = out.row(-1, named=True)
@@ -50,8 +52,8 @@ def test_player_gameweeks_rolls_over_the_window() -> None:
     assert gw3["rolling_xgi90"] == pytest.approx((1.0 / 180) * 90)
     assert gw3["rolling_xg90"] == pytest.approx((0.5 / 180) * 90)
     assert gw3["rolling_xa90"] == pytest.approx((0.5 / 180) * 90)
-    # DefCon hit-rate over GW2-3: one hit in two games.
-    assert gw3["rolling_defcon_hit_rate"] == pytest.approx(0.5)
+    # Mean defensive contribution over GW2-3: (4 + 8) / 2.
+    assert gw3["rolling_defcon"] == pytest.approx(6.0)
     # Price is value in tenths of a million.
     assert gw3["price"] == pytest.approx(5.0)
 

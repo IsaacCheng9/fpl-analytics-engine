@@ -63,6 +63,7 @@ class DefconPlayer(PlayerContext):
     window_defcon_hits: int | None
     window_defcon_games: int | None
     window_defcon_hit_rate: float | None
+    window_defcon: float | None
     as_of_gw: int
 
 
@@ -82,7 +83,7 @@ class PlayerGameweek(BaseModel):
     rolling_xg90: float | None
     rolling_xa90: float | None
     rolling_xgi90: float | None
-    rolling_defcon_hit_rate: float | None
+    rolling_defcon: float | None
 
 
 class PlayerSeasonSummary(BaseModel):
@@ -130,6 +131,7 @@ class DefconProbabilityPlayer(PlayerContext):
     team_name: str | None
     price: float | None
     window_minutes: int | None
+    window_defcon: float | None
     games: int
     hits: int
     raw_rate: float | None
