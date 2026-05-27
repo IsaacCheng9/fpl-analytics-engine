@@ -37,8 +37,8 @@ against what actually happened next.
   DefCon-probability views, plus a player-detail endpoint for selected-season
   gameweek detail and cross-season summaries
 - **Interactive web dashboard** – a React single-page app with sortable,
-  filterable tables and a form-versus-baseline scatter plot across three views
-  (Attacking Form, DefCon Form, DefCon Probability)
+  filterable tables across three views (Attacking Form, DefCon Form, DefCon
+  Probability), plus a form-versus-baseline scatter plot in Attacking Form
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
@@ -68,7 +68,6 @@ against what actually happened next.
 ### Detailed Player View
 
 <img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 14 34" src="https://github.com/user-attachments/assets/34b34c21-2d58-4ee6-9499-11cf44271f00" />
-
 
 ## Methodology
 
@@ -215,17 +214,21 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ## API Endpoints
 
-| Endpoint                          | Description                                          | Key Parameters                                                           |
+| Endpoint                          | Description                                          | Parameters                                                               |
 | --------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
 | `GET /`                           | Service metadata and the latest gameweek in the data | –                                                                        |
-| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`    |
-| `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw` |
-| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`              |
-| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | `window`, `season`                                                       |
+| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | Path: `element`; query: `window`, `season`                               |
 
-Every endpoint accepts `as_of_gw` to evaluate the point-in-time view as it would
-have looked after an earlier gameweek; it defaults to the latest gameweek in the
-data.
+The three table endpoints accept `as_of_gw` to evaluate the point-in-time view
+as it would have looked after an earlier gameweek; it defaults to the latest
+gameweek in the data. Current ownership is deliberately not point-in-time,
+because the FPL API exposes only the live ownership snapshot. The player-detail
+endpoint is keyed by the current-season `element` id, tracks the player across
+seasons by stable `code`, and uses `season` only to choose which season's
+gameweeks to display.
 
 ## Testing
 
