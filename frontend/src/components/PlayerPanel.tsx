@@ -237,8 +237,11 @@ export function PlayerPanel({
 									</tr>
 								</thead>
 								<tbody>
-									{detail.gameweeks.map((g) => (
-										<tr key={g.round} className="border-zinc-100 border-t">
+									{detail.gameweeks.map((g, index) => (
+										<tr
+											key={`${g.round}-${g.kickoff_time ?? index}`}
+											className="border-zinc-100 border-t"
+										>
 											<td className="px-3 py-2">{g.round}</td>
 											<td className="px-3 py-2">{g.minutes}</td>
 											<td className="px-3 py-2">{g.total_points}</td>
