@@ -90,7 +90,8 @@ class PlayerSeasonSummary(BaseModel):
     """A player's aggregate output for one season.
 
     ``defcon_hit_rate`` is null where DefCon data does not exist (before
-    2025-26); 2022-23 covers only GW16-38, so its totals are partial.
+    2025-26); 2022-23 expected-stat rates are scoped to GW16-38 because the
+    archive has no expected stats before then.
     """
 
     season: str

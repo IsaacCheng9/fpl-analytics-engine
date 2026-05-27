@@ -9,6 +9,15 @@ Players are tracked across seasons by their stable ``code``, since the FPL
 import polars as pl
 
 DEFAULT_ROLLING_WINDOW = 5
+PARTIAL_EXPECTED_STAT_SEASON = "2022-23"
+PARTIAL_EXPECTED_STAT_START_GW = 16
+
+
+def _has_expected_stats() -> pl.Expr:
+    """Return whether a row belongs to a gameweek with expected stats."""
+    return (pl.col("season") != PARTIAL_EXPECTED_STAT_SEASON) | (
+        pl.col("round") >= PARTIAL_EXPECTED_STAT_START_GW
+    )
 
 
 def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
@@ -27,10 +36,29 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
     if "kickoff_time" in season_history.columns:
         sort_columns.append("kickoff_time")
 
+    has_expected_stats = _has_expected_stats()
     return (
         season_history.sort(sort_columns)
         .with_columns(
             (pl.col("value") / 10).alias("price"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goals"))
+            .otherwise(None)
+            .alias("expected_goals"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_assists"))
+            .otherwise(None)
+            .alias("expected_assists"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goal_involvements"))
+            .otherwise(None)
+            .alias("expected_goal_involvements"),
+            pl.when(has_expected_stats)
+            .then(pl.col("minutes"))
+            .otherwise(0)
+            .alias("_expected_minutes"),
+        )
+        .with_columns(
             pl.col("expected_goals")
             .rolling_sum(window, min_samples=1)
             .alias("_rolling_xg"),
@@ -40,7 +68,9 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             pl.col("expected_goal_involvements")
             .rolling_sum(window, min_samples=1)
             .alias("_rolling_xgi"),
-            pl.col("minutes").rolling_sum(window, min_samples=1).alias("_rolling_min"),
+            pl.col("_expected_minutes")
+            .rolling_sum(window, min_samples=1)
+            .alias("_rolling_expected_min"),
             # Mean defensive-contribution count per game - a continuous trend
             # that stays informative below the points threshold, unlike a
             # hit-rate that is flat at 0 for most attacking players.
@@ -50,20 +80,26 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             .alias("rolling_defcon"),
         )
         .with_columns(
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xg") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xg") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xg90"),
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xa") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xa") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xa90"),
-            pl.when(pl.col("_rolling_min") > 0)
-            .then(pl.col("_rolling_xgi") / pl.col("_rolling_min") * 90)
+            pl.when(pl.col("_rolling_expected_min") > 0)
+            .then(pl.col("_rolling_xgi") / pl.col("_rolling_expected_min") * 90)
             .otherwise(None)
             .alias("rolling_xgi90"),
         )
-        .drop("_rolling_xg", "_rolling_xa", "_rolling_xgi", "_rolling_min")
+        .drop(
+            "_expected_minutes",
+            "_rolling_xg",
+            "_rolling_xa",
+            "_rolling_xgi",
+            "_rolling_expected_min",
+        )
     )
 
 
@@ -74,34 +110,54 @@ def season_summaries(player_history: pl.DataFrame) -> pl.DataFrame:
         player_history: All of a single player's rows, across seasons.
 
     Returns:
-        One row per season with games, minutes, expected attacking output per
-        90, points, points per million, and DefCon hit-rate (null where DefCon
-        data does not exist), sorted by season.
+        One row per season with full-season games, minutes, points, points per
+        million, expected attacking output per 90, and DefCon hit-rate (null
+        where DefCon data does not exist), sorted by season. Expected-stat rates
+        for 2022-23 use only GW16 onward because the archive has no expected
+        stats before then.
     """
+    has_expected_stats = _has_expected_stats()
     return (
         player_history.group_by("season")
         .agg(
             pl.len().alias("games"),
             pl.col("minutes").sum().alias("minutes"),
             pl.col("total_points").sum().alias("points"),
-            pl.col("expected_goals").sum().alias("_xg"),
-            pl.col("expected_assists").sum().alias("_xa"),
-            pl.col("expected_goal_involvements").sum().alias("_xgi"),
+            pl.when(has_expected_stats)
+            .then(pl.col("minutes"))
+            .otherwise(0)
+            .sum()
+            .alias("_expected_minutes"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goals"))
+            .otherwise(0)
+            .sum()
+            .alias("_xg"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_assists"))
+            .otherwise(0)
+            .sum()
+            .alias("_xa"),
+            pl.when(has_expected_stats)
+            .then(pl.col("expected_goal_involvements"))
+            .otherwise(0)
+            .sum()
+            .alias("_xgi"),
             (pl.col("value").sort_by("round").last() / 10).alias("_price"),
             pl.col("defcon_hit").sum().alias("_defcon_hits"),
             pl.col("defcon_hit").drop_nulls().len().alias("_defcon_games"),
         )
         .with_columns(
-            pl.when(pl.col("minutes") > 0)
-            .then(pl.col("_xg") / pl.col("minutes") * 90)
+            pl.when(pl.col("_expected_minutes") > 0)
+            .then(pl.col("_xg") / pl.col("_expected_minutes") * 90)
             .otherwise(None)
             .alias("xg90"),
-            pl.when(pl.col("minutes") > 0)
-            .then(pl.col("_xa") / pl.col("minutes") * 90)
+            pl.when(pl.col("_expected_minutes") > 0)
+            .then(pl.col("_xa") / pl.col("_expected_minutes") * 90)
             .otherwise(None)
             .alias("xa90"),
-            pl.when(pl.col("minutes") > 0)
-            .then(pl.col("_xgi") / pl.col("minutes") * 90)
+            pl.when(pl.col("_expected_minutes") > 0)
+            .then(pl.col("_xgi") / pl.col("_expected_minutes") * 90)
             .otherwise(None)
             .alias("xgi90"),
             pl.when(pl.col("_price") > 0)
@@ -114,5 +170,13 @@ def season_summaries(player_history: pl.DataFrame) -> pl.DataFrame:
             .alias("defcon_hit_rate"),
         )
         .sort("season")
-        .drop("_xg", "_xa", "_xgi", "_price", "_defcon_hits", "_defcon_games")
+        .drop(
+            "_expected_minutes",
+            "_xg",
+            "_xa",
+            "_xgi",
+            "_price",
+            "_defcon_hits",
+            "_defcon_games",
+        )
     )

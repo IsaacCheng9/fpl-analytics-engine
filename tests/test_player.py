@@ -58,6 +58,29 @@ def test_player_gameweeks_rolls_over_the_window() -> None:
     assert gw3["price"] == pytest.approx(5.0)
 
 
+def test_player_gameweeks_nulls_2022_23_expected_stats_before_gw16() -> None:
+    rows = [
+        _row(14, season="2022-23", xg=0.0, xa=0.0, xgi=0.0),
+        _row(15, season="2022-23", xg=0.0, xa=0.0, xgi=0.0),
+        _row(16, season="2022-23", xg=0.6, xa=0.3, xgi=0.9),
+    ]
+    out = player.player_gameweeks(_frame(rows), window=3).sort("round")
+    by_round = {row["round"]: row for row in out.to_dicts()}
+
+    assert by_round[15]["expected_goals"] is None
+    assert by_round[15]["expected_assists"] is None
+    assert by_round[15]["expected_goal_involvements"] is None
+    assert by_round[15]["rolling_xg90"] is None
+    assert by_round[15]["rolling_xa90"] is None
+    assert by_round[15]["rolling_xgi90"] is None
+    assert by_round[16]["expected_goals"] == pytest.approx(0.6)
+    assert by_round[16]["expected_assists"] == pytest.approx(0.3)
+    assert by_round[16]["expected_goal_involvements"] == pytest.approx(0.9)
+    assert by_round[16]["rolling_xg90"] == pytest.approx((0.6 / 90) * 90)
+    assert by_round[16]["rolling_xa90"] == pytest.approx((0.3 / 90) * 90)
+    assert by_round[16]["rolling_xgi90"] == pytest.approx((0.9 / 90) * 90)
+
+
 def test_season_summaries_aggregate_per_season_with_defcon_gap() -> None:
     rows = [
         # Prior season: no DefCon data (null), partial output.
@@ -80,3 +103,27 @@ def test_season_summaries_aggregate_per_season_with_defcon_gap() -> None:
     # DefCon hit-rate exists only where the data does.
     assert by_season["2024-25"]["defcon_hit_rate"] is None
     assert by_season["2025-26"]["defcon_hit_rate"] == pytest.approx(0.5)
+
+
+def test_season_summaries_scope_2022_23_expected_stats_to_gw16_onward() -> None:
+    rows = [
+        # The 2022-23 archive has no expected stats before GW16. These minutes
+        # still count for season totals, but must not dilute xG/xA/xGI per 90.
+        _row(1, season="2022-23", xg=0.0, xa=0.0, xgi=0.0, points=7),
+        _row(2, season="2022-23", xg=0.0, xa=0.0, xgi=0.0, points=2),
+        _row(16, season="2022-23", xg=0.4, xa=0.2, xgi=0.6, points=5),
+        _row(17, season="2022-23", xg=0.6, xa=0.4, xgi=1.0, points=3),
+        # Later seasons should still use the full season.
+        _row(1, season="2023-24", xg=0.2, xa=0.2, xgi=0.4),
+        _row(2, season="2023-24", xg=0.4, xa=0.2, xgi=0.6),
+    ]
+    summaries = player.season_summaries(_frame(rows))
+    by_season = {row["season"]: row for row in summaries.to_dicts()}
+
+    assert by_season["2022-23"]["games"] == 4
+    assert by_season["2022-23"]["minutes"] == 360
+    assert by_season["2022-23"]["points"] == 17
+    assert by_season["2022-23"]["xg90"] == pytest.approx((1.0 / 180) * 90)
+    assert by_season["2022-23"]["xa90"] == pytest.approx((0.6 / 180) * 90)
+    assert by_season["2022-23"]["xgi90"] == pytest.approx((1.6 / 180) * 90)
+    assert by_season["2023-24"]["xgi90"] == pytest.approx((1.0 / 180) * 90)
