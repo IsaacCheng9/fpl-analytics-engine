@@ -3,7 +3,7 @@
   "buildCommand": "cd frontend && bun install --frozen-lockfile && bun run build",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/index.py": {
+    "api/**/*.py": {
       "includeFiles": "data/**",
       "excludeFiles": "{.claude/**,.pytest_cache/**,.ruff_cache/**,docs/**,frontend/**,scripts/**,tests/**}"
     }
