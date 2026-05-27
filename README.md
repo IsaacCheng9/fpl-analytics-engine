@@ -55,19 +55,19 @@ against what actually happened next.
 
 ### Attacking Form
 
-<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/45b83daa-669c-4147-8661-a82d79b58dea" />
+<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 13 11" src="https://github.com/user-attachments/assets/33bef887-042b-4f99-89d3-d23c3f6a73c8" />
 
 ### DefCon Form
 
-<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/3a145e4c-7e8d-4bf0-9f8f-030c4aac9057" />
+<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 13 58" src="https://github.com/user-attachments/assets/6da131e1-0c5f-4fc4-a8ca-6128a9c3a620" />
 
 ### DefCon Probability
 
-<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/d421dc0a-4b96-4ea8-ad31-fe4e01c21e7c" />
+<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 14 03" src="https://github.com/user-attachments/assets/d696e7c9-ac30-40ca-9584-b8c15416d680" />
 
 ### Detailed Player View
 
-<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/50fa244b-6d90-4f21-953d-dac1e1c7c9fa" />
+<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 14 34" src="https://github.com/user-attachments/assets/34b34c21-2d58-4ee6-9499-11cf44271f00" />
 
 
 ## Methodology
