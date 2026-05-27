@@ -11,6 +11,7 @@ from fpl_analytics_engine import club, data, defcon, fixtures, form, player
 from fpl_analytics_engine.domain import Position
 from fpl_analytics_engine.schemas import (
     ClubForm,
+    ClubFormValidation,
     DefconPlayer,
     DefconProbabilityPlayer,
     FormPlayer,
@@ -122,6 +123,18 @@ CLUB_FORM_COLUMNS = [
     "upcoming_fixtures",
     "avg_fdr",
     "as_of_gw",
+]
+CLUB_FORM_VALIDATION_COLUMNS = [
+    "target",
+    "n_predictions",
+    "fdr_mae",
+    "fdr_plus_form_mae",
+    "mae_improvement",
+    "mae_improvement_pct",
+    "fdr_rmse",
+    "fdr_plus_form_rmse",
+    "rmse_improvement",
+    "rmse_improvement_pct",
 ]
 # Price and playing-time / value context joined onto the probability table by
 # element, so it matches the DefCon form view.
@@ -379,6 +392,38 @@ def clubs_form(
         table = table.head(top_k)
     table = _attach_club_fdr(table, fixtures_data, gw, fdr_horizon)
     return [ClubForm(**row) for row in table.select(CLUB_FORM_COLUMNS).to_dicts()]
+
+
+@app.get("/clubs/form-validation")
+def clubs_form_validation(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+    window: int = Query(club.DEFAULT_WINDOW, ge=1, le=20),
+    fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
+    min_train_rows: int = Query(
+        club.DEFAULT_VALIDATION_MIN_TRAIN_ROWS,
+        ge=1,
+        description="Minimum prior club/GW rows before an as-of GW is scored.",
+    ),
+) -> list[ClubFormValidation]:
+    """Validate whether club form improves an FDR-only baseline.
+
+    The backtest trains FDR-only and FDR-plus-form linear baselines on earlier
+    club/GW rows only, then scores the next horizon's realised xG and xGC per
+    match. Positive improvement means the club-form signal reduced error.
+    """
+    scored = club.backtest_club_form_signals(
+        history,
+        fixtures_data,
+        window=window,
+        fdr_horizon=fdr_horizon,
+        min_train_rows=min_train_rows,
+    )
+    summary = club.summarise_club_form_validation(scored)
+    return [
+        ClubFormValidation(**row)
+        for row in summary.select(CLUB_FORM_VALIDATION_COLUMNS).to_dicts()
+    ]
 
 
 @app.get("/players/{element}")
