@@ -47,6 +47,7 @@ function Chart({
 						stroke="#2563eb"
 						dot={false}
 						connectNulls
+						isAnimationActive={false}
 					/>
 				</LineChart>
 			</ResponsiveContainer>

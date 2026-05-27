@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CellContext, ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import {
@@ -29,7 +29,8 @@ const TAB_LABELS: Record<Tab, string> = {
 };
 const TABS: Tab[] = ["form", "defcon", "defconProb"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
-const WINDOWS = [3, 4, 5, 6, 7, 8];
+const WINDOW_MIN = 2;
+const WINDOW_MAX = 20;
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
 const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
 const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
@@ -517,7 +518,7 @@ export default function App() {
 	const [teamFilter, setTeamFilter] = useState("");
 	const [windowSize, setWindowSize] = useState(5);
 	const [position, setPosition] = useState<Position | "">("");
-	const [minMinutes, setMinMinutes] = useState(270);
+	const [minMinutes, setMinMinutes] = useState(180);
 	const [minDelta, setMinDelta] = useState(0);
 	const [minHitRate, setMinHitRate] = useState(0);
 	const [minGames, setMinGames] = useState(5);
@@ -539,6 +540,8 @@ export default function App() {
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const latestGw = meta.data?.latest_gw ?? 38;
 	const hasPlayerSearch = playerSearch.trim() !== "";
+	const windowFillPct =
+		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const formQuery = useQuery({
@@ -554,6 +557,7 @@ export default function App() {
 		queryFn: () =>
 			fetchForm({ ...base, minDelta: hasPlayerSearch ? -1000 : minDelta }),
 		enabled: tab === "form",
+		placeholderData: keepPreviousData,
 	});
 	const defconQuery = useQuery({
 		queryKey: [
@@ -568,6 +572,7 @@ export default function App() {
 		queryFn: () =>
 			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
 		enabled: tab === "defcon",
+		placeholderData: keepPreviousData,
 	});
 	const defconProbQuery = useQuery({
 		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
@@ -578,6 +583,7 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: tab === "defconProb",
+		placeholderData: keepPreviousData,
 	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
@@ -593,6 +599,7 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: tab === "form",
+		placeholderData: keepPreviousData,
 	});
 	const defconBaseline = useQuery({
 		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
@@ -605,12 +612,14 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: tab === "defcon",
+		placeholderData: keepPreviousData,
 	});
 	const defconProbBaseline = useQuery({
 		queryKey: ["defconProbBaseline", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
 		enabled: tab === "defconProb",
+		placeholderData: keepPreviousData,
 	});
 
 	const formColumns = useMemo(
@@ -702,67 +711,52 @@ export default function App() {
 					))}
 				</div>
 
-				<div className="mb-4 flex flex-wrap items-start gap-4 rounded-lg border border-zinc-200 bg-white p-4">
-					<label className={labelClass}>
-						Player
-						<input
-							type="search"
-							placeholder="e.g. Saka"
-							className={`${inputClass} w-40`}
-							value={playerSearch}
-							onChange={(e) => setPlayerSearch(e.target.value)}
-						/>
-					</label>
+				<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
+					<div className="flex flex-wrap items-start gap-4">
+						<label className={labelClass}>
+							Player
+							<input
+								type="search"
+								placeholder="e.g. Saka"
+								className={`${inputClass} w-40`}
+								value={playerSearch}
+								onChange={(e) => setPlayerSearch(e.target.value)}
+							/>
+						</label>
 
-					<label className={labelClass}>
-						Position
-						<select
-							className={inputClass}
-							value={position}
-							onChange={(e) => setPosition(e.target.value as Position | "")}
-						>
-							<option value="">All</option>
-							{POSITIONS.map((p) => (
-								<option key={p} value={p}>
-									{p}
-								</option>
-							))}
-						</select>
-					</label>
+						<label className={labelClass}>
+							Position
+							<select
+								className={inputClass}
+								value={position}
+								onChange={(e) => setPosition(e.target.value as Position | "")}
+							>
+								<option value="">All</option>
+								{POSITIONS.map((p) => (
+									<option key={p} value={p}>
+										{p}
+									</option>
+								))}
+							</select>
+						</label>
 
-					<label className={labelClass}>
-						Team
-						<select
-							className={inputClass}
-							value={teamFilter}
-							onChange={(e) => setTeamFilter(e.target.value)}
-						>
-							<option value="">All</option>
-							{teamOptions.map((team) => (
-								<option key={team} value={team}>
-									{team}
-								</option>
-							))}
-						</select>
-					</label>
+						<label className={labelClass}>
+							Team
+							<select
+								className={inputClass}
+								value={teamFilter}
+								onChange={(e) => setTeamFilter(e.target.value)}
+							>
+								<option value="">All</option>
+								{teamOptions.map((team) => (
+									<option key={team} value={team}>
+										{team}
+									</option>
+								))}
+							</select>
+						</label>
 
-					{tab !== "defconProb" && (
-						<>
-							<label className={labelClass}>
-								Window (Games)
-								<select
-									className={inputClass}
-									value={windowSize}
-									onChange={(e) => setWindowSize(Number(e.target.value))}
-								>
-									{WINDOWS.map((n) => (
-										<option key={n} value={n}>
-											{n}
-										</option>
-									))}
-								</select>
-							</label>
-
+						{tab !== "defconProb" && (
 							<label className={labelClass}>
 								Min Minutes
 								<input
@@ -773,100 +767,131 @@ export default function App() {
 									onChange={(e) => setMinMinutes(Number(e.target.value))}
 								/>
 							</label>
-						</>
-					)}
+						)}
 
-					{tab === "form" && (
-						<>
+						{tab === "form" && (
+							<>
+								<label className={labelClass}>
+									Min Delta xGI per 90
+									<input
+										type="number"
+										step={0.05}
+										className={`${inputClass} w-24`}
+										value={minDelta}
+										onChange={(e) => setMinDelta(Number(e.target.value))}
+									/>
+								</label>
+
+								<div className={labelClass}>
+									<span>Metrics</span>
+									<div className="mt-1 flex h-[34px] items-center gap-4">
+										{ATTACKING_METRICS.map((metric) => (
+											<label
+												key={metric}
+												className="flex items-center gap-1 text-xs text-zinc-900"
+											>
+												<input
+													type="checkbox"
+													className="accent-blue-600"
+													checked={attackingMetrics[metric]}
+													disabled={
+														attackingMetrics[metric] &&
+														enabledAttackingMetricCount === 1
+													}
+													onChange={() => toggleAttackingMetric(metric)}
+												/>
+												{ATTACKING_METRIC_LABELS[metric]}
+											</label>
+										))}
+									</div>
+								</div>
+							</>
+						)}
+
+						{tab === "defcon" && (
 							<label className={labelClass}>
-								Min Delta xGI per 90
+								Min Hit Rate
+								<select
+									className={inputClass}
+									value={minHitRate}
+									onChange={(e) => setMinHitRate(Number(e.target.value))}
+								>
+									{HIT_RATES.map((rate) => (
+										<option key={rate} value={rate}>
+											{Math.round(rate * 100)}%
+										</option>
+									))}
+								</select>
+							</label>
+						)}
+
+						{tab === "defconProb" && (
+							<label className={labelClass}>
+								Min Games
 								<input
 									type="number"
-									step={0.05}
+									min={0}
 									className={`${inputClass} w-24`}
-									value={minDelta}
-									onChange={(e) => setMinDelta(Number(e.target.value))}
+									value={minGames}
+									onChange={(e) => setMinGames(Number(e.target.value))}
 								/>
 							</label>
+						)}
 
-							<div className={labelClass}>
-								<span>Metrics</span>
-								<div className="mt-1 flex h-[34px] items-center gap-4">
-									{ATTACKING_METRICS.map((metric) => (
-										<label
-											key={metric}
-											className="flex items-center gap-1 text-xs text-zinc-900"
-										>
-											<input
-												type="checkbox"
-												className="accent-blue-600"
-												checked={attackingMetrics[metric]}
-												disabled={
-													attackingMetrics[metric] &&
-													enabledAttackingMetricCount === 1
-												}
-												onChange={() => toggleAttackingMetric(metric)}
-											/>
-											{ATTACKING_METRIC_LABELS[metric]}
-										</label>
-									))}
-								</div>
-							</div>
-						</>
-					)}
+						{tab !== "defconProb" && (
+							<label htmlFor="window-size" className={labelClass}>
+								<span className="flex items-baseline gap-1">
+									Window
+									<span className="font-semibold text-zinc-900">
+										{windowSize}
+									</span>
+									<span className="font-normal text-zinc-400">
+										{windowSize === 1 ? "game" : "games"}
+									</span>
+								</span>
+								<span className="mt-1 flex h-[34px] items-center">
+									<input
+										id="window-size"
+										type="range"
+										min={WINDOW_MIN}
+										max={WINDOW_MAX}
+										step={1}
+										value={windowSize}
+										onChange={(e) => setWindowSize(Number(e.target.value))}
+										className="range-slider w-40"
+										style={{
+											background: `linear-gradient(to right, #18181b 0%, #18181b ${windowFillPct}%, #e4e4e7 ${windowFillPct}%, #e4e4e7 100%)`,
+										}}
+									/>
+								</span>
+							</label>
+						)}
 
-					{tab === "defcon" && (
 						<label className={labelClass}>
-							Min Hit Rate
+							<span className="flex items-center gap-1">
+								As Of GW
+								<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
+							</span>
 							<select
 								className={inputClass}
-								value={minHitRate}
-								onChange={(e) => setMinHitRate(Number(e.target.value))}
+								value={asOfGw ?? ""}
+								onChange={(e) =>
+									setAsOfGw(
+										e.target.value === "" ? null : Number(e.target.value),
+									)
+								}
 							>
-								{HIT_RATES.map((rate) => (
-									<option key={rate} value={rate}>
-										{Math.round(rate * 100)}%
-									</option>
-								))}
+								<option value="">Latest ({latestGw})</option>
+								{Array.from({ length: latestGw }, (_, i) => latestGw - i).map(
+									(gw) => (
+										<option key={gw} value={gw}>
+											{gw}
+										</option>
+									),
+								)}
 							</select>
 						</label>
-					)}
-
-					{tab === "defconProb" && (
-						<label className={labelClass}>
-							Min Games
-							<input
-								type="number"
-								min={0}
-								className={`${inputClass} w-24`}
-								value={minGames}
-								onChange={(e) => setMinGames(Number(e.target.value))}
-							/>
-						</label>
-					)}
-
-					<label className={labelClass}>
-						<span className="flex items-center gap-1">
-							As Of GW
-							<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
-						</span>
-						<select
-							className={inputClass}
-							value={asOfGw ?? ""}
-							onChange={(e) =>
-								setAsOfGw(e.target.value === "" ? null : Number(e.target.value))
-							}
-						>
-							<option value="">Latest ({latestGw})</option>
-							{Array.from({ length: latestGw }, (_, i) => latestGw - i).map(
-								(gw) => (
-									<option key={gw} value={gw}>
-										{gw}
-									</option>
-								),
-							)}
-						</select>
-					</label>
+					</div>
 				</div>
 
 				{active.isPending ? (
