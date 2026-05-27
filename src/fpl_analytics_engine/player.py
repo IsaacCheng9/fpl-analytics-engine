@@ -23,8 +23,12 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
         attacking output per 90, and rolling DefCon hit-rate over the trailing
         ``window`` games.
     """
+    sort_columns = ["round"]
+    if "kickoff_time" in season_history.columns:
+        sort_columns.append("kickoff_time")
+
     return (
-        season_history.sort("round")
+        season_history.sort(sort_columns)
         .with_columns(
             (pl.col("value") / 10).alias("price"),
             pl.col("expected_goals")
