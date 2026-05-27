@@ -584,7 +584,9 @@ export default function App() {
 	const [windowSize, setWindowSize] = useState(5);
 	const [position, setPosition] = useState<Position | "">("");
 	const [minMinutes, setMinMinutes] = useState(180);
-	const [minDelta, setMinDelta] = useState(0);
+	// Null means no delta floor - show every qualifying player by default; the
+	// delta column and scatter still convey who is improving.
+	const [minDelta, setMinDelta] = useState<number | null>(null);
 	const [minHitRate, setMinHitRate] = useState(0);
 	const [minGames, setMinGames] = useState(5);
 	const [asOfGw, setAsOfGw] = useState<number | null>(null);
@@ -620,7 +622,10 @@ export default function App() {
 			hasPlayerSearch,
 		],
 		queryFn: () =>
-			fetchForm({ ...base, minDelta: hasPlayerSearch ? -1000 : minDelta }),
+			fetchForm({
+				...base,
+				minDelta: hasPlayerSearch ? -1000 : (minDelta ?? -1000),
+			}),
 		enabled: tab === "form",
 		placeholderData: keepPreviousData,
 	});
@@ -841,9 +846,14 @@ export default function App() {
 									<input
 										type="number"
 										step={0.05}
+										placeholder="Any"
 										className={`${inputClass} w-24`}
-										value={minDelta}
-										onChange={(e) => setMinDelta(Number(e.target.value))}
+										value={minDelta ?? ""}
+										onChange={(e) =>
+											setMinDelta(
+												e.target.value === "" ? null : Number(e.target.value),
+											)
+										}
 									/>
 								</label>
 

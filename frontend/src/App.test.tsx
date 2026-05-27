@@ -226,18 +226,25 @@ test("filters the table by the player search box", async () => {
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
 });
 
-test("searches the broad form pool instead of only flagged players", async () => {
+test("shows the full pool by default and search bypasses the Min Delta filter", async () => {
 	render(withProviders(<App />));
+	// No delta floor by default, so even a declining player is present.
 	await waitFor(() => {
-		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
 
-	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+	// Applying a Min Delta filter drops the declining player from the pool.
+	fireEvent.change(screen.getByPlaceholderText("Any"), {
+		target: { value: "0.1" },
+	});
+	await waitFor(() => {
+		expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+	});
 
+	// Searching queries the full pool, so the filtered-out player still appears.
 	fireEvent.change(screen.getByPlaceholderText("e.g. Saka"), {
 		target: { value: "Haaland" },
 	});
-
 	await waitFor(() => {
 		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
