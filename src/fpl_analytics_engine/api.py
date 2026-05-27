@@ -7,9 +7,10 @@ from typing import Annotated, cast
 import polars as pl
 from fastapi import Depends, FastAPI, HTTPException, Query
 
-from fpl_analytics_engine import data, defcon, fixtures, form, player
+from fpl_analytics_engine import club, data, defcon, fixtures, form, player
 from fpl_analytics_engine.domain import Position
 from fpl_analytics_engine.schemas import (
+    ClubForm,
     DefconPlayer,
     DefconProbabilityPlayer,
     FormPlayer,
@@ -95,6 +96,31 @@ DEFCON_PROBABILITY_COLUMNS = [
     "prob",
     "prob_std",
     *CONTEXT_COLUMNS,
+    "as_of_gw",
+]
+CLUB_FORM_COLUMNS = [
+    "team",
+    "team_name",
+    "window_matches",
+    "season_matches",
+    "window_xg_per_match",
+    "season_xg_per_match",
+    "delta_xg_per_match",
+    "window_goals_for_per_match",
+    "season_goals_for_per_match",
+    "delta_goals_for_per_match",
+    "window_xgc_per_match",
+    "season_xgc_per_match",
+    "delta_xgc_per_match",
+    "window_goals_against_per_match",
+    "season_goals_against_per_match",
+    "delta_goals_against_per_match",
+    "window_finishing_delta",
+    "window_concession_delta",
+    "attack_form",
+    "defence_form",
+    "upcoming_fixtures",
+    "avg_fdr",
     "as_of_gw",
 ]
 # Price and playing-time / value context joined onto the probability table by
@@ -199,6 +225,22 @@ def _attach_context(
     """Attach fixture difficulty and the current-ownership overlay to a table."""
     with_fdr = fixtures.attach_team_fdr(table, fixtures_data, teams, gw, horizon)
     return _attach_overlay(with_fdr, players)
+
+
+def _attach_club_fdr(
+    table: pl.DataFrame,
+    fixtures_data: pl.DataFrame,
+    gw: int,
+    horizon: int,
+) -> pl.DataFrame:
+    """Attach upcoming fixture difficulty to a club table."""
+    fdr = fixtures.team_fixture_difficulty(fixtures_data.to_dicts(), gw, horizon)
+    context = fdr.select(
+        "team",
+        pl.col("n_fixtures").alias("upcoming_fixtures"),
+        pl.col("avg_difficulty").alias("avg_fdr"),
+    )
+    return table.join(context, on="team", how="left")
 
 
 app = FastAPI(title="FPL Analytics Engine")
@@ -314,6 +356,29 @@ def players_defcon_probability(
         DefconProbabilityPlayer(**row)
         for row in ranked.select(DEFCON_PROBABILITY_COLUMNS).to_dicts()
     ]
+
+
+@app.get("/clubs/form")
+def clubs_form(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+    window: int = Query(club.DEFAULT_WINDOW, ge=1, le=20),
+    top_k: int | None = Query(None, ge=1),
+    as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
+    fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
+) -> list[ClubForm]:
+    """Rank clubs by recent attacking and defensive form.
+
+    The table compares each club's recent per-match xG and xGC against its
+    season-to-date baseline, then attaches upcoming fixture difficulty.
+    """
+    latest = _latest_gw(history)
+    gw = as_of_gw if as_of_gw is not None else latest
+    table = club.compute_club_form_table(history, gw, window)
+    if top_k is not None:
+        table = table.head(top_k)
+    table = _attach_club_fdr(table, fixtures_data, gw, fdr_horizon)
+    return [ClubForm(**row) for row in table.select(CLUB_FORM_COLUMNS).to_dicts()]
 
 
 @app.get("/players/{element}")

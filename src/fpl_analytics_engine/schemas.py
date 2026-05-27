@@ -50,6 +50,34 @@ class FormPlayer(PlayerContext):
     as_of_gw: int
 
 
+class ClubForm(BaseModel):
+    """A club's recent attacking and defensive form versus its baseline."""
+
+    team: int
+    team_name: str
+    window_matches: int
+    season_matches: int
+    window_xg_per_match: float | None
+    season_xg_per_match: float | None
+    delta_xg_per_match: float | None
+    window_goals_for_per_match: float | None
+    season_goals_for_per_match: float | None
+    delta_goals_for_per_match: float | None
+    window_xgc_per_match: float | None
+    season_xgc_per_match: float | None
+    delta_xgc_per_match: float | None
+    window_goals_against_per_match: float | None
+    season_goals_against_per_match: float | None
+    delta_goals_against_per_match: float | None
+    window_finishing_delta: float | None
+    window_concession_delta: float | None
+    attack_form: float | None
+    defence_form: float | None
+    upcoming_fixtures: int | None
+    avg_fdr: float | None
+    as_of_gw: int
+
+
 class DefconPlayer(PlayerContext):
     """A player's recent defensive-contribution form."""
 
