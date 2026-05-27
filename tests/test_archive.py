@@ -12,8 +12,8 @@ def _enrichable_bootstrap() -> dict:
     """Build a bootstrap payload rich enough to enrich into the served view."""
     return {
         "elements": [
-            {"id": 1, "web_name": "Saliba", "element_type": 2, "team": 10},
-            {"id": 2, "web_name": "Saka", "element_type": 3, "team": 10},
+            {"id": 1, "code": 101, "web_name": "Saliba", "element_type": 2, "team": 10},
+            {"id": 2, "code": 102, "web_name": "Saka", "element_type": 3, "team": 10},
         ],
         "teams": [{"id": 10, "name": "Arsenal"}],
         "events": [

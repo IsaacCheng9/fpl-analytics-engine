@@ -34,8 +34,14 @@ export interface FormPlayer extends PlayerContext {
 	window_xg90: number | null;
 	window_xa90: number | null;
 	window_xgi90: number | null;
+	season_xg90: number | null;
+	season_xa90: number | null;
 	season_xgi90: number | null;
+	delta_xg90: number | null;
+	delta_xa90: number | null;
 	delta_xgi90: number | null;
+	window_xg90_per_million: number | null;
+	window_xa90_per_million: number | null;
 	as_of_gw: number;
 }
 
@@ -50,6 +56,7 @@ export interface DefconPlayer extends PlayerContext {
 	window_defcon_hits: number | null;
 	window_defcon_games: number | null;
 	window_defcon_hit_rate: number | null;
+	window_defcon: number | null;
 	as_of_gw: number;
 }
 
@@ -60,12 +67,54 @@ export interface DefconProbabilityPlayer extends PlayerContext {
 	team_name: string | null;
 	price: number | null;
 	window_minutes: number | null;
+	window_defcon: number | null;
 	games: number;
 	hits: number;
 	raw_rate: number | null;
 	prob: number | null;
 	prob_std: number | null;
 	as_of_gw: number;
+}
+
+export interface PlayerGameweek {
+	round: number;
+	kickoff_time: string | null;
+	minutes: number;
+	total_points: number;
+	price: number | null;
+	expected_goals: number | null;
+	expected_assists: number | null;
+	expected_goal_involvements: number | null;
+	defensive_contribution: number | null;
+	defcon_hit: boolean | null;
+	rolling_xg90: number | null;
+	rolling_xa90: number | null;
+	rolling_xgi90: number | null;
+	rolling_defcon: number | null;
+}
+
+export interface PlayerSeasonSummary {
+	season: string;
+	games: number;
+	minutes: number;
+	points: number;
+	xg90: number | null;
+	xa90: number | null;
+	xgi90: number | null;
+	points_per_million: number | null;
+	defcon_hit_rate: number | null;
+}
+
+export interface PlayerDetail {
+	element: number;
+	code: number | null;
+	web_name: string;
+	position: string | null;
+	team_name: string | null;
+	rolling_window: number;
+	selected_season: string;
+	gameweeks: PlayerGameweek[];
+	seasons: PlayerSeasonSummary[];
 }
 
 interface BaseParams {
@@ -140,4 +189,16 @@ export function fetchDefconProbability(
 	return getJson<DefconProbabilityPlayer[]>(
 		`/players/defcon-probability?${search.toString()}`,
 	);
+}
+
+export function fetchPlayerDetail(
+	element: number,
+	window: number,
+	season?: string | null,
+): Promise<PlayerDetail> {
+	const params = new URLSearchParams({ window: String(window) });
+	if (season) {
+		params.set("season", season);
+	}
+	return getJson<PlayerDetail>(`/players/${element}?${params}`);
 }

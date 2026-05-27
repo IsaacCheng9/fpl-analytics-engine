@@ -39,8 +39,14 @@ class FormPlayer(PlayerContext):
     window_xg90: float | None
     window_xa90: float | None
     window_xgi90: float | None
+    season_xg90: float | None
+    season_xa90: float | None
     season_xgi90: float | None
+    delta_xg90: float | None
+    delta_xa90: float | None
     delta_xgi90: float | None
+    window_xg90_per_million: float | None
+    window_xa90_per_million: float | None
     as_of_gw: int
 
 
@@ -57,7 +63,59 @@ class DefconPlayer(PlayerContext):
     window_defcon_hits: int | None
     window_defcon_games: int | None
     window_defcon_hit_rate: float | None
+    window_defcon: float | None
     as_of_gw: int
+
+
+class PlayerGameweek(BaseModel):
+    """One gameweek of a player's selected season, with rolling form."""
+
+    round: int
+    kickoff_time: str | None
+    minutes: int
+    total_points: int
+    price: float | None
+    expected_goals: float | None
+    expected_assists: float | None
+    expected_goal_involvements: float | None
+    defensive_contribution: int | None
+    defcon_hit: bool | None
+    rolling_xg90: float | None
+    rolling_xa90: float | None
+    rolling_xgi90: float | None
+    rolling_defcon: float | None
+
+
+class PlayerSeasonSummary(BaseModel):
+    """A player's aggregate output for one season.
+
+    ``defcon_hit_rate`` is null where DefCon data does not exist (before
+    2025-26); 2022-23 covers only GW16-38, so its totals are partial.
+    """
+
+    season: str
+    games: int
+    minutes: int
+    points: int
+    xg90: float | None
+    xa90: float | None
+    xgi90: float | None
+    points_per_million: float | None
+    defcon_hit_rate: float | None
+
+
+class PlayerDetail(BaseModel):
+    """A single player's per-gameweek form and cross-season history."""
+
+    element: int
+    code: int | None
+    web_name: str
+    position: str | None
+    team_name: str | None
+    rolling_window: int
+    selected_season: str
+    gameweeks: list[PlayerGameweek]
+    seasons: list[PlayerSeasonSummary]
 
 
 class DefconProbabilityPlayer(PlayerContext):
@@ -73,6 +131,7 @@ class DefconProbabilityPlayer(PlayerContext):
     team_name: str | None
     price: float | None
     window_minutes: int | None
+    window_defcon: float | None
     games: int
     hits: int
     raw_rate: float | None

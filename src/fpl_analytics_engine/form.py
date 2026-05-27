@@ -56,6 +56,12 @@ def compute_form_table(
     if not has_starts:
         history = history.with_columns(pl.lit(None, dtype=pl.Int64).alias("starts"))
 
+    # DefCon counts only exist from 2025-26; guard so the mean is null elsewhere.
+    if "defensive_contribution" not in history.columns:
+        history = history.with_columns(
+            pl.lit(None, dtype=pl.Int64).alias("defensive_contribution")
+        )
+
     point_in_time = history.filter(pl.col("round") <= as_of_gw)
     recent = (
         point_in_time.sort("kickoff_time")
@@ -77,6 +83,9 @@ def compute_form_table(
         (pl.col("minutes") > 0).sum().alias("window_appearances"),
         pl.col("defcon_hit").sum().alias("window_defcon_hits"),
         pl.col("defcon_hit").count().alias("window_defcon_games"),
+        # Mean defensive-contribution count per window game - how close the
+        # player runs to the threshold, regardless of whether they clear it.
+        pl.col("defensive_contribution").mean().alias("window_defcon"),
     )
     season_agg = point_in_time.group_by("element").agg(
         pl.col("minutes").sum().alias("season_minutes"),
@@ -120,6 +129,14 @@ def compute_form_table(
             .otherwise(None)
             .alias("window_defcon_hit_rate"),
             # Value efficiency, point-in-time on the window's closing price.
+            pl.when(pl.col("price") > 0)
+            .then(pl.col("window_xg90") / pl.col("price"))
+            .otherwise(None)
+            .alias("window_xg90_per_million"),
+            pl.when(pl.col("price") > 0)
+            .then(pl.col("window_xa90") / pl.col("price"))
+            .otherwise(None)
+            .alias("window_xa90_per_million"),
             pl.when(pl.col("price") > 0)
             .then(pl.col("window_xgi90") / pl.col("price"))
             .otherwise(None)

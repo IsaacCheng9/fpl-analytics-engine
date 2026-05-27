@@ -7,7 +7,7 @@ from fpl_analytics_engine import backfill
 
 def _raw_row(position: str) -> dict:
     return {
-        "name": "Saliba",
+        "name": "William Saliba",  # vaastav full name; replaced by web_name.
         "position": position,
         "team": "Arsenal",
         "element": 1,
@@ -24,14 +24,20 @@ def _raw_row(position: str) -> dict:
     }
 
 
+def _players_raw() -> pl.DataFrame:
+    return pl.DataFrame({"id": [1], "code": [223340], "web_name": ["Saliba"]})
+
+
 def test_adapt_vaastav_season_maps_to_enriched_schema() -> None:
     raw = pl.DataFrame([_raw_row("DEF")])
 
-    out = backfill.adapt_vaastav_season(raw, "2024-25")
+    out = backfill.adapt_vaastav_season(raw, _players_raw(), "2024-25")
 
     assert out.columns == backfill.CANONICAL_COLUMNS
     row = out.to_dicts()[0]
+    # web_name and code come from players_raw, not merged_gw's full name.
     assert row["web_name"] == "Saliba"
+    assert row["code"] == 223340
     assert row["position"] == "DEF"
     assert row["team_name"] == "Arsenal"
     assert row["season"] == "2024-25"
@@ -42,5 +48,7 @@ def test_adapt_vaastav_season_maps_to_enriched_schema() -> None:
 
 
 def test_adapt_vaastav_season_maps_keepers() -> None:
-    out = backfill.adapt_vaastav_season(pl.DataFrame([_raw_row("GKP")]), "2024-25")
+    out = backfill.adapt_vaastav_season(
+        pl.DataFrame([_raw_row("GKP")]), _players_raw(), "2024-25"
+    )
     assert out.to_dicts()[0]["position"] == "GK"

@@ -14,15 +14,18 @@ declare module "@tanstack/react-table" {
 	// A tooltip explaining what a column means.
 	interface ColumnMeta<TData extends RowData, TValue> {
 		tooltip?: string;
+		headerClassName?: string;
 	}
 }
 
 export function DataTable<T>({
 	data,
 	columns,
+	onRowClick,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
+	onRowClick?: (row: T) => void;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const table = useReactTable({
@@ -44,11 +47,12 @@ export function DataTable<T>({
 						<tr key={group.id}>
 							{group.headers.map((header) => {
 								const sorted = header.column.getIsSorted();
-								const tooltip = header.column.columnDef.meta?.tooltip;
+								const meta = header.column.columnDef.meta;
+								const tooltip = meta?.tooltip;
 								return (
 									<th
 										key={header.id}
-										className="px-3 py-2 align-bottom font-medium"
+										className={`px-3 py-2 align-bottom font-medium ${meta?.headerClassName ?? ""}`}
 									>
 										<div className="flex w-full items-end gap-1">
 											<button
@@ -92,7 +96,12 @@ export function DataTable<T>({
 						rows.map((row) => (
 							<tr
 								key={row.id}
-								className="border-zinc-100 border-t hover:bg-zinc-50"
+								className={`border-zinc-100 border-t hover:bg-zinc-50${
+									onRowClick ? " cursor-pointer" : ""
+								}`}
+								onClick={
+									onRowClick ? () => onRowClick(row.original) : undefined
+								}
 							>
 								{row.getVisibleCells().map((cell) => (
 									<td key={cell.id} className="px-3 py-2 whitespace-nowrap">

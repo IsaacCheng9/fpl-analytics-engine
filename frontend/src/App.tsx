@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CellContext, ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import {
@@ -14,9 +14,13 @@ import {
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
+import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb";
+type AttackingMetric = "xg" | "xa" | "xgi";
+type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
+type AttackingMetricColumn = "window" | "season" | "delta" | "value";
 
 const TAB_LABELS: Record<Tab, string> = {
 	form: "Attacking Form",
@@ -25,8 +29,66 @@ const TAB_LABELS: Record<Tab, string> = {
 };
 const TABS: Tab[] = ["form", "defcon", "defconProb"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
-const WINDOWS = [3, 4, 5, 6, 7, 8];
+const WINDOW_MIN = 2;
+const WINDOW_MAX = 20;
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
+const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
+const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
+const ATTACKING_METRIC_GROUP_LABELS: Record<AttackingMetricColumn, string> = {
+	window: "Window",
+	season: "Season",
+	delta: "Delta",
+	value: "",
+};
+const ATTACKING_METRIC_LABELS: Record<AttackingMetric, string> = {
+	xg: "xG",
+	xa: "xA",
+	xgi: "xGI",
+};
+const ATTACKING_METRIC_KEYS: Record<
+	AttackingMetric,
+	Record<AttackingMetricColumn, keyof FormPlayer & string>
+> = {
+	xg: {
+		window: "window_xg90",
+		season: "season_xg90",
+		delta: "delta_xg90",
+		value: "window_xg90_per_million",
+	},
+	xa: {
+		window: "window_xa90",
+		season: "season_xa90",
+		delta: "delta_xa90",
+		value: "window_xa90_per_million",
+	},
+	xgi: {
+		window: "window_xgi90",
+		season: "season_xgi90",
+		delta: "delta_xgi90",
+		value: "window_xgi90_per_million",
+	},
+};
+const ATTACKING_METRIC_NOUNS: Record<AttackingMetric, string> = {
+	xg: "goals",
+	xa: "assists",
+	xgi: "goal involvements",
+};
+const ATTACKING_METRIC_STYLES: Record<AttackingMetric, { header: string }> = {
+	xg: {
+		header: "bg-emerald-100/80",
+	},
+	xa: {
+		header: "bg-amber-100/80",
+	},
+	xgi: {
+		header: "bg-indigo-100/80",
+	},
+};
+const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
+	xg: true,
+	xa: false,
+	xgi: true,
+};
 
 // Apply the client-side player and team filters so the chart and table stay
 // in sync from a single source.
@@ -46,29 +108,47 @@ type Range = { min: number; max: number };
 // Metric columns that get heat shading. The range is computed league-wide from
 // an unfiltered query so a player's colour stays fixed as you filter.
 const FORM_HEAT_KEYS = [
+	"window_xg90",
+	"window_xa90",
 	"window_xgi90",
+	"season_xg90",
+	"season_xa90",
 	"season_xgi90",
+	"delta_xg90",
+	"delta_xa90",
 	"delta_xgi90",
+	"window_xg90_per_million",
+	"window_xa90_per_million",
 	"window_xgi90_per_million",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 const DEFCON_HEAT_KEYS = [
+	"window_games",
+	"window_defcon_hits",
 	"window_defcon_hit_rate",
+	"window_defcon",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 const DEFCON_PROB_HEAT_KEYS = [
+	"games",
+	"hits",
 	"raw_rate",
 	"prob",
+	"prob_std",
+	"window_defcon",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
+	"current_ownership",
 ];
 
 // Min/max per metric across the supplied (league-wide) rows.
@@ -142,8 +222,46 @@ function heatCell<T>(
 	};
 }
 
+function buildFormMetricColumns(
+	ranges: Record<string, Range>,
+	metric: AttackingMetric,
+): ColumnDef<FormPlayer>[] {
+	const label = ATTACKING_METRIC_LABELS[metric];
+	const noun = ATTACKING_METRIC_NOUNS[metric];
+	const styles = ATTACKING_METRIC_STYLES[metric];
+	return (
+		["window", "season", "delta", "value"] satisfies AttackingMetricColumn[]
+	).map((group) => {
+		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
+		const key = ATTACKING_METRIC_KEYS[metric][group];
+		const formatter = group === "delta" ? { format: fmtDelta } : {};
+		const tooltip =
+			group === "window"
+				? `Expected ${noun} per 90 minutes over the recent window`
+				: group === "season"
+					? `Expected ${noun} per 90 minutes, season to date`
+					: group === "delta"
+						? `Window ${label} per 90 minus season ${label} per 90; positive means recent form beats the season baseline`
+						: `Window ${label} per 90 divided by price`;
+		const header =
+			group === "value"
+				? `${label} Per 90 Per £m`
+				: `${groupLabel} ${label} Per 90`;
+		return {
+			accessorKey: key,
+			header,
+			cell: heatCell<FormPlayer>(ranges[key], formatter),
+			meta: {
+				tooltip,
+				headerClassName: styles.header,
+			},
+		} satisfies ColumnDef<FormPlayer>;
+	});
+}
+
 function buildFormColumns(
 	ranges: Record<string, Range>,
+	visibleMetrics: AttackingMetricVisibility,
 ): ColumnDef<FormPlayer>[] {
 	return [
 		{ accessorKey: "web_name", header: "Player" },
@@ -161,7 +279,7 @@ function buildFormColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
@@ -176,41 +294,12 @@ function buildFormColumns(
 			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
 			meta: { tooltip: "Share of window games the player started" },
 		},
-		{
-			accessorKey: "window_xgi90",
-			header: "Window xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.window_xgi90),
-			meta: {
-				tooltip:
-					"Expected goal involvements per 90 minutes over the recent window",
-			},
-		},
-		{
-			accessorKey: "season_xgi90",
-			header: "Season xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.season_xgi90),
-			meta: {
-				tooltip: "Expected goal involvements per 90 minutes, season to date",
-			},
-		},
-		{
-			accessorKey: "delta_xgi90",
-			header: "Delta xGI per 90",
-			cell: heatCell<FormPlayer>(ranges.delta_xgi90, { format: fmtDelta }),
-			meta: {
-				tooltip:
-					"Window xGI per 90 minus season xGI per 90; positive means recent form beats the season baseline",
-			},
-		},
-		{
-			accessorKey: "window_xgi90_per_million",
-			header: "xGI per 90 per £m",
-			cell: heatCell<FormPlayer>(ranges.window_xgi90_per_million),
-			meta: { tooltip: "Window xGI per 90 divided by price" },
-		},
+		...ATTACKING_METRIC_COLUMN_ORDER.filter(
+			(metric) => visibleMetrics[metric],
+		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
 		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
@@ -231,7 +320,10 @@ function buildFormColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<FormPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",
@@ -259,7 +351,7 @@ function buildDefconColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
@@ -279,11 +371,17 @@ function buildDefconColumns(
 		{
 			accessorKey: "window_games",
 			header: "Games",
+			cell: heatCell<DefconPlayer>(ranges.window_games, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Eligible games in the window" },
 		},
 		{
 			accessorKey: "window_defcon_hits",
 			header: "Hits",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon_hits, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Window games clearing the DefCon threshold" },
 		},
 		{
@@ -295,8 +393,19 @@ function buildDefconColumns(
 			meta: { tooltip: "Share of window games clearing the DefCon threshold" },
 		},
 		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average defensive-contribution count per game over the window",
+			},
+		},
+		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
@@ -317,7 +426,10 @@ function buildDefconColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<DefconPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",
@@ -345,7 +457,7 @@ function buildDefconProbColumns(
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
-			header: "Mins per App",
+			header: "Mins Per App",
 			cell: heatCell<DefconProbabilityPlayer>(
 				ranges.window_mins_per_appearance,
 				{ format: (v) => fmtNum(v, 0) },
@@ -366,11 +478,17 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "games",
 			header: "Games",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.games, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Eligible appearances up to this gameweek" },
 		},
 		{
 			accessorKey: "hits",
 			header: "Hits",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.hits, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Appearances clearing the DefCon threshold" },
 		},
 		{
@@ -393,12 +511,25 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "prob_std",
 			header: "+/-",
-			cell: (info) => fmtNum(info.getValue<number | null>()),
+			cell: heatCell<DefconProbabilityPlayer>(ranges.prob_std, {
+				lowerIsBetter: true,
+			}),
 			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
 		},
 		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.window_defcon, {
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average defensive-contribution count per game over the recent window",
+			},
+		},
+		{
 			accessorKey: "season_points_per_million",
-			header: "Points per £m",
+			header: "Points Per £m",
 			cell: heatCell<DefconProbabilityPlayer>(
 				ranges.season_points_per_million,
 				{ format: (v) => fmtNum(v, 1) },
@@ -420,7 +551,10 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: (info) => fmtPctPoints(info.getValue<number | null>(), 1),
+			cell: heatCell<DefconProbabilityPlayer>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
 			meta: {
 				tooltip:
 					"Current ownership percentage; a live snapshot, not point-in-time",
@@ -430,8 +564,18 @@ function buildDefconProbColumns(
 }
 
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
-const inputClass =
-	"mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
+const fieldClass =
+	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
+// Most controls sit below a label, so the shared input class adds the gap.
+const inputClass = `mt-1 ${fieldClass}`;
+
+// Keep the window within bounds and tolerate an empty/NaN number input.
+function clampWindowSize(value: number): number {
+	if (!Number.isFinite(value)) {
+		return WINDOW_MIN;
+	}
+	return Math.min(Math.max(value, WINDOW_MIN), WINDOW_MAX);
+}
 
 export default function App() {
 	const [tab, setTab] = useState<Tab>("form");
@@ -439,30 +583,77 @@ export default function App() {
 	const [teamFilter, setTeamFilter] = useState("");
 	const [windowSize, setWindowSize] = useState(5);
 	const [position, setPosition] = useState<Position | "">("");
-	const [minMinutes, setMinMinutes] = useState(270);
-	const [minDelta, setMinDelta] = useState(0);
+	const [minMinutes, setMinMinutes] = useState(180);
+	// Null means no delta floor - show every qualifying player by default; the
+	// delta column and scatter still convey who is improving.
+	const [minDelta, setMinDelta] = useState<number | null>(null);
 	const [minHitRate, setMinHitRate] = useState(0);
 	const [minGames, setMinGames] = useState(5);
 	const [asOfGw, setAsOfGw] = useState<number | null>(null);
+	const [selectedElement, setSelectedElement] = useState<number | null>(null);
+	const [attackingMetrics, setAttackingMetrics] =
+		useState<AttackingMetricVisibility>(DEFAULT_ATTACKING_METRICS);
+
+	function toggleAttackingMetric(metric: AttackingMetric) {
+		setAttackingMetrics((current) => {
+			const enabledCount = Object.values(current).filter(Boolean).length;
+			if (current[metric] && enabledCount === 1) {
+				return current;
+			}
+			return { ...current, [metric]: !current[metric] };
+		});
+	}
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const latestGw = meta.data?.latest_gw ?? 38;
+	const hasPlayerSearch = playerSearch.trim() !== "";
+	const windowFillPct =
+		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const formQuery = useQuery({
-		queryKey: ["form", windowSize, position, minMinutes, minDelta, asOfGw],
-		queryFn: () => fetchForm({ ...base, minDelta }),
+		queryKey: [
+			"form",
+			windowSize,
+			position,
+			minMinutes,
+			minDelta,
+			asOfGw,
+			hasPlayerSearch,
+		],
+		queryFn: () =>
+			fetchForm({
+				...base,
+				minDelta: hasPlayerSearch ? -1000 : (minDelta ?? -1000),
+			}),
 		enabled: tab === "form",
+		placeholderData: keepPreviousData,
 	});
 	const defconQuery = useQuery({
-		queryKey: ["defcon", windowSize, position, minMinutes, minHitRate, asOfGw],
-		queryFn: () => fetchDefcon({ ...base, minHitRate }),
+		queryKey: [
+			"defcon",
+			windowSize,
+			position,
+			minMinutes,
+			minHitRate,
+			asOfGw,
+			hasPlayerSearch,
+		],
+		queryFn: () =>
+			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
 		enabled: tab === "defcon",
+		placeholderData: keepPreviousData,
 	});
 	const defconProbQuery = useQuery({
-		queryKey: ["defconProb", position, minGames, asOfGw],
-		queryFn: () => fetchDefconProbability({ position, minGames, asOfGw }),
+		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
+		queryFn: () =>
+			fetchDefconProbability({
+				position,
+				minGames: hasPlayerSearch ? 0 : minGames,
+				asOfGw,
+			}),
 		enabled: tab === "defconProb",
+		placeholderData: keepPreviousData,
 	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
@@ -478,6 +669,7 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: tab === "form",
+		placeholderData: keepPreviousData,
 	});
 	const defconBaseline = useQuery({
 		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
@@ -490,18 +682,23 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: tab === "defcon",
+		placeholderData: keepPreviousData,
 	});
 	const defconProbBaseline = useQuery({
 		queryKey: ["defconProbBaseline", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
 		enabled: tab === "defconProb",
+		placeholderData: keepPreviousData,
 	});
 
 	const formColumns = useMemo(
 		() =>
-			buildFormColumns(computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS)),
-		[formBaseline.data],
+			buildFormColumns(
+				computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS),
+				attackingMetrics,
+			),
+		[formBaseline.data, attackingMetrics],
 	);
 	const defconColumns = useMemo(
 		() =>
@@ -550,6 +747,8 @@ export default function App() {
 		playerSearch,
 		teamFilter,
 	);
+	const enabledAttackingMetricCount =
+		Object.values(attackingMetrics).filter(Boolean).length;
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -582,67 +781,52 @@ export default function App() {
 					))}
 				</div>
 
-				<div className="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-zinc-200 bg-white p-4">
-					<label className={labelClass}>
-						Player
-						<input
-							type="search"
-							placeholder="e.g. Saka"
-							className={`${inputClass} w-40`}
-							value={playerSearch}
-							onChange={(e) => setPlayerSearch(e.target.value)}
-						/>
-					</label>
+				<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
+					<div className="flex flex-wrap items-start gap-4">
+						<label className={labelClass}>
+							Player
+							<input
+								type="search"
+								placeholder="e.g. Saka"
+								className={`${inputClass} w-40`}
+								value={playerSearch}
+								onChange={(e) => setPlayerSearch(e.target.value)}
+							/>
+						</label>
 
-					<label className={labelClass}>
-						Position
-						<select
-							className={inputClass}
-							value={position}
-							onChange={(e) => setPosition(e.target.value as Position | "")}
-						>
-							<option value="">All</option>
-							{POSITIONS.map((p) => (
-								<option key={p} value={p}>
-									{p}
-								</option>
-							))}
-						</select>
-					</label>
+						<label className={labelClass}>
+							Position
+							<select
+								className={inputClass}
+								value={position}
+								onChange={(e) => setPosition(e.target.value as Position | "")}
+							>
+								<option value="">All</option>
+								{POSITIONS.map((p) => (
+									<option key={p} value={p}>
+										{p}
+									</option>
+								))}
+							</select>
+						</label>
 
-					<label className={labelClass}>
-						Team
-						<select
-							className={inputClass}
-							value={teamFilter}
-							onChange={(e) => setTeamFilter(e.target.value)}
-						>
-							<option value="">All</option>
-							{teamOptions.map((team) => (
-								<option key={team} value={team}>
-									{team}
-								</option>
-							))}
-						</select>
-					</label>
+						<label className={labelClass}>
+							Team
+							<select
+								className={inputClass}
+								value={teamFilter}
+								onChange={(e) => setTeamFilter(e.target.value)}
+							>
+								<option value="">All</option>
+								{teamOptions.map((team) => (
+									<option key={team} value={team}>
+										{team}
+									</option>
+								))}
+							</select>
+						</label>
 
-					{tab !== "defconProb" && (
-						<>
-							<label className={labelClass}>
-								Window (Games)
-								<select
-									className={inputClass}
-									value={windowSize}
-									onChange={(e) => setWindowSize(Number(e.target.value))}
-								>
-									{WINDOWS.map((n) => (
-										<option key={n} value={n}>
-											{n}
-										</option>
-									))}
-								</select>
-							</label>
-
+						{tab !== "defconProb" && (
 							<label className={labelClass}>
 								Min Minutes
 								<input
@@ -653,74 +837,142 @@ export default function App() {
 									onChange={(e) => setMinMinutes(Number(e.target.value))}
 								/>
 							</label>
-						</>
-					)}
+						)}
 
-					{tab === "form" && (
-						<label className={labelClass}>
-							Min Delta xGI per 90
-							<input
-								type="number"
-								step={0.05}
-								className={`${inputClass} w-24`}
-								value={minDelta}
-								onChange={(e) => setMinDelta(Number(e.target.value))}
-							/>
-						</label>
-					)}
+						{tab === "form" && (
+							<>
+								<label className={labelClass}>
+									Min Delta xGI Per 90
+									<input
+										type="number"
+										step={0.05}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={minDelta ?? ""}
+										onChange={(e) =>
+											setMinDelta(
+												e.target.value === "" ? null : Number(e.target.value),
+											)
+										}
+									/>
+								</label>
 
-					{tab === "defcon" && (
+								<div className={labelClass}>
+									<span>Metrics</span>
+									<div className="mt-1 flex h-[34px] items-center gap-4">
+										{ATTACKING_METRICS.map((metric) => (
+											<label
+												key={metric}
+												className="flex items-center gap-1 text-xs text-zinc-900"
+											>
+												<input
+													type="checkbox"
+													className="accent-blue-600"
+													checked={attackingMetrics[metric]}
+													disabled={
+														attackingMetrics[metric] &&
+														enabledAttackingMetricCount === 1
+													}
+													onChange={() => toggleAttackingMetric(metric)}
+												/>
+												{ATTACKING_METRIC_LABELS[metric]}
+											</label>
+										))}
+									</div>
+								</div>
+							</>
+						)}
+
+						{tab === "defcon" && (
+							<label className={labelClass}>
+								Min Hit Rate
+								<select
+									className={inputClass}
+									value={minHitRate}
+									onChange={(e) => setMinHitRate(Number(e.target.value))}
+								>
+									{HIT_RATES.map((rate) => (
+										<option key={rate} value={rate}>
+											{Math.round(rate * 100)}%
+										</option>
+									))}
+								</select>
+							</label>
+						)}
+
+						{tab === "defconProb" && (
+							<label className={labelClass}>
+								Min Games
+								<input
+									type="number"
+									min={0}
+									className={`${inputClass} w-24`}
+									value={minGames}
+									onChange={(e) => setMinGames(Number(e.target.value))}
+								/>
+							</label>
+						)}
+
+						{tab !== "defconProb" && (
+							<label htmlFor="window-size" className={labelClass}>
+								Window (Games)
+								<span className="mt-1 flex items-center gap-2">
+									<input
+										id="window-size"
+										type="range"
+										min={WINDOW_MIN}
+										max={WINDOW_MAX}
+										step={1}
+										value={windowSize}
+										onChange={(e) =>
+											setWindowSize(clampWindowSize(Number(e.target.value)))
+										}
+										className="range-slider w-32"
+										style={{
+											background: `linear-gradient(to right, #18181b 0%, #18181b ${windowFillPct}%, #e4e4e7 ${windowFillPct}%, #e4e4e7 100%)`,
+										}}
+									/>
+									<input
+										type="number"
+										min={WINDOW_MIN}
+										max={WINDOW_MAX}
+										step={1}
+										aria-label="Window size in games"
+										className={`${fieldClass} w-14`}
+										value={windowSize}
+										onChange={(e) =>
+											setWindowSize(clampWindowSize(Number(e.target.value)))
+										}
+									/>
+								</span>
+							</label>
+						)}
+
 						<label className={labelClass}>
-							Min Hit Rate
+							<span className="flex items-center gap-1">
+								As Of GW
+								<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
+							</span>
 							<select
 								className={inputClass}
-								value={minHitRate}
-								onChange={(e) => setMinHitRate(Number(e.target.value))}
+								value={asOfGw ?? ""}
+								onChange={(e) =>
+									setAsOfGw(
+										e.target.value === "" ? null : Number(e.target.value),
+									)
+								}
 							>
-								{HIT_RATES.map((rate) => (
-									<option key={rate} value={rate}>
-										{Math.round(rate * 100)}%
-									</option>
-								))}
+								<option value="">Latest ({latestGw})</option>
+								{Array.from({ length: latestGw }, (_, i) => latestGw - i).map(
+									(gw) => (
+										<option key={gw} value={gw}>
+											{gw}
+										</option>
+									),
+								)}
 							</select>
 						</label>
-					)}
-
-					{tab === "defconProb" && (
-						<label className={labelClass}>
-							Min Games
-							<input
-								type="number"
-								min={0}
-								className={`${inputClass} w-24`}
-								value={minGames}
-								onChange={(e) => setMinGames(Number(e.target.value))}
-							/>
-						</label>
-					)}
-
-					<label className={labelClass}>
-						<span className="flex items-center gap-1">
-							As Of GW
-							<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
-						</span>
-						<select
-							className={inputClass}
-							value={asOfGw ?? ""}
-							onChange={(e) =>
-								setAsOfGw(e.target.value === "" ? null : Number(e.target.value))
-							}
-						>
-							<option value="">Latest ({latestGw})</option>
-							{Array.from({ length: latestGw }, (_, i) => latestGw - i).map(
-								(gw) => (
-									<option key={gw} value={gw}>
-										{gw}
-									</option>
-								),
-							)}
-						</select>
-					</label>
+					</div>
 				</div>
 
 				{active.isPending ? (
@@ -732,14 +984,47 @@ export default function App() {
 				) : tab === "form" ? (
 					<>
 						<FormScatter players={filteredForm} />
-						<DataTable data={filteredForm} columns={formColumns} />
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<DataTable
+							data={filteredForm}
+							columns={formColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
 					</>
 				) : tab === "defcon" ? (
-					<DataTable data={filteredDefcon} columns={defconColumns} />
+					<>
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<DataTable
+							data={filteredDefcon}
+							columns={defconColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
+					</>
 				) : (
-					<DataTable data={filteredDefconProb} columns={defconProbColumns} />
+					<>
+						<p className="mb-2 text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<DataTable
+							data={filteredDefconProb}
+							columns={defconProbColumns}
+							onRowClick={(row) => setSelectedElement(row.element)}
+						/>
+					</>
 				)}
 			</div>
+
+			{selectedElement !== null ? (
+				<PlayerPanel
+					key={selectedElement}
+					element={selectedElement}
+					onClose={() => setSelectedElement(null)}
+				/>
+			) : null}
 		</div>
 	);
 }

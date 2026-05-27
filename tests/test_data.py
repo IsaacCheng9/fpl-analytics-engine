@@ -34,6 +34,7 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
     players = pl.DataFrame(
         {
             "id": [1, 2, 3],
+            "code": [101, 102, 103],
             "web_name": ["Def", "Mid", "Gk"],
             "element_type": [2, 3, 1],
             "team": [10, 10, 10],
@@ -84,3 +85,17 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
             "defcon_hit": None,
         },
     ]
+
+
+def test_load_all_seasons_stamps_missing_season_from_folder(
+    tmp_path: Path,
+) -> None:
+    season_dir = tmp_path / "2025-26"
+    season_dir.mkdir()
+    pl.DataFrame({"element": [1], "web_name": ["Saka"]}).write_parquet(
+        season_dir / "enriched.parquet"
+    )
+
+    out = data.load_all_seasons(tmp_path)
+
+    assert out.to_dicts() == [{"element": 1, "web_name": "Saka", "season": "2025-26"}]

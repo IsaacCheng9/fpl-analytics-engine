@@ -46,8 +46,14 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 			name: p.web_name,
 		}));
 
+	// Keep a stable footprint when empty rather than unmounting; collapsing the
+	// chart shifts the page height and can flip the scrollbar, flickering the UI.
 	if (points.length === 0) {
-		return null;
+		return (
+			<div className="mb-4 flex h-[372px] items-center justify-center rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-400">
+				No qualifying players for this window and filter.
+			</div>
+		);
 	}
 
 	const max = Math.max(...points.map((p) => Math.max(p.x, p.y)));
@@ -56,9 +62,9 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 	return (
 		<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
 			<h2 className="mb-3 font-medium text-sm text-zinc-700">
-				Recent vs season xGI per 90 (points above the line are improving)
+				Recent Vs Season xGI Per 90 (Points Above the Line Are Improving)
 			</h2>
-			<ResponsiveContainer width="100%" height={320}>
+			<ResponsiveContainer width="100%" height={320} debounce={50}>
 				<ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
 					<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
 					<XAxis
@@ -97,7 +103,12 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 						content={<ScatterTooltip />}
 						cursor={{ strokeDasharray: "3 3" }}
 					/>
-					<Scatter data={points} fill="#10b981" fillOpacity={0.7} />
+					<Scatter
+						data={points}
+						fill="#10b981"
+						fillOpacity={0.7}
+						isAnimationActive={false}
+					/>
 				</ScatterChart>
 			</ResponsiveContainer>
 		</div>

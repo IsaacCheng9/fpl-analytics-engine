@@ -11,7 +11,7 @@ strictly point-in-time – as of any gameweek, only data from that gameweek and
 earlier is used – so the engine is fully back-testable with no look-ahead.
 
 The differentiator over public form tables is the combination of a configurable
-recent-form window, expected-stats (xG/xGI) rather than raw points, and a
+recent-form window, expected-stats (xG/xA/xGI) rather than raw points, and a
 point-in-time design that lets every recommendation be replayed and scored
 against what actually happened next.
 
@@ -34,10 +34,14 @@ against what actually happened next.
   onward) into the same enriched schema, so the form engine runs across seasons
   for cross-season comparison
 - **REST API** – a FastAPI gateway exposing the form, DefCon, and
-  DefCon-probability views with full query-parameter filtering
+  DefCon-probability views, plus a player-detail endpoint for selected-season
+  gameweek detail and cross-season summaries
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables and a form-versus-baseline scatter plot across three views
   (Attacking Form, DefCon Form, DefCon Probability)
+- **Player detail view** – click any table row to inspect a player's
+  selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
+  and cross-season history keyed by stable FPL `code`
 
 ### Planned Features
 
@@ -46,6 +50,25 @@ against what actually happened next.
 - A recalibrated count-based DefCon model (negative-binomial) that keeps the
   sharper margin signal of contribution counts while matching the calibration of
   the binary model
+
+## Screenshots
+
+### Attacking Form
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/45b83daa-669c-4147-8661-a82d79b58dea" />
+
+### DefCon Form
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/3a145e4c-7e8d-4bf0-9f8f-030c4aac9057" />
+
+### DefCon Probability
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/d421dc0a-4b96-4ea8-ad31-fe4e01c21e7c" />
+
+### Detailed Player View
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/50fa244b-6d90-4f21-953d-dac1e1c7c9fa" />
+
 
 ## Methodology
 
@@ -57,7 +80,9 @@ from minutes-weighted xG, xA, and xGI. The headline signal is
 `delta_xgi90 = window_xgi90 - season_xgi90`: how far a player's recent
 underlying involvement has risen above their own baseline. Both figures use only
 games up to and including the as-of gameweek, so the table is exactly what was
-knowable at that point in the season.
+knowable at that point in the season. The dashboard exposes xGI, xG, and xA as
+separate metric groups, with window, season, delta, and per-price views for each
+enabled metric.
 
 ### Defensive Contribution (DefCon)
 
@@ -69,7 +94,9 @@ probability of hitting next match as a beta-binomial: a per-position prior
 fitted from the whole population shrinks thin samples toward the position mean,
 and the shrinkage eases as a player's sample grows. The model is evaluated by
 backtest – Brier score for sharpness and a calibration table to check that
-predicted probabilities match observed frequencies.
+predicted probabilities match observed frequencies. The UI also surfaces average
+defensive-contribution counts, which show whether a player is trending near the
+threshold even when their binary hit-rate is flat.
 
 ### Data Availability Caveats
 
@@ -80,6 +107,8 @@ predicted probabilities match observed frequencies.
   2025-26-only and historical seasons carry null DefCon columns
 - In the vaastav archive, 2022-23 expected stats only cover GW16-38; scope
   2022-23 form comparisons to GW16 onward
+- Cross-season player matching uses stable FPL `code`; historical `element` ids
+  are season-local and are not safe for matching the same player across seasons
 
 ## Architecture
 
@@ -87,13 +116,15 @@ predicted probabilities match observed frequencies.
 flowchart TD
     fpl[FPL API<br/>bootstrap + element-summary] -->|archive.py| snap[data/2025-26<br/>per-GW Parquet]
     vaastav[vaastav archive<br/>2022-25] -->|backfill.py| hist[data/&lt;season&gt;<br/>enriched.parquet]
-    snap -->|data.py enrich| enriched[Enriched per-GW history<br/>xG/xGI + DefCon hit]
+    snap -->|data.py enrich| enriched[Enriched per-GW history<br/>xG/xA/xGI + DefCon hit]
     hist --> enriched
     enriched --> formmod[form.py<br/>point-in-time form + backtest]
     enriched --> defconmod[defcon.py<br/>beta-binomial probability + backtest]
+    enriched --> playermod[player.py<br/>player detail + season history]
     formmod --> api[api.py<br/>FastAPI gateway]
     defconmod --> api
-    api -->|JSON| ui[React dashboard<br/>tables + form scatter]
+    playermod --> api
+    api -->|JSON| ui[React dashboard<br/>tables + detail panel]
 ```
 
 ## Technology Stack
@@ -110,7 +141,8 @@ flowchart TD
 
 - **React 19** with **TypeScript** on **Vite**: single-page dashboard
 - **TanStack Table** and **TanStack Query**: sortable tables and data fetching
-- **Recharts**: the form-versus-baseline scatter plot
+- **Recharts**: the form-versus-baseline scatter plot and player-detail rolling
+  charts
 - **Tailwind CSS**: styling
 - **Biome**: linting and formatting
 - **Vitest** with **Testing Library**: component tests
@@ -125,7 +157,9 @@ The engine reads from local Parquet snapshots under `data/` (gitignored):
 - **Historical backfill** – `backfill.py` pulls the
   [vaastav archive](https://github.com/vaastav/Fantasy-Premier-League) for
   2022-23 to 2024-25 and maps it into the same enriched schema, so the same form
-  functions work across every archived season
+  functions work across every archived season. It also reads each season's
+  `players_raw.csv` so historical `element` ids can be mapped to stable FPL
+  `code` and current-style `web_name`
 
 ## Usage
 
@@ -152,6 +186,10 @@ Download and adapt the vaastav archive into `data/<season>/enriched.parquet`:
 ```bash
 uv run python -m fpl_analytics_engine.backfill
 ```
+
+Run this after a fresh checkout before using the player detail view; `data/` is
+gitignored, and the detail endpoint needs every archived season's
+`enriched.parquet` to include the stable `code` column.
 
 ### Running the API
 
@@ -183,6 +221,7 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 | `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`    |
 | `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw` |
 | `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`              |
+| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | `window`, `season`                                                       |
 
 Every endpoint accepts `as_of_gw` to evaluate the point-in-time view as it would
 have looked after an earlier gameweek; it defaults to the latest gameweek in the
