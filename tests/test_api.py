@@ -194,6 +194,75 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     assert p3["current_ownership"] == pytest.approx(12.0)
 
 
+def _club_history() -> pl.DataFrame:
+    rows = []
+    for team, name, fixture, round_, xg, xgc, home_score, away_score in [
+        (1, "Arsenal", 1, 1, 1.0, 1.2, 2, 1),
+        (1, "Arsenal", 2, 2, 2.0, 0.5, 3, 0),
+        (2, "Chelsea", 3, 1, 0.8, 1.8, 1, 2),
+        (2, "Chelsea", 4, 2, 0.6, 2.2, 0, 2),
+    ]:
+        rows.extend(
+            [
+                {
+                    "element": fixture * 10 + 1,
+                    "fixture": fixture,
+                    "team": team,
+                    "team_name": name,
+                    "round": round_,
+                    "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+                    "was_home": True,
+                    "team_h_score": home_score,
+                    "team_a_score": away_score,
+                    "minutes": 90,
+                    "expected_goals": xg / 2,
+                    "expected_goals_conceded": xgc,
+                },
+                {
+                    "element": fixture * 10 + 2,
+                    "fixture": fixture,
+                    "team": team,
+                    "team_name": name,
+                    "round": round_,
+                    "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+                    "was_home": True,
+                    "team_h_score": home_score,
+                    "team_a_score": away_score,
+                    "minutes": 90,
+                    "expected_goals": xg / 2,
+                    "expected_goals_conceded": xgc,
+                },
+            ]
+        )
+    return pl.DataFrame(rows)
+
+
+def test_clubs_form_endpoint_returns_club_context(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_history] = _club_history
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "event": [3, 3],
+            "team_h": [1, 2],
+            "team_a": [9, 8],
+            "team_h_difficulty": [2, 4],
+            "team_a_difficulty": [5, 2],
+        }
+    )
+
+    body = client.get("/clubs/form", params={"window": 1}).json()
+    arsenal = next(row for row in body if row["team_name"] == "Arsenal")
+
+    assert arsenal["window_matches"] == 1
+    assert arsenal["season_matches"] == 2
+    assert arsenal["window_xg_per_match"] == pytest.approx(2.0)
+    assert arsenal["season_xg_per_match"] == pytest.approx(1.5)
+    assert arsenal["attack_form"] == pytest.approx(0.5)
+    assert arsenal["window_xgc_per_match"] == pytest.approx(0.5)
+    assert arsenal["defence_form"] == pytest.approx(0.35)
+    assert arsenal["upcoming_fixtures"] == 1
+    assert arsenal["avg_fdr"] == pytest.approx(2.0)
+
+
 def _detail_rows() -> pl.DataFrame:
     def r(season: str, element: int, code: int, round_: int, xgi: float, hit) -> dict:
         return {
