@@ -190,6 +190,24 @@ Run this after a fresh checkout before using the player detail view; `data/` is
 gitignored, and the detail endpoint needs every archived season's
 `enriched.parquet` to include the stable `code` column.
 
+### Validating Local Data
+
+Check that the gitignored Parquet snapshots are present and internally usable:
+
+```bash
+uv run python -m fpl_analytics_engine.data_health
+```
+
+Run the opt-in real-data smoke check after archiving and backfilling:
+
+```bash
+uv run python scripts/real_data_smoke.py
+```
+
+The smoke script uses Saka by default as a known cross-season player, verifies
+stable-code matching, and checks that 2022-23 expected-stat rates are scoped to
+GW16 onward.
+
 ### Running the API
 
 ```bash
