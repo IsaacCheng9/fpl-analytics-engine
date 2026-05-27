@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd frontend && bun install --frozen-lockfile && bun run build"
+  "buildCommand": "python -m pip install . && cd frontend && bun install --frozen-lockfile && bun run build"
 }

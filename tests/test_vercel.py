@@ -1,5 +1,6 @@
 """Tests for the Vercel deployment entrypoint."""
 
+import importlib
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -45,6 +46,16 @@ def test_vercel_entrypoint_mounts_api_prefix(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["latest_gw"] == 1
+
+
+def test_vercel_entrypoint_imports_from_vercel_module_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path.cwd()))
+
+    entrypoint = importlib.import_module("src.fpl_analytics_engine.vercel")
+
+    assert entrypoint.app is not None
 
 
 def test_vercel_entrypoint_serves_frontend_dist(tmp_path: Path) -> None:
