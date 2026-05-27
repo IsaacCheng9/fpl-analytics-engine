@@ -51,6 +51,25 @@ against what actually happened next.
   sharper margin signal of contribution counts while matching the calibration of
   the binary model
 
+## Screenshots
+
+### Attacking Form
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/45b83daa-669c-4147-8661-a82d79b58dea" />
+
+### DefCon Form
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/3a145e4c-7e8d-4bf0-9f8f-030c4aac9057" />
+
+### DefCon Probability
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/d421dc0a-4b96-4ea8-ad31-fe4e01c21e7c" />
+
+### Detailed Player View
+
+<img width="1464" height="1440" alt="image" src="https://github.com/user-attachments/assets/50fa244b-6d90-4f21-953d-dac1e1c7c9fa" />
+
+
 ## Methodology
 
 ### Form
