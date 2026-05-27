@@ -126,6 +126,8 @@ const FORM_HEAT_KEYS = [
 	"avg_fdr",
 ];
 const DEFCON_HEAT_KEYS = [
+	"window_games",
+	"window_defcon_hits",
 	"window_defcon_hit_rate",
 	"season_points_per_million",
 	"window_start_rate",
@@ -133,8 +135,11 @@ const DEFCON_HEAT_KEYS = [
 	"avg_fdr",
 ];
 const DEFCON_PROB_HEAT_KEYS = [
+	"games",
+	"hits",
 	"raw_rate",
 	"prob",
+	"prob_std",
 	"season_points_per_million",
 	"window_start_rate",
 	"window_mins_per_appearance",
@@ -358,11 +363,17 @@ function buildDefconColumns(
 		{
 			accessorKey: "window_games",
 			header: "Games",
+			cell: heatCell<DefconPlayer>(ranges.window_games, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Eligible games in the window" },
 		},
 		{
 			accessorKey: "window_defcon_hits",
 			header: "Hits",
+			cell: heatCell<DefconPlayer>(ranges.window_defcon_hits, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Window games clearing the DefCon threshold" },
 		},
 		{
@@ -445,11 +456,17 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "games",
 			header: "Games",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.games, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Eligible appearances up to this gameweek" },
 		},
 		{
 			accessorKey: "hits",
 			header: "Hits",
+			cell: heatCell<DefconProbabilityPlayer>(ranges.hits, {
+				format: (v) => fmtNum(v, 0),
+			}),
 			meta: { tooltip: "Appearances clearing the DefCon threshold" },
 		},
 		{
@@ -472,7 +489,9 @@ function buildDefconProbColumns(
 		{
 			accessorKey: "prob_std",
 			header: "+/-",
-			cell: (info) => fmtNum(info.getValue<number | null>()),
+			cell: heatCell<DefconProbabilityPlayer>(ranges.prob_std, {
+				lowerIsBetter: true,
+			}),
 			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
 		},
 		{
