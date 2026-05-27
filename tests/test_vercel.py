@@ -53,3 +53,25 @@ def test_vercel_entrypoint_mounts_api_prefix(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["latest_gw"] == 1
+
+
+def test_vercel_entrypoint_serves_frontend_dist(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+    (assets / "app.js").write_text("console.log('ok')", encoding="utf-8")
+
+    app = vercel_entrypoint.create_app(dist)
+    static_client = TestClient(app)
+
+    root = static_client.get("/")
+    nested = static_client.get("/players/1")
+    asset = static_client.get("/assets/app.js")
+
+    assert root.status_code == 200
+    assert "<div id='root'></div>" in root.text
+    assert nested.status_code == 200
+    assert "<div id='root'></div>" in nested.text
+    assert asset.status_code == 200
+    assert asset.text == "console.log('ok')"

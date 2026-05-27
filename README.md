@@ -270,15 +270,15 @@ The repository includes a Vercel configuration for a single-project deployment:
 
 - `frontend/` builds the static React dashboard
 - `api/index.py` exposes the FastAPI app as a Python ASGI function mounted under
-  `/api`
-- `vercel.json` routes `/api/*` to the Python function and all other paths to
-  the Vite single-page app
-- `data/` is included in the Python function bundle so the deployed API can
-  read the same Parquet snapshots as local development
+  `/api` and serves the built Vite app for all non-API paths
+- `vercel.json` supplies the frontend build command and lets Vercel use the
+  FastAPI entrypoint declared in `pyproject.toml`
+- `data/` is committed so the deployed API can read the same Parquet snapshots
+  as local development
 
 In Vercel, import the repository with the project root set to the repository
-root. The checked-in `vercel.json` supplies the install command, build command,
-output directory, API routing, and data-file inclusion.
+root. The checked-in `vercel.json` builds the frontend, then `api/index.py`
+serves both the API and the single-page app from one FastAPI deployment.
 
 ## API Endpoints
 
