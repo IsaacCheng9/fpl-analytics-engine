@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import {
 	CartesianGrid,
 	Line,
@@ -61,17 +60,22 @@ function Chart({
 
 export function PlayerPanel({
 	element,
+	window: rollingWindow,
+	season,
+	onWindowChange,
+	onSeasonChange,
 	onClose,
 }: {
 	element: number;
+	window: number;
+	season: string | null;
+	onWindowChange: (window: number) => void;
+	onSeasonChange: (season: string) => void;
 	onClose: () => void;
 }) {
-	const [window, setWindow] = useState(5);
-	const [season, setSeason] = useState<string | null>(null);
-
 	const query = useQuery({
-		queryKey: ["player", element, window, season],
-		queryFn: () => fetchPlayerDetail(element, window, season),
+		queryKey: ["player", element, rollingWindow, season],
+		queryFn: () => fetchPlayerDetail(element, rollingWindow, season),
 	});
 	const detail = query.data;
 
@@ -116,7 +120,7 @@ export function PlayerPanel({
 								<select
 									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
 									value={detail.selected_season}
-									onChange={(e) => setSeason(e.target.value)}
+									onChange={(e) => onSeasonChange(e.target.value)}
 								>
 									{[...detail.seasons].reverse().map((s) => (
 										<option key={s.season} value={s.season}>
@@ -130,8 +134,8 @@ export function PlayerPanel({
 								Rolling Window (Games)
 								<select
 									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
-									value={window}
-									onChange={(e) => setWindow(Number(e.target.value))}
+									value={rollingWindow}
+									onChange={(e) => onWindowChange(Number(e.target.value))}
 								>
 									{WINDOWS.map((n) => (
 										<option key={n} value={n}>

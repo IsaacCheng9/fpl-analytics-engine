@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CellContext, ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	type DefconPlayer,
 	type DefconProbabilityPlayer,
@@ -31,6 +31,19 @@ const TABS: Tab[] = ["form", "defcon", "defconProb"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOW_MIN = 2;
 const WINDOW_MAX = 20;
+const DEFAULT_TAB: Tab = "form";
+const DEFAULT_PLAYER_SEARCH = "";
+const DEFAULT_TEAM_FILTER = "";
+const DEFAULT_WINDOW_SIZE = 5;
+const DEFAULT_POSITION: Position | "" = "";
+const DEFAULT_MIN_MINUTES = 180;
+const DEFAULT_MIN_DELTA: number | null = null;
+const DEFAULT_MIN_HIT_RATE = 0;
+const DEFAULT_MIN_GAMES = 5;
+const DEFAULT_AS_OF_GW: number | null = null;
+const DEFAULT_SELECTED_ELEMENT: number | null = null;
+const DEFAULT_PLAYER_WINDOW = 5;
+const DEFAULT_PLAYER_SEASON: string | null = null;
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
 const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
 const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
@@ -89,6 +102,224 @@ const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
 	xa: false,
 	xgi: true,
 };
+const TAB_QUERY_VALUES: Record<Tab, string> = {
+	form: "form",
+	defcon: "defcon",
+	defconProb: "defcon-prob",
+};
+const QUERY_VALUE_TABS: Record<string, Tab> = {
+	form: "form",
+	defcon: "defcon",
+	defconProb: "defconProb",
+	"defcon-prob": "defconProb",
+};
+
+type UrlState = {
+	tab: Tab;
+	playerSearch: string;
+	teamFilter: string;
+	windowSize: number;
+	position: Position | "";
+	minMinutes: number;
+	minDelta: number | null;
+	minHitRate: number;
+	minGames: number;
+	asOfGw: number | null;
+	selectedElement: number | null;
+	playerWindow: number;
+	playerSeason: string | null;
+	attackingMetrics: AttackingMetricVisibility;
+};
+
+const DEFAULT_URL_STATE: UrlState = {
+	tab: DEFAULT_TAB,
+	playerSearch: DEFAULT_PLAYER_SEARCH,
+	teamFilter: DEFAULT_TEAM_FILTER,
+	windowSize: DEFAULT_WINDOW_SIZE,
+	position: DEFAULT_POSITION,
+	minMinutes: DEFAULT_MIN_MINUTES,
+	minDelta: DEFAULT_MIN_DELTA,
+	minHitRate: DEFAULT_MIN_HIT_RATE,
+	minGames: DEFAULT_MIN_GAMES,
+	asOfGw: DEFAULT_AS_OF_GW,
+	selectedElement: DEFAULT_SELECTED_ELEMENT,
+	playerWindow: DEFAULT_PLAYER_WINDOW,
+	playerSeason: DEFAULT_PLAYER_SEASON,
+	attackingMetrics: DEFAULT_ATTACKING_METRICS,
+};
+
+function isBrowser() {
+	return typeof window !== "undefined";
+}
+
+function parseNumber(
+	value: string | null,
+	fallback: number,
+	{ min, max }: { min?: number; max?: number } = {},
+): number {
+	if (value === null || value.trim() === "") {
+		return fallback;
+	}
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) {
+		return fallback;
+	}
+	if (min !== undefined && parsed < min) {
+		return fallback;
+	}
+	if (max !== undefined && parsed > max) {
+		return fallback;
+	}
+	return parsed;
+}
+
+function parseOptionalNumber(
+	value: string | null,
+	{ min, max }: { min?: number; max?: number } = {},
+): number | null {
+	if (value === null || value.trim() === "") {
+		return null;
+	}
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) {
+		return null;
+	}
+	if (min !== undefined && parsed < min) {
+		return null;
+	}
+	if (max !== undefined && parsed > max) {
+		return null;
+	}
+	return parsed;
+}
+
+function parseTab(value: string | null): Tab {
+	return value === null
+		? DEFAULT_TAB
+		: (QUERY_VALUE_TABS[value] ?? DEFAULT_TAB);
+}
+
+function parsePosition(value: string | null): Position | "" {
+	return POSITIONS.includes(value as Position) ? (value as Position) : "";
+}
+
+function parseAttackingMetrics(
+	value: string | null,
+): AttackingMetricVisibility {
+	if (value === null) {
+		return { ...DEFAULT_ATTACKING_METRICS };
+	}
+	const visible = new Set(value.split(","));
+	const parsed = Object.fromEntries(
+		ATTACKING_METRICS.map((metric) => [metric, visible.has(metric)]),
+	) as AttackingMetricVisibility;
+	return Object.values(parsed).some(Boolean)
+		? parsed
+		: { ...DEFAULT_ATTACKING_METRICS };
+}
+
+function readUrlState(): UrlState {
+	if (!isBrowser()) {
+		return { ...DEFAULT_URL_STATE };
+	}
+	const params = new URLSearchParams(window.location.search);
+	return {
+		tab: parseTab(params.get("tab")),
+		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
+		teamFilter: params.get("team") ?? DEFAULT_TEAM_FILTER,
+		windowSize: clampWindowSize(
+			parseNumber(params.get("window"), DEFAULT_WINDOW_SIZE),
+		),
+		position: parsePosition(params.get("position")),
+		minMinutes: parseNumber(params.get("min_minutes"), DEFAULT_MIN_MINUTES, {
+			min: 0,
+		}),
+		minDelta: parseOptionalNumber(params.get("min_delta")),
+		minHitRate: parseNumber(params.get("min_hit_rate"), DEFAULT_MIN_HIT_RATE, {
+			min: 0,
+			max: 1,
+		}),
+		minGames: parseNumber(params.get("min_games"), DEFAULT_MIN_GAMES, {
+			min: 0,
+		}),
+		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
+		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
+		playerWindow: parseNumber(
+			params.get("player_window"),
+			DEFAULT_PLAYER_WINDOW,
+			{ min: 1, max: WINDOW_MAX },
+		),
+		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
+		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
+	};
+}
+
+function metricsMatchDefault(metrics: AttackingMetricVisibility): boolean {
+	return ATTACKING_METRICS.every(
+		(metric) => metrics[metric] === DEFAULT_ATTACKING_METRICS[metric],
+	);
+}
+
+function writeUrlState(state: UrlState) {
+	if (!isBrowser()) {
+		return;
+	}
+	const params = new URLSearchParams();
+	if (state.tab !== DEFAULT_TAB) {
+		params.set("tab", TAB_QUERY_VALUES[state.tab]);
+	}
+	if (state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
+		params.set("q", state.playerSearch);
+	}
+	if (state.teamFilter !== DEFAULT_TEAM_FILTER) {
+		params.set("team", state.teamFilter);
+	}
+	if (state.windowSize !== DEFAULT_WINDOW_SIZE) {
+		params.set("window", String(state.windowSize));
+	}
+	if (state.position !== DEFAULT_POSITION) {
+		params.set("position", state.position);
+	}
+	if (state.minMinutes !== DEFAULT_MIN_MINUTES) {
+		params.set("min_minutes", String(state.minMinutes));
+	}
+	if (state.minDelta !== DEFAULT_MIN_DELTA) {
+		params.set("min_delta", String(state.minDelta));
+	}
+	if (state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
+		params.set("min_hit_rate", String(state.minHitRate));
+	}
+	if (state.minGames !== DEFAULT_MIN_GAMES) {
+		params.set("min_games", String(state.minGames));
+	}
+	if (state.asOfGw !== DEFAULT_AS_OF_GW) {
+		params.set("as_of_gw", String(state.asOfGw));
+	}
+	if (!metricsMatchDefault(state.attackingMetrics)) {
+		params.set(
+			"metrics",
+			ATTACKING_METRICS.filter((metric) => state.attackingMetrics[metric]).join(
+				",",
+			),
+		);
+	}
+	if (state.selectedElement !== DEFAULT_SELECTED_ELEMENT) {
+		params.set("player", String(state.selectedElement));
+		if (state.playerWindow !== DEFAULT_PLAYER_WINDOW) {
+			params.set("player_window", String(state.playerWindow));
+		}
+		if (state.playerSeason !== null) {
+			params.set("season", state.playerSeason);
+		}
+	}
+
+	const search = params.toString();
+	const nextUrl = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+	const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+	if (nextUrl !== currentUrl) {
+		window.history.replaceState(null, "", nextUrl);
+	}
+}
 
 // Apply the client-side player and team filters so the chart and table stay
 // in sync from a single source.
@@ -578,21 +809,93 @@ function clampWindowSize(value: number): number {
 }
 
 export default function App() {
-	const [tab, setTab] = useState<Tab>("form");
-	const [playerSearch, setPlayerSearch] = useState("");
-	const [teamFilter, setTeamFilter] = useState("");
-	const [windowSize, setWindowSize] = useState(5);
-	const [position, setPosition] = useState<Position | "">("");
-	const [minMinutes, setMinMinutes] = useState(180);
+	const initialUrlState = useMemo(() => readUrlState(), []);
+	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
+	const [playerSearch, setPlayerSearch] = useState(
+		initialUrlState.playerSearch,
+	);
+	const [teamFilter, setTeamFilter] = useState(initialUrlState.teamFilter);
+	const [windowSize, setWindowSize] = useState(initialUrlState.windowSize);
+	const [position, setPosition] = useState<Position | "">(
+		initialUrlState.position,
+	);
+	const [minMinutes, setMinMinutes] = useState(initialUrlState.minMinutes);
 	// Null means no delta floor - show every qualifying player by default; the
 	// delta column and scatter still convey who is improving.
-	const [minDelta, setMinDelta] = useState<number | null>(null);
-	const [minHitRate, setMinHitRate] = useState(0);
-	const [minGames, setMinGames] = useState(5);
-	const [asOfGw, setAsOfGw] = useState<number | null>(null);
-	const [selectedElement, setSelectedElement] = useState<number | null>(null);
+	const [minDelta, setMinDelta] = useState<number | null>(
+		initialUrlState.minDelta,
+	);
+	const [minHitRate, setMinHitRate] = useState(initialUrlState.minHitRate);
+	const [minGames, setMinGames] = useState(initialUrlState.minGames);
+	const [asOfGw, setAsOfGw] = useState<number | null>(initialUrlState.asOfGw);
+	const [selectedElement, setSelectedElement] = useState<number | null>(
+		initialUrlState.selectedElement,
+	);
+	const [playerWindow, setPlayerWindow] = useState(
+		initialUrlState.playerWindow,
+	);
+	const [playerSeason, setPlayerSeason] = useState<string | null>(
+		initialUrlState.playerSeason,
+	);
 	const [attackingMetrics, setAttackingMetrics] =
-		useState<AttackingMetricVisibility>(DEFAULT_ATTACKING_METRICS);
+		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
+
+	useEffect(() => {
+		function applyCurrentUrlState() {
+			const next = readUrlState();
+			setTab(next.tab);
+			setPlayerSearch(next.playerSearch);
+			setTeamFilter(next.teamFilter);
+			setWindowSize(next.windowSize);
+			setPosition(next.position);
+			setMinMinutes(next.minMinutes);
+			setMinDelta(next.minDelta);
+			setMinHitRate(next.minHitRate);
+			setMinGames(next.minGames);
+			setAsOfGw(next.asOfGw);
+			setSelectedElement(next.selectedElement);
+			setPlayerWindow(next.playerWindow);
+			setPlayerSeason(next.playerSeason);
+			setAttackingMetrics(next.attackingMetrics);
+		}
+
+		window.addEventListener("popstate", applyCurrentUrlState);
+		return () => window.removeEventListener("popstate", applyCurrentUrlState);
+	}, []);
+
+	useEffect(() => {
+		writeUrlState({
+			tab,
+			playerSearch,
+			teamFilter,
+			windowSize,
+			position,
+			minMinutes,
+			minDelta,
+			minHitRate,
+			minGames,
+			asOfGw,
+			selectedElement,
+			playerWindow,
+			playerSeason,
+			attackingMetrics,
+		});
+	}, [
+		tab,
+		playerSearch,
+		teamFilter,
+		windowSize,
+		position,
+		minMinutes,
+		minDelta,
+		minHitRate,
+		minGames,
+		asOfGw,
+		selectedElement,
+		playerWindow,
+		playerSeason,
+		attackingMetrics,
+	]);
 
 	function toggleAttackingMetric(metric: AttackingMetric) {
 		setAttackingMetrics((current) => {
@@ -948,12 +1251,13 @@ export default function App() {
 							</label>
 						)}
 
-						<label className={labelClass}>
+						<div className={labelClass}>
 							<span className="flex items-center gap-1">
-								As Of GW
+								<label htmlFor="as-of-gw">As Of GW</label>
 								<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
 							</span>
 							<select
+								id="as-of-gw"
 								className={inputClass}
 								value={asOfGw ?? ""}
 								onChange={(e) =>
@@ -971,7 +1275,7 @@ export default function App() {
 									),
 								)}
 							</select>
-						</label>
+						</div>
 					</div>
 				</div>
 
@@ -990,7 +1294,11 @@ export default function App() {
 						<DataTable
 							data={filteredForm}
 							columns={formColumns}
-							onRowClick={(row) => setSelectedElement(row.element)}
+							onRowClick={(row) => {
+								setSelectedElement(row.element);
+								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+								setPlayerSeason(DEFAULT_PLAYER_SEASON);
+							}}
 						/>
 					</>
 				) : tab === "defcon" ? (
@@ -1001,7 +1309,11 @@ export default function App() {
 						<DataTable
 							data={filteredDefcon}
 							columns={defconColumns}
-							onRowClick={(row) => setSelectedElement(row.element)}
+							onRowClick={(row) => {
+								setSelectedElement(row.element);
+								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+								setPlayerSeason(DEFAULT_PLAYER_SEASON);
+							}}
 						/>
 					</>
 				) : (
@@ -1012,7 +1324,11 @@ export default function App() {
 						<DataTable
 							data={filteredDefconProb}
 							columns={defconProbColumns}
-							onRowClick={(row) => setSelectedElement(row.element)}
+							onRowClick={(row) => {
+								setSelectedElement(row.element);
+								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+								setPlayerSeason(DEFAULT_PLAYER_SEASON);
+							}}
 						/>
 					</>
 				)}
@@ -1022,7 +1338,15 @@ export default function App() {
 				<PlayerPanel
 					key={selectedElement}
 					element={selectedElement}
-					onClose={() => setSelectedElement(null)}
+					window={playerWindow}
+					season={playerSeason}
+					onWindowChange={setPlayerWindow}
+					onSeasonChange={setPlayerSeason}
+					onClose={() => {
+						setSelectedElement(null);
+						setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+						setPlayerSeason(DEFAULT_PLAYER_SEASON);
+					}}
 				/>
 			) : null}
 		</div>
