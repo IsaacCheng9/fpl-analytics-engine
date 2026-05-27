@@ -55,19 +55,19 @@ against what actually happened next.
 
 ### Attacking Form
 
-<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 13 11" src="https://github.com/user-attachments/assets/33bef887-042b-4f99-89d3-d23c3f6a73c8" />
+<img width="1480" height="1440" alt="Attacking Form table" src="docs/screenshots/attacking_form.png" />
 
 ### DefCon Form
 
-<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 13 58" src="https://github.com/user-attachments/assets/6da131e1-0c5f-4fc4-a8ca-6128a9c3a620" />
+<img width="1480" height="1440" alt="DefCon Form table" src="docs/screenshots/defcon_form.png" />
 
 ### DefCon Probability
 
-<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 14 03" src="https://github.com/user-attachments/assets/d696e7c9-ac30-40ca-9584-b8c15416d680" />
+<img width="1480" height="1440" alt="DefCon Probability table" src="docs/screenshots/defcon_probability.png" />
 
 ### Detailed Player View
 
-<img width="1480" height="1440" alt="Screenshot 2026-05-27 at 12 14 34" src="https://github.com/user-attachments/assets/34b34c21-2d58-4ee6-9499-11cf44271f00" />
+<img width="1480" height="1440" alt="Detailed Player View panel" src="docs/screenshots/detailed_player_view.png" />
 
 ## Methodology
 
@@ -214,13 +214,13 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ## API Endpoints
 
-| Endpoint                          | Description                                          | Parameters                                                               |
-| --------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
-| `GET /`                           | Service metadata and the latest gameweek in the data | –                                                                        |
-| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| Endpoint                          | Description                                          | Parameters                                                                              |
+| --------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /`                           | Service metadata and the latest gameweek in the data | –                                                                                       |
+| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing   | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon`    |
 | `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate      | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | Path: `element`; query: `window`, `season`                               |
+| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability    | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon`              |
+| `GET /players/{element}`          | Player gameweeks and cross-season season summaries   | Path: `element`; query: `window`, `season`                                              |
 
 The three table endpoints accept `as_of_gw` to evaluate the point-in-time view
 as it would have looked after an earlier gameweek; it defaults to the latest
