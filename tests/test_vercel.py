@@ -1,6 +1,8 @@
 """Tests for the Vercel deployment entrypoint."""
 
 import importlib
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -56,6 +58,26 @@ def test_vercel_entrypoint_imports_from_vercel_module_path(
     entrypoint = importlib.import_module("src.fpl_analytics_engine.vercel")
 
     assert entrypoint.app is not None
+
+
+def test_vercel_entrypoint_imports_with_src_pythonpath() -> None:
+    command = (
+        "import importlib; importlib.import_module('src.fpl_analytics_engine.vercel')"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            command,
+        ],
+        check=False,
+        cwd=Path.cwd(),
+        env={"PYTHONPATH": "src"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_vercel_entrypoint_serves_frontend_dist(tmp_path: Path) -> None:

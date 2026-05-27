@@ -1,4 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "python -m pip install . && cd frontend && bun install --frozen-lockfile && bun run build"
+  "buildCommand": "cd frontend && bun install --frozen-lockfile && bun run build",
+  "env": {
+    "PYTHONPATH": "src"
+  },
+  "build": {
+    "env": {
+      "PYTHONPATH": "src"
+    }
+  }
 }

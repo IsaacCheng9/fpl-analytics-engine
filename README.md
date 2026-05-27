@@ -272,8 +272,8 @@ The repository includes a Vercel configuration for a single-project deployment:
 - `src/fpl_analytics_engine/vercel.py` exposes the FastAPI app as a Python ASGI
   function mounted under `/api` and serves the built Vite app for all non-API
   paths
-- `vercel.json` installs the local Python package, builds the frontend, and lets
-  Vercel use the FastAPI entrypoint declared in `pyproject.toml`
+- `vercel.json` builds the frontend and sets `PYTHONPATH=src` so Vercel's
+  Python runtime can import the packaged app from the `src/` layout
 - `data/` is committed so the deployed API can read the same Parquet snapshots
   as local development
 
