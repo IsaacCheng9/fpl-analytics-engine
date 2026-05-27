@@ -121,3 +121,93 @@ def test_compute_club_form_table_compares_window_to_baseline() -> None:
     assert out["window_xgc_per_match"] == pytest.approx(0.75)
     assert out["season_xgc_per_match"] == pytest.approx(1.0)
     assert out["defence_form"] == pytest.approx(0.25)
+
+
+def _validation_history() -> pl.DataFrame:
+    rows = []
+    for round_, team_1_xg, team_1_xgc, team_2_xg, team_2_xgc in [
+        (1, 1.0, 1.4, 1.8, 0.7),
+        (2, 1.5, 1.1, 1.4, 0.9),
+        (3, 2.0, 0.9, 1.1, 1.1),
+        (4, 2.4, 0.7, 0.9, 1.3),
+        (5, 2.8, 0.6, 0.8, 1.6),
+        (6, 3.0, 0.5, 0.7, 1.8),
+    ]:
+        for team, name, xg, xgc in [
+            (1, "Arsenal", team_1_xg, team_1_xgc),
+            (2, "Chelsea", team_2_xg, team_2_xgc),
+        ]:
+            fixture = round_ * 10 + team
+            rows.extend(
+                [
+                    _player_row(
+                        team=team,
+                        team_name=name,
+                        fixture=fixture,
+                        round_=round_,
+                        player="A",
+                        xg=xg / 2,
+                        xgc=xgc,
+                    ),
+                    _player_row(
+                        team=team,
+                        team_name=name,
+                        fixture=fixture,
+                        round_=round_,
+                        player="B",
+                        xg=xg / 2,
+                        xgc=xgc,
+                    ),
+                ]
+            )
+    return pl.DataFrame(rows)
+
+
+def _validation_fixtures() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "event": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6],
+            "team_h": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            "team_a": [91, 92, 91, 92, 91, 92, 91, 92, 91, 92, 91, 92],
+            "team_h_difficulty": [2, 4, 2, 4, 2, 4, 3, 3, 3, 3, 4, 2],
+            "team_a_difficulty": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+        }
+    )
+
+
+def test_club_form_validation_rows_are_point_in_time() -> None:
+    rows = club.club_form_validation_rows(
+        _validation_history(),
+        _validation_fixtures(),
+        window=1,
+        fdr_horizon=1,
+        gw_range=range(2, 3),
+    )
+    arsenal = rows.filter(pl.col("team_name") == "Arsenal").row(0, named=True)
+
+    assert arsenal["as_of_gw"] == 2
+    assert arsenal["avg_fdr"] == pytest.approx(2.0)
+    assert arsenal["attack_form"] == pytest.approx(1.5 - 1.25)
+    assert arsenal["future_xg_per_match"] == pytest.approx(2.0)
+    assert arsenal["future_xgc_per_match"] == pytest.approx(0.9)
+
+
+def test_backtest_club_form_signals_summarises_fdr_against_form() -> None:
+    scored = club.backtest_club_form_signals(
+        _validation_history(),
+        _validation_fixtures(),
+        window=1,
+        fdr_horizon=1,
+        min_train_rows=4,
+        gw_range=range(2, 6),
+    )
+    summary = club.summarise_club_form_validation(scored)
+
+    assert set(summary["target"].to_list()) == {
+        "future_xg_per_match",
+        "future_xgc_per_match",
+    }
+    by_target = {row["target"]: row for row in summary.to_dicts()}
+    assert by_target["future_xg_per_match"]["n_predictions"] == 4
+    assert by_target["future_xg_per_match"]["fdr_mae"] is not None
+    assert by_target["future_xg_per_match"]["fdr_plus_form_mae"] is not None
