@@ -1,4 +1,4 @@
-"""Expose the FastAPI app as a Vercel Python function."""
+"""Expose the production FastAPI app for Vercel."""
 
 from pathlib import Path
 
@@ -6,9 +6,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from fpl_analytics_engine.api import app as api_app
+from .api import app as api_app
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "frontend" / "dist"
 
 

@@ -22,7 +22,7 @@ build-backend = "hatchling.build"
 packages = ["src/fpl_analytics_engine"]
 
 [tool.vercel]
-entrypoint = "api.index:app"
+entrypoint = "fpl_analytics_engine.vercel:app"
 
 [dependency-groups]
 dev = [

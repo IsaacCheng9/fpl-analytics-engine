@@ -1,6 +1,5 @@
 """Tests for the Vercel deployment entrypoint."""
 
-import importlib.util
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,14 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fpl_analytics_engine import api as backend_api
-
-SPEC = importlib.util.spec_from_file_location(
-    "vercel_entrypoint", Path("api") / "index.py"
-)
-assert SPEC is not None
-assert SPEC.loader is not None
-vercel_entrypoint = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(vercel_entrypoint)
+from fpl_analytics_engine import vercel as vercel_entrypoint
 
 
 def _history() -> pl.DataFrame:

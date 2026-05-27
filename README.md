@@ -269,8 +269,9 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 The repository includes a Vercel configuration for a single-project deployment:
 
 - `frontend/` builds the static React dashboard
-- `api/index.py` exposes the FastAPI app as a Python ASGI function mounted under
-  `/api` and serves the built Vite app for all non-API paths
+- `src/fpl_analytics_engine/vercel.py` exposes the FastAPI app as a Python ASGI
+  function mounted under `/api` and serves the built Vite app for all non-API
+  paths
 - `vercel.json` supplies the frontend build command and lets Vercel use the
   FastAPI entrypoint declared in `pyproject.toml`
 - `data/` is committed so the deployed API can read the same Parquet snapshots
