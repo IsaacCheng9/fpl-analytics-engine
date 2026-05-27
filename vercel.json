@@ -1,25 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "cd frontend && bun install --frozen-lockfile && bun run build",
-  "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "data/**",
-      "excludeFiles": "{.claude/**,.pytest_cache/**,.ruff_cache/**,docs/**,frontend/**,scripts/**,tests/**}"
-    }
+  "env": {
+    "PYTHONPATH": "src"
   },
-  "rewrites": [
-    {
-      "source": "/api",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+  "build": {
+    "env": {
+      "PYTHONPATH": "src"
     }
-  ]
+  }
 }
