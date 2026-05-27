@@ -100,6 +100,58 @@ const broadFormRows = [
 		as_of_gw: 38,
 	},
 ];
+const clubRows = [
+	{
+		team: 1,
+		team_name: "Arsenal",
+		window_matches: 5,
+		season_matches: 38,
+		window_xg_per_match: 2.1,
+		season_xg_per_match: 1.7,
+		delta_xg_per_match: 0.4,
+		window_goals_for_per_match: 2.4,
+		season_goals_for_per_match: 1.9,
+		delta_goals_for_per_match: 0.5,
+		window_xgc_per_match: 0.8,
+		season_xgc_per_match: 1.1,
+		delta_xgc_per_match: -0.3,
+		window_goals_against_per_match: 0.6,
+		season_goals_against_per_match: 0.9,
+		delta_goals_against_per_match: -0.3,
+		window_finishing_delta: 0.3,
+		window_concession_delta: -0.2,
+		attack_form: 0.4,
+		defence_form: 0.3,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.4,
+		as_of_gw: 38,
+	},
+	{
+		team: 2,
+		team_name: "Chelsea",
+		window_matches: 5,
+		season_matches: 38,
+		window_xg_per_match: 1.0,
+		season_xg_per_match: 1.4,
+		delta_xg_per_match: -0.4,
+		window_goals_for_per_match: 0.8,
+		season_goals_for_per_match: 1.5,
+		delta_goals_for_per_match: -0.7,
+		window_xgc_per_match: 1.7,
+		season_xgc_per_match: 1.2,
+		delta_xgc_per_match: 0.5,
+		window_goals_against_per_match: 2.0,
+		season_goals_against_per_match: 1.2,
+		delta_goals_against_per_match: 0.8,
+		window_finishing_delta: -0.2,
+		window_concession_delta: 0.3,
+		attack_form: -0.4,
+		defence_form: -0.5,
+		upcoming_fixtures: 5,
+		avg_fdr: 3.2,
+		as_of_gw: 38,
+	},
+];
 
 // Deliberately omits the fixture/value context fields to mimic an older API
 // payload; the view must degrade to dashes rather than crash on missing fields.
@@ -179,6 +231,8 @@ beforeEach(() => {
 			if (input.includes("/players/form")) {
 				const params = new URL(input, "http://test").searchParams;
 				body = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+			} else if (input.includes("/clubs/form")) {
+				body = clubRows;
 			} else if (input.includes("/players/defcon-probability")) {
 				body = probRows;
 			} else if (/\/players\/\d+/.test(input)) {
@@ -308,6 +362,26 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	fireEvent.click(screen.getByText("DefCon Probability"));
 	await waitFor(() => {
 		expect(screen.getByText("Senesi")).toBeInTheDocument();
+	});
+});
+
+test("renders the Club Form tab with team-level context", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(screen.getByText("Club Form"));
+
+	await waitFor(() => {
+		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
+	});
+	expect(screen.getByText("Window xG")).toBeInTheDocument();
+	expect(screen.getByText("Delta xGC")).toBeInTheDocument();
+	expect(screen.getByText("Defence Form")).toBeInTheDocument();
+	expect(screen.getByText("FDR (Next 5)")).toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Team"), {
+		target: { value: "Chelsea" },
+	});
+	await waitFor(() => {
+		expect(screen.getAllByText("Chelsea").length).toBeGreaterThan(0);
 	});
 });
 

@@ -89,7 +89,7 @@ export function DataTable<T>({
 								className="px-3 py-6 text-center text-zinc-400"
 								colSpan={columns.length}
 							>
-								No players match.
+								No rows match.
 							</td>
 						</tr>
 					) : (

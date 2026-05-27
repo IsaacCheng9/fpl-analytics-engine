@@ -2,9 +2,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CellContext, ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
+	type ClubForm,
 	type DefconPlayer,
 	type DefconProbabilityPlayer,
 	type FormPlayer,
+	fetchClubForm,
 	fetchDefcon,
 	fetchDefconProbability,
 	fetchForm,
@@ -17,7 +19,7 @@ import { InfoTooltip } from "./components/InfoTooltip";
 import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
-type Tab = "form" | "defcon" | "defconProb";
+type Tab = "form" | "defcon" | "defconProb" | "clubs";
 type AttackingMetric = "xg" | "xa" | "xgi";
 type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
@@ -26,8 +28,9 @@ const TAB_LABELS: Record<Tab, string> = {
 	form: "Attacking Form",
 	defcon: "DefCon Form",
 	defconProb: "DefCon Probability",
+	clubs: "Club Form",
 };
-const TABS: Tab[] = ["form", "defcon", "defconProb"];
+const TABS: Tab[] = ["form", "defcon", "defconProb", "clubs"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOW_MIN = 2;
 const WINDOW_MAX = 20;
@@ -106,12 +109,14 @@ const TAB_QUERY_VALUES: Record<Tab, string> = {
 	form: "form",
 	defcon: "defcon",
 	defconProb: "defcon-prob",
+	clubs: "clubs",
 };
 const QUERY_VALUE_TABS: Record<string, Tab> = {
 	form: "form",
 	defcon: "defcon",
 	defconProb: "defconProb",
 	"defcon-prob": "defconProb",
+	clubs: "clubs",
 };
 
 type UrlState = {
@@ -268,7 +273,7 @@ function writeUrlState(state: UrlState) {
 	if (state.tab !== DEFAULT_TAB) {
 		params.set("tab", TAB_QUERY_VALUES[state.tab]);
 	}
-	if (state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
+	if (state.tab !== "clubs" && state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
 		params.set("q", state.playerSearch);
 	}
 	if (state.teamFilter !== DEFAULT_TEAM_FILTER) {
@@ -277,19 +282,23 @@ function writeUrlState(state: UrlState) {
 	if (state.windowSize !== DEFAULT_WINDOW_SIZE) {
 		params.set("window", String(state.windowSize));
 	}
-	if (state.position !== DEFAULT_POSITION) {
+	if (state.tab !== "clubs" && state.position !== DEFAULT_POSITION) {
 		params.set("position", state.position);
 	}
-	if (state.minMinutes !== DEFAULT_MIN_MINUTES) {
+	if (
+		state.tab !== "clubs" &&
+		state.tab !== "defconProb" &&
+		state.minMinutes !== DEFAULT_MIN_MINUTES
+	) {
 		params.set("min_minutes", String(state.minMinutes));
 	}
-	if (state.minDelta !== DEFAULT_MIN_DELTA) {
+	if (state.tab === "form" && state.minDelta !== DEFAULT_MIN_DELTA) {
 		params.set("min_delta", String(state.minDelta));
 	}
-	if (state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
+	if (state.tab === "defcon" && state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
 		params.set("min_hit_rate", String(state.minHitRate));
 	}
-	if (state.minGames !== DEFAULT_MIN_GAMES) {
+	if (state.tab === "defconProb" && state.minGames !== DEFAULT_MIN_GAMES) {
 		params.set("min_games", String(state.minGames));
 	}
 	if (state.asOfGw !== DEFAULT_AS_OF_GW) {
@@ -303,7 +312,10 @@ function writeUrlState(state: UrlState) {
 			),
 		);
 	}
-	if (state.selectedElement !== DEFAULT_SELECTED_ELEMENT) {
+	if (
+		state.tab !== "clubs" &&
+		state.selectedElement !== DEFAULT_SELECTED_ELEMENT
+	) {
 		params.set("player", String(state.selectedElement));
 		if (state.playerWindow !== DEFAULT_PLAYER_WINDOW) {
 			params.set("player_window", String(state.playerWindow));
@@ -380,6 +392,26 @@ const DEFCON_PROB_HEAT_KEYS = [
 	"window_mins_per_appearance",
 	"avg_fdr",
 	"current_ownership",
+];
+const CLUB_HEAT_KEYS = [
+	"window_matches",
+	"window_xg_per_match",
+	"season_xg_per_match",
+	"delta_xg_per_match",
+	"window_goals_for_per_match",
+	"season_goals_for_per_match",
+	"delta_goals_for_per_match",
+	"window_xgc_per_match",
+	"season_xgc_per_match",
+	"delta_xgc_per_match",
+	"window_goals_against_per_match",
+	"season_goals_against_per_match",
+	"delta_goals_against_per_match",
+	"window_finishing_delta",
+	"window_concession_delta",
+	"attack_form",
+	"defence_form",
+	"avg_fdr",
 ];
 
 // Min/max per metric across the supplied (league-wide) rows.
@@ -794,6 +826,143 @@ function buildDefconProbColumns(
 	];
 }
 
+function buildClubColumns(
+	ranges: Record<string, Range>,
+): ColumnDef<ClubForm>[] {
+	return [
+		{ accessorKey: "team_name", header: "Club" },
+		{
+			accessorKey: "window_matches",
+			header: "Matches",
+			cell: heatCell<ClubForm>(ranges.window_matches, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: { tooltip: "Club matches in the recent window" },
+		},
+		{
+			accessorKey: "window_xg_per_match",
+			header: "Window xG",
+			cell: heatCell<ClubForm>(ranges.window_xg_per_match),
+			meta: { tooltip: "Expected goals per match over the recent window" },
+		},
+		{
+			accessorKey: "season_xg_per_match",
+			header: "Season xG",
+			cell: heatCell<ClubForm>(ranges.season_xg_per_match),
+			meta: { tooltip: "Expected goals per match, season to date" },
+		},
+		{
+			accessorKey: "delta_xg_per_match",
+			header: "Delta xG",
+			cell: heatCell<ClubForm>(ranges.delta_xg_per_match, {
+				format: fmtDelta,
+			}),
+			meta: {
+				tooltip:
+					"Window xG per match minus season xG per match; positive means the attack is creating more",
+			},
+		},
+		{
+			accessorKey: "window_goals_for_per_match",
+			header: "Window Goals",
+			cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
+			meta: { tooltip: "Goals scored per match over the recent window" },
+		},
+		{
+			accessorKey: "delta_goals_for_per_match",
+			header: "Delta Goals",
+			cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
+				format: fmtDelta,
+			}),
+			meta: {
+				tooltip:
+					"Window goals per match minus season goals per match; useful context for finishing variance",
+			},
+		},
+		{
+			accessorKey: "window_xgc_per_match",
+			header: "Window xGC",
+			cell: heatCell<ClubForm>(ranges.window_xgc_per_match, {
+				lowerIsBetter: true,
+			}),
+			meta: {
+				tooltip: "Expected goals conceded per match over the recent window",
+			},
+		},
+		{
+			accessorKey: "season_xgc_per_match",
+			header: "Season xGC",
+			cell: heatCell<ClubForm>(ranges.season_xgc_per_match, {
+				lowerIsBetter: true,
+			}),
+			meta: { tooltip: "Expected goals conceded per match, season to date" },
+		},
+		{
+			accessorKey: "delta_xgc_per_match",
+			header: "Delta xGC",
+			cell: heatCell<ClubForm>(ranges.delta_xgc_per_match, {
+				lowerIsBetter: true,
+				format: fmtDelta,
+			}),
+			meta: {
+				tooltip:
+					"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
+			},
+		},
+		{
+			accessorKey: "window_goals_against_per_match",
+			header: "Window GA",
+			cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
+				lowerIsBetter: true,
+			}),
+			meta: {
+				tooltip: "Goals conceded per match over the recent window",
+			},
+		},
+		{
+			accessorKey: "delta_goals_against_per_match",
+			header: "Delta GA",
+			cell: heatCell<ClubForm>(ranges.delta_goals_against_per_match, {
+				lowerIsBetter: true,
+				format: fmtDelta,
+			}),
+			meta: {
+				tooltip:
+					"Window goals conceded per match minus season goals conceded per match",
+			},
+		},
+		{
+			accessorKey: "attack_form",
+			header: "Attack Form",
+			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
+			meta: {
+				tooltip: "Recent xG per match improvement versus the season baseline",
+			},
+		},
+		{
+			accessorKey: "defence_form",
+			header: "Defence Form",
+			cell: heatCell<ClubForm>(ranges.defence_form, { format: fmtDelta }),
+			meta: {
+				tooltip:
+					"Recent xGC per match improvement versus the season baseline; positive is better",
+			},
+		},
+		{
+			accessorKey: "avg_fdr",
+			header: "FDR (Next 5)",
+			cell: heatCell<ClubForm>(ranges.avg_fdr, {
+				lowerIsBetter: true,
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: {
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			},
+		},
+	];
+}
+
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
 const fieldClass =
 	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
@@ -958,6 +1127,12 @@ export default function App() {
 		enabled: tab === "defconProb",
 		placeholderData: keepPreviousData,
 	});
+	const clubQuery = useQuery({
+		queryKey: ["clubs", windowSize, asOfGw],
+		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
+		enabled: tab === "clubs",
+		placeholderData: keepPreviousData,
+	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
 	// colour scale, so a player's colour is fixed regardless of the active filters.
@@ -994,6 +1169,12 @@ export default function App() {
 		enabled: tab === "defconProb",
 		placeholderData: keepPreviousData,
 	});
+	const clubBaseline = useQuery({
+		queryKey: ["clubBaseline", windowSize, asOfGw],
+		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
+		enabled: tab === "clubs",
+		placeholderData: keepPreviousData,
+	});
 
 	const formColumns = useMemo(
 		() =>
@@ -1017,20 +1198,27 @@ export default function App() {
 			),
 		[defconProbBaseline.data],
 	);
+	const clubColumns = useMemo(
+		() =>
+			buildClubColumns(computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS)),
+		[clubBaseline.data],
+	);
 
 	const active =
 		tab === "form"
 			? formQuery
 			: tab === "defcon"
 				? defconQuery
-				: defconProbQuery;
+				: tab === "defconProb"
+					? defconProbQuery
+					: clubQuery;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
 	const teamOptions = useMemo(() => {
-		const players = (active.data ?? []) as Array<{ team_name: string | null }>;
-		const names = players
-			.map((player) => player.team_name)
+		const rows = (active.data ?? []) as Array<{ team_name: string | null }>;
+		const names = rows
+			.map((row) => row.team_name)
 			.filter((name): name is string => name !== null);
 		return Array.from(new Set(names)).sort();
 	}, [active.data]);
@@ -1050,6 +1238,9 @@ export default function App() {
 		playerSearch,
 		teamFilter,
 	);
+	const filteredClubs = (clubQuery.data ?? []).filter(
+		(row) => teamFilter === "" || row.team_name === teamFilter,
+	);
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
 
@@ -1061,9 +1252,10 @@ export default function App() {
 					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
 						Surfaces players whose recent underlying output – expected goal
 						involvement and DefCon hit rate over your chosen window – is
-						outpacing their season-to-date baseline. Figures are point-in-time
-						as of GW {asOfGw ?? latestGw}: only matches up to and including that
-						gameweek are counted, with no look-ahead.
+						outpacing their season-to-date baseline, alongside clubs whose
+						attack or defence has shifted against its season baseline. Figures
+						are point-in-time as of GW {asOfGw ?? latestGw}: only matches up to
+						and including that gameweek are counted, with no look-ahead.
 					</p>
 				</header>
 
@@ -1086,32 +1278,38 @@ export default function App() {
 
 				<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
 					<div className="flex flex-wrap items-start gap-4">
-						<label className={labelClass}>
-							Player
-							<input
-								type="search"
-								placeholder="e.g. Saka"
-								className={`${inputClass} w-40`}
-								value={playerSearch}
-								onChange={(e) => setPlayerSearch(e.target.value)}
-							/>
-						</label>
+						{tab !== "clubs" && (
+							<>
+								<label className={labelClass}>
+									Player
+									<input
+										type="search"
+										placeholder="e.g. Saka"
+										className={`${inputClass} w-40`}
+										value={playerSearch}
+										onChange={(e) => setPlayerSearch(e.target.value)}
+									/>
+								</label>
 
-						<label className={labelClass}>
-							Position
-							<select
-								className={inputClass}
-								value={position}
-								onChange={(e) => setPosition(e.target.value as Position | "")}
-							>
-								<option value="">All</option>
-								{POSITIONS.map((p) => (
-									<option key={p} value={p}>
-										{p}
-									</option>
-								))}
-							</select>
-						</label>
+								<label className={labelClass}>
+									Position
+									<select
+										className={inputClass}
+										value={position}
+										onChange={(e) =>
+											setPosition(e.target.value as Position | "")
+										}
+									>
+										<option value="">All</option>
+										{POSITIONS.map((p) => (
+											<option key={p} value={p}>
+												{p}
+											</option>
+										))}
+									</select>
+								</label>
+							</>
+						)}
 
 						<label className={labelClass}>
 							Team
@@ -1129,7 +1327,7 @@ export default function App() {
 							</select>
 						</label>
 
-						{tab !== "defconProb" && (
+						{tab !== "defconProb" && tab !== "clubs" && (
 							<label className={labelClass}>
 								Min Minutes
 								<input
@@ -1316,7 +1514,7 @@ export default function App() {
 							}}
 						/>
 					</>
-				) : (
+				) : tab === "defconProb" ? (
 					<>
 						<p className="mb-2 text-sm text-zinc-500">
 							Click a player row to open the detailed stats view.
@@ -1330,6 +1528,14 @@ export default function App() {
 								setPlayerSeason(DEFAULT_PLAYER_SEASON);
 							}}
 						/>
+					</>
+				) : (
+					<>
+						<p className="mb-2 text-sm text-zinc-500">
+							Club form compares recent per-match output with the season
+							baseline, then shows the next fixture run alongside it.
+						</p>
+						<DataTable data={filteredClubs} columns={clubColumns} />
 					</>
 				)}
 			</div>

@@ -45,6 +45,32 @@ export interface FormPlayer extends PlayerContext {
 	as_of_gw: number;
 }
 
+export interface ClubForm {
+	team: number;
+	team_name: string;
+	window_matches: number;
+	season_matches: number;
+	window_xg_per_match: number | null;
+	season_xg_per_match: number | null;
+	delta_xg_per_match: number | null;
+	window_goals_for_per_match: number | null;
+	season_goals_for_per_match: number | null;
+	delta_goals_for_per_match: number | null;
+	window_xgc_per_match: number | null;
+	season_xgc_per_match: number | null;
+	delta_xgc_per_match: number | null;
+	window_goals_against_per_match: number | null;
+	season_goals_against_per_match: number | null;
+	delta_goals_against_per_match: number | null;
+	window_finishing_delta: number | null;
+	window_concession_delta: number | null;
+	attack_form: number | null;
+	defence_form: number | null;
+	upcoming_fixtures: number | null;
+	avg_fdr: number | null;
+	as_of_gw: number;
+}
+
 export interface DefconPlayer extends PlayerContext {
 	element: number;
 	web_name: string;
@@ -138,6 +164,11 @@ export interface DefconProbabilityParams {
 	asOfGw: number | null;
 }
 
+export interface ClubFormParams {
+	window: number;
+	asOfGw: number | null;
+}
+
 async function getJson<T>(path: string): Promise<T> {
 	const response = await fetch(`${API_BASE}${path}`);
 	if (!response.ok) {
@@ -189,6 +220,15 @@ export function fetchDefconProbability(
 	return getJson<DefconProbabilityPlayer[]>(
 		`/players/defcon-probability?${search.toString()}`,
 	);
+}
+
+export function fetchClubForm(params: ClubFormParams): Promise<ClubForm[]> {
+	const search = new URLSearchParams();
+	search.set("window", String(params.window));
+	if (params.asOfGw !== null) {
+		search.set("as_of_gw", String(params.asOfGw));
+	}
+	return getJson<ClubForm[]>(`/clubs/form?${search.toString()}`);
 }
 
 export function fetchPlayerDetail(
