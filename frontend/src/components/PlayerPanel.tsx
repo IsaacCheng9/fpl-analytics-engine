@@ -40,7 +40,11 @@ function Chart({
 					<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
 					<XAxis dataKey="round" tick={{ fontSize: 11 }} />
 					<YAxis tick={{ fontSize: 11 }} domain={domain} />
-					<Tooltip />
+					<Tooltip
+						formatter={(value) =>
+							typeof value === "number" ? value.toFixed(2) : value
+						}
+					/>
 					<Line
 						type="monotone"
 						dataKey={dataKey}
