@@ -278,8 +278,9 @@ The repository includes a Vercel configuration for a single-project deployment:
   as local development
 
 In Vercel, import the repository with the project root set to the repository
-root. The checked-in `vercel.json` builds the frontend, then `api/index.py`
-serves both the API and the single-page app from one FastAPI deployment.
+root. The checked-in `vercel.json` builds the frontend, then
+`src/fpl_analytics_engine/vercel.py` serves both the API and the single-page app
+from one FastAPI deployment.
 
 ## API Endpoints
 
