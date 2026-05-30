@@ -25,6 +25,21 @@ type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
 type ClubActualMetric = "goals" | "ga";
 type ClubActualMetricVisibility = Record<ClubActualMetric, boolean>;
+type TransferFilters = {
+	maxPrice: number | null;
+	maxFdr: number | null;
+	minStartPct: number | null;
+	minMinsPerAppearance: number | null;
+	minOwnership: number | null;
+	maxOwnership: number | null;
+};
+type TransferFilterRow = {
+	price?: number | null;
+	avg_fdr?: number | null;
+	window_start_rate?: number | null;
+	window_mins_per_appearance?: number | null;
+	current_ownership?: number | null;
+};
 
 const TAB_LABELS: Record<Tab, string> = {
 	form: "Attacking Form",
@@ -49,6 +64,14 @@ const DEFAULT_AS_OF_GW: number | null = null;
 const DEFAULT_SELECTED_ELEMENT: number | null = null;
 const DEFAULT_PLAYER_WINDOW = 5;
 const DEFAULT_PLAYER_SEASON: string | null = null;
+const DEFAULT_TRANSFER_FILTERS: TransferFilters = {
+	maxPrice: null,
+	maxFdr: null,
+	minStartPct: null,
+	minMinsPerAppearance: null,
+	minOwnership: null,
+	maxOwnership: null,
+};
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
 const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
 const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
@@ -146,6 +169,7 @@ type UrlState = {
 	playerSeason: string | null;
 	attackingMetrics: AttackingMetricVisibility;
 	clubActualMetrics: ClubActualMetricVisibility;
+	transferFilters: TransferFilters;
 };
 
 const DEFAULT_URL_STATE: UrlState = {
@@ -164,6 +188,7 @@ const DEFAULT_URL_STATE: UrlState = {
 	playerSeason: DEFAULT_PLAYER_SEASON,
 	attackingMetrics: DEFAULT_ATTACKING_METRICS,
 	clubActualMetrics: DEFAULT_CLUB_ACTUAL_METRICS,
+	transferFilters: DEFAULT_TRANSFER_FILTERS,
 };
 
 function isBrowser() {
@@ -274,6 +299,19 @@ function readUrlState(): UrlState {
 		}),
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
+		transferFilters: {
+			maxPrice: parseOptionalNumber(params.get("max_price"), { min: 0 }),
+			maxFdr: parseOptionalNumber(params.get("max_fdr"), { min: 1, max: 5 }),
+			minStartPct: parseOptionalNumber(params.get("min_start_pct"), {
+				min: 0,
+				max: 100,
+			}),
+			minMinsPerAppearance: parseOptionalNumber(params.get("min_mins_app"), {
+				min: 0,
+			}),
+			minOwnership: parseOptionalNumber(params.get("min_owned"), { min: 0 }),
+			maxOwnership: parseOptionalNumber(params.get("max_owned"), { min: 0 }),
+		},
 		playerWindow: parseNumber(
 			params.get("player_window"),
 			DEFAULT_PLAYER_WINDOW,
@@ -296,6 +334,17 @@ function clubActualMetricsMatchDefault(
 ): boolean {
 	return CLUB_ACTUAL_METRICS.every(
 		(metric) => metrics[metric] === DEFAULT_CLUB_ACTUAL_METRICS[metric],
+	);
+}
+
+function transferFiltersMatchDefault(filters: TransferFilters): boolean {
+	return (
+		filters.maxPrice === null &&
+		filters.maxFdr === null &&
+		filters.minStartPct === null &&
+		filters.minMinsPerAppearance === null &&
+		filters.minOwnership === null &&
+		filters.maxOwnership === null
 	);
 }
 
@@ -356,6 +405,32 @@ function writeUrlState(state: UrlState) {
 	}
 	if (
 		state.tab !== "clubs" &&
+		!transferFiltersMatchDefault(state.transferFilters)
+	) {
+		if (state.transferFilters.maxPrice !== null) {
+			params.set("max_price", String(state.transferFilters.maxPrice));
+		}
+		if (state.transferFilters.maxFdr !== null) {
+			params.set("max_fdr", String(state.transferFilters.maxFdr));
+		}
+		if (state.transferFilters.minStartPct !== null) {
+			params.set("min_start_pct", String(state.transferFilters.minStartPct));
+		}
+		if (state.transferFilters.minMinsPerAppearance !== null) {
+			params.set(
+				"min_mins_app",
+				String(state.transferFilters.minMinsPerAppearance),
+			);
+		}
+		if (state.transferFilters.minOwnership !== null) {
+			params.set("min_owned", String(state.transferFilters.minOwnership));
+		}
+		if (state.transferFilters.maxOwnership !== null) {
+			params.set("max_owned", String(state.transferFilters.maxOwnership));
+		}
+	}
+	if (
+		state.tab !== "clubs" &&
 		state.selectedElement !== DEFAULT_SELECTED_ELEMENT
 	) {
 		params.set("player", String(state.selectedElement));
@@ -385,6 +460,41 @@ function filterPlayers<
 		(row) =>
 			(query === "" || row.web_name.toLowerCase().includes(query)) &&
 			(teamFilter === "" || row.team_name === teamFilter),
+	);
+}
+
+function passesMax(value: number | null | undefined, max: number | null) {
+	return max === null || (typeof value === "number" && value <= max);
+}
+
+function passesMin(value: number | null | undefined, min: number | null) {
+	return min === null || (typeof value === "number" && value >= min);
+}
+
+// Transfer filters are hard candidate-pool constraints (price ceiling, minutes
+// floor, ownership band), so they apply even when a player search is active,
+// unlike the form-quality filters that the search box deliberately bypasses. A
+// searched player outside these constraints is correctly not a candidate.
+function filterTransferCandidates<T extends TransferFilterRow>(
+	rows: T[],
+	filters: TransferFilters,
+): T[] {
+	if (transferFiltersMatchDefault(filters)) {
+		return rows;
+	}
+	return rows.filter(
+		(row) =>
+			passesMax(row.price, filters.maxPrice) &&
+			passesMax(row.avg_fdr, filters.maxFdr) &&
+			passesMin(
+				typeof row.window_start_rate === "number"
+					? row.window_start_rate * 100
+					: row.window_start_rate,
+				filters.minStartPct,
+			) &&
+			passesMin(row.window_mins_per_appearance, filters.minMinsPerAppearance) &&
+			passesMin(row.current_ownership, filters.minOwnership) &&
+			passesMax(row.current_ownership, filters.maxOwnership),
 	);
 }
 
@@ -1028,6 +1138,28 @@ function clampWindowSize(value: number): number {
 	return Math.min(Math.max(value, WINDOW_MIN), WINDOW_MAX);
 }
 
+// Clamp to the same bounds the URL parser enforces, so a typed value always
+// round-trips through the query string instead of silently vanishing on reload.
+function parseOptionalInputNumber(
+	value: string,
+	{ min, max }: { min?: number; max?: number } = {},
+): number | null {
+	if (value === "") {
+		return null;
+	}
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) {
+		return null;
+	}
+	if (min !== undefined && parsed < min) {
+		return min;
+	}
+	if (max !== undefined && parsed > max) {
+		return max;
+	}
+	return parsed;
+}
+
 export default function App() {
 	const initialUrlState = useMemo(() => readUrlState(), []);
 	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
@@ -1061,6 +1193,9 @@ export default function App() {
 		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
 	const [clubActualMetrics, setClubActualMetrics] =
 		useState<ClubActualMetricVisibility>(initialUrlState.clubActualMetrics);
+	const [transferFilters, setTransferFilters] = useState<TransferFilters>(
+		initialUrlState.transferFilters,
+	);
 
 	useEffect(() => {
 		function applyCurrentUrlState() {
@@ -1080,6 +1215,7 @@ export default function App() {
 			setPlayerSeason(next.playerSeason);
 			setAttackingMetrics(next.attackingMetrics);
 			setClubActualMetrics(next.clubActualMetrics);
+			setTransferFilters(next.transferFilters);
 		}
 
 		window.addEventListener("popstate", applyCurrentUrlState);
@@ -1103,6 +1239,7 @@ export default function App() {
 			playerSeason,
 			attackingMetrics,
 			clubActualMetrics,
+			transferFilters,
 		});
 	}, [
 		tab,
@@ -1120,7 +1257,15 @@ export default function App() {
 		playerSeason,
 		attackingMetrics,
 		clubActualMetrics,
+		transferFilters,
 	]);
+
+	function updateTransferFilter(
+		filter: keyof TransferFilters,
+		value: number | null,
+	) {
+		setTransferFilters((current) => ({ ...current, [filter]: value }));
+	}
 
 	function toggleAttackingMetric(metric: AttackingMetric) {
 		setAttackingMetrics((current) => {
@@ -1294,21 +1439,34 @@ export default function App() {
 		playerSearch,
 		teamFilter,
 	);
+	const filteredTransferForm = filterTransferCandidates(
+		filteredForm,
+		transferFilters,
+	);
 	const filteredDefcon = filterPlayers(
 		defconQuery.data ?? [],
 		playerSearch,
 		teamFilter,
+	);
+	const filteredTransferDefcon = filterTransferCandidates(
+		filteredDefcon,
+		transferFilters,
 	);
 	const filteredDefconProb = filterPlayers(
 		defconProbQuery.data ?? [],
 		playerSearch,
 		teamFilter,
 	);
+	const filteredTransferDefconProb = filterTransferCandidates(
+		filteredDefconProb,
+		transferFilters,
+	);
 	const filteredClubs = (clubQuery.data ?? []).filter(
 		(row) => teamFilter === "" || row.team_name === teamFilter,
 	);
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
+	const showTransferFilters = tab !== "clubs";
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -1563,6 +1721,130 @@ export default function App() {
 							</select>
 						</div>
 					</div>
+					{showTransferFilters ? (
+						<fieldset className="mt-4 min-w-0 border-0 border-zinc-100 border-t p-0 pt-4">
+							<legend className="pr-2 font-medium text-xs text-zinc-600">
+								Transfer Filters
+							</legend>
+							<div className="flex flex-wrap items-start gap-4">
+								<label className={labelClass}>
+									Max Price
+									<input
+										type="number"
+										min={0}
+										step={0.1}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.maxPrice ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"maxPrice",
+												parseOptionalInputNumber(e.target.value, { min: 0 }),
+											)
+										}
+									/>
+								</label>
+
+								<label className={labelClass}>
+									Max FDR
+									<input
+										type="number"
+										min={1}
+										max={5}
+										step={0.1}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.maxFdr ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"maxFdr",
+												parseOptionalInputNumber(e.target.value, {
+													min: 1,
+													max: 5,
+												}),
+											)
+										}
+									/>
+								</label>
+
+								<label className={labelClass}>
+									Min Start %
+									<input
+										type="number"
+										min={0}
+										max={100}
+										step={5}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.minStartPct ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"minStartPct",
+												parseOptionalInputNumber(e.target.value, {
+													min: 0,
+													max: 100,
+												}),
+											)
+										}
+									/>
+								</label>
+
+								<label className={labelClass}>
+									Min Mins/App
+									<input
+										type="number"
+										min={0}
+										step={1}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.minMinsPerAppearance ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"minMinsPerAppearance",
+												parseOptionalInputNumber(e.target.value, { min: 0 }),
+											)
+										}
+									/>
+								</label>
+
+								<label className={labelClass}>
+									Min Owned %
+									<input
+										type="number"
+										min={0}
+										step={1}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.minOwnership ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"minOwnership",
+												parseOptionalInputNumber(e.target.value, { min: 0 }),
+											)
+										}
+									/>
+								</label>
+
+								<label className={labelClass}>
+									Max Owned %
+									<input
+										type="number"
+										min={0}
+										step={1}
+										placeholder="Any"
+										className={`${inputClass} w-24`}
+										value={transferFilters.maxOwnership ?? ""}
+										onChange={(e) =>
+											updateTransferFilter(
+												"maxOwnership",
+												parseOptionalInputNumber(e.target.value, { min: 0 }),
+											)
+										}
+									/>
+								</label>
+							</div>
+						</fieldset>
+					) : null}
 				</div>
 
 				{active.isPending ? (
@@ -1573,12 +1855,12 @@ export default function App() {
 					</p>
 				) : tab === "form" ? (
 					<>
-						<FormScatter players={filteredForm} />
+						<FormScatter players={filteredTransferForm} />
 						<p className="mb-2 text-sm text-zinc-500">
 							Click a player row to open the detailed stats view.
 						</p>
 						<DataTable
-							data={filteredForm}
+							data={filteredTransferForm}
 							columns={formColumns}
 							onRowClick={(row) => {
 								setSelectedElement(row.element);
@@ -1593,7 +1875,7 @@ export default function App() {
 							Click a player row to open the detailed stats view.
 						</p>
 						<DataTable
-							data={filteredDefcon}
+							data={filteredTransferDefcon}
 							columns={defconColumns}
 							onRowClick={(row) => {
 								setSelectedElement(row.element);
@@ -1608,7 +1890,7 @@ export default function App() {
 							Click a player row to open the detailed stats view.
 						</p>
 						<DataTable
-							data={filteredDefconProb}
+							data={filteredTransferDefconProb}
 							columns={defconProbColumns}
 							onRowClick={(row) => {
 								setSelectedElement(row.element);

@@ -289,7 +289,7 @@ test("shows the full pool by default and search bypasses the Min Delta filter", 
 	});
 
 	// Applying a Min Delta filter drops the declining player from the pool.
-	fireEvent.change(screen.getByPlaceholderText("Any"), {
+	fireEvent.change(screen.getByLabelText("Min Delta xGI Per 90"), {
 		target: { value: "0.1" },
 	});
 	await waitFor(() => {
@@ -304,6 +304,62 @@ test("shows the full pool by default and search bypasses the Min Delta filter", 
 		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
 	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+});
+
+test("filters player tables with transfer candidate controls", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("Max Price"), {
+		target: { value: "9" },
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Max Price"), {
+		target: { value: "" },
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Saka")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("Max FDR"), {
+		target: { value: "3" },
+	});
+	await waitFor(() => {
+		expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+	});
+	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	expect(screen.getByText("Haaland")).toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Max FDR"), {
+		target: { value: "" },
+	});
+	fireEvent.change(screen.getByLabelText("Min Start %"), {
+		target: { value: "90" },
+	});
+	await waitFor(() => {
+		expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+	});
+	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	expect(screen.getByText("Haaland")).toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Min Start %"), {
+		target: { value: "" },
+	});
+	fireEvent.change(screen.getByLabelText("Min Owned %"), {
+		target: { value: "50" },
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
 });
 
 test("toggles attacking form metric columns", async () => {
@@ -474,6 +530,24 @@ test("persists filter changes and player panel state to the URL", async () => {
 	fireEvent.change(screen.getByLabelText("Position"), {
 		target: { value: "MID" },
 	});
+	fireEvent.change(screen.getByLabelText("Max Price"), {
+		target: { value: "11" },
+	});
+	fireEvent.change(screen.getByLabelText("Max FDR"), {
+		target: { value: "4" },
+	});
+	fireEvent.change(screen.getByLabelText("Min Start %"), {
+		target: { value: "80" },
+	});
+	fireEvent.change(screen.getByLabelText("Min Mins/App"), {
+		target: { value: "75" },
+	});
+	fireEvent.change(screen.getByLabelText("Min Owned %"), {
+		target: { value: "10" },
+	});
+	fireEvent.change(screen.getByLabelText("Max Owned %"), {
+		target: { value: "45" },
+	});
 	fireEvent.click(screen.getByLabelText("xA"));
 	fireEvent.click(screen.getByText("DefCon Form"));
 	fireEvent.change(screen.getByLabelText("Min Hit Rate"), {
@@ -491,6 +565,12 @@ test("persists filter changes and player panel state to the URL", async () => {
 		expect(params.get("min_hit_rate")).toBe("0.4");
 		expect(params.get("as_of_gw")).toBe("20");
 		expect(params.get("metrics")).toBe("xgi,xg,xa");
+		expect(params.get("max_price")).toBe("11");
+		expect(params.get("max_fdr")).toBe("4");
+		expect(params.get("min_start_pct")).toBe("80");
+		expect(params.get("min_mins_app")).toBe("75");
+		expect(params.get("min_owned")).toBe("10");
+		expect(params.get("max_owned")).toBe("45");
 	});
 
 	fireEvent.click(screen.getByText("Attacking Form"));
