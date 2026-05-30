@@ -16,6 +16,7 @@ import {
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
+import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
@@ -83,6 +84,10 @@ const DEFAULT_AS_OF_GW: number | null = null;
 const DEFAULT_SELECTED_ELEMENT: number | null = null;
 const DEFAULT_PLAYER_WINDOW = 5;
 const DEFAULT_PLAYER_SEASON: string | null = null;
+const DEFAULT_COMPARE_OPEN = false;
+const DEFAULT_COMPARE_ELEMENT: number | null = null;
+const DEFAULT_COMPARE_WINDOW = DEFAULT_WINDOW_SIZE;
+const DEFAULT_COMPARE_AS_OF_GW: number | null = null;
 const DEFAULT_TRANSFER_FILTERS: TransferFilters = {
 	maxPrice: null,
 	maxFdr: null,
@@ -235,6 +240,11 @@ type UrlState = {
 	selectedElement: number | null;
 	playerWindow: number;
 	playerSeason: string | null;
+	compareOpen: boolean;
+	compareLeftElement: number | null;
+	compareRightElement: number | null;
+	compareWindow: number;
+	compareAsOfGw: number | null;
 	attackingMetrics: AttackingMetricVisibility;
 	attackingThreatFilters: AttackingThreatFilters;
 	clubActualMetrics: ClubActualMetricVisibility;
@@ -256,6 +266,11 @@ const DEFAULT_URL_STATE: UrlState = {
 	selectedElement: DEFAULT_SELECTED_ELEMENT,
 	playerWindow: DEFAULT_PLAYER_WINDOW,
 	playerSeason: DEFAULT_PLAYER_SEASON,
+	compareOpen: DEFAULT_COMPARE_OPEN,
+	compareLeftElement: DEFAULT_COMPARE_ELEMENT,
+	compareRightElement: DEFAULT_COMPARE_ELEMENT,
+	compareWindow: DEFAULT_COMPARE_WINDOW,
+	compareAsOfGw: DEFAULT_COMPARE_AS_OF_GW,
 	attackingMetrics: DEFAULT_ATTACKING_METRICS,
 	attackingThreatFilters: DEFAULT_ATTACKING_THREAT_FILTERS,
 	clubActualMetrics: DEFAULT_CLUB_ACTUAL_METRICS,
@@ -402,6 +417,22 @@ function readUrlState(): UrlState {
 		}),
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
+		compareOpen:
+			params.get("compare") === "1" ||
+			params.has("compare_a") ||
+			params.has("compare_b"),
+		compareLeftElement: parseOptionalNumber(params.get("compare_a"), {
+			min: 1,
+		}),
+		compareRightElement: parseOptionalNumber(params.get("compare_b"), {
+			min: 1,
+		}),
+		compareWindow: clampWindowSize(
+			parseNumber(params.get("compare_window"), DEFAULT_COMPARE_WINDOW),
+		),
+		compareAsOfGw: parseOptionalNumber(params.get("compare_as_of_gw"), {
+			min: 1,
+		}),
 		transferFilters: {
 			maxPrice: parseOptionalNumber(params.get("max_price"), { min: 0 }),
 			maxFdr: parseOptionalNumber(params.get("max_fdr"), { min: 1, max: 5 }),
@@ -596,6 +627,21 @@ function writeUrlState(state: UrlState) {
 		}
 		if (state.playerSeason !== null) {
 			params.set("season", state.playerSeason);
+		}
+	}
+	if (state.compareOpen) {
+		params.set("compare", "1");
+		if (state.compareLeftElement !== DEFAULT_COMPARE_ELEMENT) {
+			params.set("compare_a", String(state.compareLeftElement));
+		}
+		if (state.compareRightElement !== DEFAULT_COMPARE_ELEMENT) {
+			params.set("compare_b", String(state.compareRightElement));
+		}
+		if (state.compareWindow !== DEFAULT_COMPARE_WINDOW) {
+			params.set("compare_window", String(state.compareWindow));
+		}
+		if (state.compareAsOfGw !== DEFAULT_COMPARE_AS_OF_GW) {
+			params.set("compare_as_of_gw", String(state.compareAsOfGw));
 		}
 	}
 
@@ -1487,6 +1533,19 @@ export default function App() {
 	const [playerSeason, setPlayerSeason] = useState<string | null>(
 		initialUrlState.playerSeason,
 	);
+	const [compareOpen, setCompareOpen] = useState(initialUrlState.compareOpen);
+	const [compareLeftElement, setCompareLeftElement] = useState<number | null>(
+		initialUrlState.compareLeftElement,
+	);
+	const [compareRightElement, setCompareRightElement] = useState<number | null>(
+		initialUrlState.compareRightElement,
+	);
+	const [compareWindow, setCompareWindow] = useState(
+		initialUrlState.compareWindow,
+	);
+	const [compareAsOfGw, setCompareAsOfGw] = useState<number | null>(
+		initialUrlState.compareAsOfGw,
+	);
 	const [attackingMetrics, setAttackingMetrics] =
 		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
 	const [attackingThreatFilters, setAttackingThreatFilters] =
@@ -1518,6 +1577,11 @@ export default function App() {
 			setSelectedElement(next.selectedElement);
 			setPlayerWindow(next.playerWindow);
 			setPlayerSeason(next.playerSeason);
+			setCompareOpen(next.compareOpen);
+			setCompareLeftElement(next.compareLeftElement);
+			setCompareRightElement(next.compareRightElement);
+			setCompareWindow(next.compareWindow);
+			setCompareAsOfGw(next.compareAsOfGw);
 			setAttackingMetrics(next.attackingMetrics);
 			setAttackingThreatFilters(next.attackingThreatFilters);
 			setClubActualMetrics(next.clubActualMetrics);
@@ -1544,6 +1608,11 @@ export default function App() {
 			selectedElement,
 			playerWindow,
 			playerSeason,
+			compareOpen,
+			compareLeftElement,
+			compareRightElement,
+			compareWindow,
+			compareAsOfGw,
 			attackingMetrics,
 			attackingThreatFilters,
 			clubActualMetrics,
@@ -1564,6 +1633,11 @@ export default function App() {
 		selectedElement,
 		playerWindow,
 		playerSeason,
+		compareOpen,
+		compareLeftElement,
+		compareRightElement,
+		compareWindow,
+		compareAsOfGw,
 		attackingMetrics,
 		attackingThreatFilters,
 		clubActualMetrics,
@@ -1669,6 +1743,34 @@ export default function App() {
 		setSelectedElement(element);
 		setPlayerWindow(DEFAULT_PLAYER_WINDOW);
 		setPlayerSeason(DEFAULT_PLAYER_SEASON);
+	}
+
+	function openComparePanel() {
+		setCompareOpen(true);
+		setCompareWindow(windowSize);
+		setCompareAsOfGw(asOfGw);
+		if (shortlist.length > 0) {
+			setCompareLeftElement((current) => current ?? shortlist[0] ?? null);
+			setCompareRightElement((current) => current ?? shortlist[1] ?? null);
+		}
+	}
+
+	function closeComparePanel() {
+		setCompareOpen(false);
+	}
+
+	function updateCompareLeft(element: number | null) {
+		setCompareLeftElement(element);
+		if (element !== null && element === compareRightElement) {
+			setCompareRightElement(null);
+		}
+	}
+
+	function updateCompareRight(element: number | null) {
+		setCompareRightElement(element);
+		if (element !== null && element === compareLeftElement) {
+			setCompareLeftElement(null);
+		}
 	}
 
 	function toggleShortlist(element: number) {
@@ -1787,6 +1889,112 @@ export default function App() {
 		enabled: tab === "clubs",
 		placeholderData: keepPreviousData,
 	});
+	const compareFormQuery = useQuery({
+		queryKey: ["compareForm", compareWindow, compareAsOfGw],
+		queryFn: () =>
+			fetchForm({
+				window: compareWindow,
+				position: "",
+				minMinutes: 0,
+				minDelta: FORM_MIN_DELTA_FLOOR,
+				asOfGw: compareAsOfGw,
+			}),
+		enabled: compareOpen,
+		placeholderData: keepPreviousData,
+	});
+	const compareDefconQuery = useQuery({
+		queryKey: ["compareDefcon", compareWindow, compareAsOfGw],
+		queryFn: () =>
+			fetchDefcon({
+				window: compareWindow,
+				position: "",
+				minMinutes: 0,
+				minHitRate: 0,
+				asOfGw: compareAsOfGw,
+			}),
+		enabled: compareOpen,
+		placeholderData: keepPreviousData,
+	});
+	const compareDefconProbabilityQuery = useQuery({
+		queryKey: ["compareDefconProbability", compareAsOfGw],
+		queryFn: () =>
+			fetchDefconProbability({
+				position: "",
+				minGames: 0,
+				asOfGw: compareAsOfGw,
+			}),
+		enabled: compareOpen,
+		placeholderData: keepPreviousData,
+	});
+	const compareClubQuery = useQuery({
+		queryKey: ["compareClub", compareWindow, compareAsOfGw],
+		queryFn: () =>
+			fetchClubForm({ window: compareWindow, asOfGw: compareAsOfGw }),
+		enabled: compareOpen,
+		placeholderData: keepPreviousData,
+	});
+
+	const comparePlayerOptions = useMemo(
+		() =>
+			[...(compareFormQuery.data ?? [])]
+				.sort((left, right) => {
+					const name = left.web_name.localeCompare(right.web_name);
+					return name !== 0
+						? name
+						: (left.team_name ?? "").localeCompare(right.team_name ?? "");
+				})
+				.map((player) => ({
+					element: player.element,
+					web_name: player.web_name,
+					position: player.position,
+					team_name: player.team_name,
+				})),
+		[compareFormQuery.data],
+	);
+	const compareOptionElements = useMemo(
+		() => new Set(comparePlayerOptions.map((player) => player.element)),
+		[comparePlayerOptions],
+	);
+
+	useEffect(() => {
+		if (!compareOpen || comparePlayerOptions.length === 0) {
+			return;
+		}
+		const shortlistDefault = shortlist.find((element) =>
+			compareOptionElements.has(element),
+		);
+		setCompareLeftElement((current) =>
+			current !== null && compareOptionElements.has(current)
+				? current
+				: (shortlistDefault ?? null),
+		);
+	}, [compareOpen, compareOptionElements, comparePlayerOptions, shortlist]);
+
+	useEffect(() => {
+		if (!compareOpen || comparePlayerOptions.length === 0) {
+			return;
+		}
+		setCompareRightElement((current) => {
+			if (
+				current !== null &&
+				current !== compareLeftElement &&
+				compareOptionElements.has(current)
+			) {
+				return current;
+			}
+			const shortlistDefault = shortlist.find(
+				(element) =>
+					element !== compareLeftElement && compareOptionElements.has(element),
+			);
+			return shortlistDefault ?? null;
+		});
+	}, [
+		compareLeftElement,
+		compareOpen,
+		compareOptionElements,
+		comparePlayerOptions,
+		shortlist,
+	]);
 
 	const formColumns = useMemo(
 		() =>
@@ -2606,34 +2814,43 @@ export default function App() {
 						<p className="text-sm text-zinc-500">
 							Click a player row to open the detailed stats view.
 						</p>
-						<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
-							<legend className="sr-only">Player View</legend>
+						<div className="flex flex-wrap items-center gap-2">
 							<button
 								type="button"
-								aria-pressed={!isShortlistViewActive}
-								className={`rounded px-3 py-1.5 font-medium text-sm ${
-									isShortlistViewActive
-										? "text-zinc-600 hover:bg-zinc-50"
-										: "bg-zinc-900 text-white"
-								}`}
-								onClick={() => setShowShortlistedOnly(false)}
+								className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
+								onClick={openComparePanel}
 							>
-								All Players
+								Compare Players
 							</button>
-							<button
-								type="button"
-								aria-pressed={isShortlistViewActive}
-								disabled={shortlist.length === 0}
-								className={`rounded px-3 py-1.5 font-medium text-sm ${
-									isShortlistViewActive
-										? "bg-zinc-900 text-white"
-										: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
-								}`}
-								onClick={() => setShowShortlistedOnly(true)}
-							>
-								Shortlisted ({shortlist.length})
-							</button>
-						</fieldset>
+							<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
+								<legend className="sr-only">Player View</legend>
+								<button
+									type="button"
+									aria-pressed={!isShortlistViewActive}
+									className={`rounded px-3 py-1.5 font-medium text-sm ${
+										isShortlistViewActive
+											? "text-zinc-600 hover:bg-zinc-50"
+											: "bg-zinc-900 text-white"
+									}`}
+									onClick={() => setShowShortlistedOnly(false)}
+								>
+									All Players
+								</button>
+								<button
+									type="button"
+									aria-pressed={isShortlistViewActive}
+									disabled={shortlist.length === 0}
+									className={`rounded px-3 py-1.5 font-medium text-sm ${
+										isShortlistViewActive
+											? "bg-zinc-900 text-white"
+											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+									}`}
+									onClick={() => setShowShortlistedOnly(true)}
+								>
+									Shortlisted ({shortlist.length})
+								</button>
+							</fieldset>
+						</div>
 					</div>
 				) : null}
 
@@ -2756,6 +2973,38 @@ export default function App() {
 						setPlayerWindow(DEFAULT_PLAYER_WINDOW);
 						setPlayerSeason(DEFAULT_PLAYER_SEASON);
 					}}
+				/>
+			) : null}
+
+			{compareOpen ? (
+				<PlayerComparePanel
+					playerOptions={comparePlayerOptions}
+					formPlayers={compareFormQuery.data ?? []}
+					defconPlayers={compareDefconQuery.data ?? []}
+					defconProbabilityPlayers={compareDefconProbabilityQuery.data ?? []}
+					clubForms={compareClubQuery.data ?? []}
+					contextLoading={
+						compareFormQuery.isPending ||
+						compareDefconQuery.isPending ||
+						compareDefconProbabilityQuery.isPending ||
+						compareClubQuery.isPending
+					}
+					contextError={
+						compareFormQuery.isError ||
+						compareDefconQuery.isError ||
+						compareDefconProbabilityQuery.isError ||
+						compareClubQuery.isError
+					}
+					leftElement={compareLeftElement}
+					rightElement={compareRightElement}
+					window={compareWindow}
+					asOfGw={compareAsOfGw}
+					latestGw={latestGw}
+					onWindowChange={setCompareWindow}
+					onAsOfGwChange={setCompareAsOfGw}
+					onLeftChange={updateCompareLeft}
+					onRightChange={updateCompareRight}
+					onClose={closeComparePanel}
 				/>
 			) : null}
 		</div>

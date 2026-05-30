@@ -127,6 +127,31 @@ const clubRows = [
 		as_of_gw: 38,
 	},
 	{
+		team: 3,
+		team_name: "Man Utd",
+		window_matches: 5,
+		season_matches: 38,
+		window_xg_per_match: 1.8,
+		season_xg_per_match: 1.5,
+		delta_xg_per_match: 0.3,
+		window_goals_for_per_match: 1.6,
+		season_goals_for_per_match: 1.4,
+		delta_goals_for_per_match: 0.2,
+		window_xgc_per_match: 1.2,
+		season_xgc_per_match: 1.3,
+		delta_xgc_per_match: -0.1,
+		window_goals_against_per_match: 1.0,
+		season_goals_against_per_match: 1.2,
+		delta_goals_against_per_match: -0.2,
+		window_finishing_delta: -0.2,
+		window_concession_delta: -0.2,
+		attack_form: 0.3,
+		defence_form: 0.1,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.6,
+		as_of_gw: 38,
+	},
+	{
 		team: 2,
 		team_name: "Chelsea",
 		window_matches: 5,
@@ -153,11 +178,101 @@ const clubRows = [
 	},
 ];
 
+const defconRows = [
+	{
+		element: 1,
+		web_name: "Mbeumo",
+		position: "MID",
+		team_name: "Man Utd",
+		price: 8,
+		window_games: 5,
+		window_minutes: 450,
+		window_defcon_hits: 3,
+		window_defcon_games: 5,
+		window_defcon_hit_rate: 0.6,
+		window_defcon: 8.2,
+		window_xgi90_per_million: 0.12,
+		season_points_per_million: 5.0,
+		window_start_rate: 1.0,
+		window_mins_per_appearance: 88,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.6,
+		current_ownership: 25.5,
+		as_of_gw: 38,
+	},
+	{
+		element: 2,
+		web_name: "Saka",
+		position: "MID",
+		team_name: "Arsenal",
+		price: 10,
+		window_games: 5,
+		window_minutes: 450,
+		window_defcon_hits: 2,
+		window_defcon_games: 5,
+		window_defcon_hit_rate: 0.4,
+		window_defcon: 7.1,
+		window_xgi90_per_million: 0.08,
+		season_points_per_million: 4.2,
+		window_start_rate: 0.8,
+		window_mins_per_appearance: 79,
+		upcoming_fixtures: 5,
+		avg_fdr: 3.4,
+		current_ownership: 40.1,
+		as_of_gw: 38,
+	},
+	{
+		element: 3,
+		web_name: "Haaland",
+		position: "FWD",
+		team_name: "Man City",
+		price: 14,
+		window_games: 5,
+		window_minutes: 450,
+		window_defcon_hits: 0,
+		window_defcon_games: 5,
+		window_defcon_hit_rate: 0,
+		window_defcon: 1.2,
+		window_xgi90_per_million: 0.06,
+		season_points_per_million: 4.8,
+		window_start_rate: 1.0,
+		window_mins_per_appearance: 90,
+		upcoming_fixtures: 5,
+		avg_fdr: 2.8,
+		current_ownership: 55.2,
+		as_of_gw: 38,
+	},
+];
+
 // Deliberately omits the fixture/value context fields to mimic an older API
 // payload; the view must degrade to dashes rather than crash on missing fields.
 const probRows = [
 	{
 		element: 1,
+		web_name: "Mbeumo",
+		position: "MID",
+		team_name: "Man Utd",
+		games: 10,
+		hits: 6,
+		raw_rate: 0.6,
+		prob: 0.52,
+		prob_std: 0.1,
+		as_of_gw: 38,
+	},
+	{
+		element: 2,
+		web_name: "Saka",
+		position: "MID",
+		team_name: "Arsenal",
+		games: 10,
+		hits: 4,
+		raw_rate: 0.4,
+		prob: 0.45,
+		prob_std: 0.11,
+		as_of_gw: 38,
+	},
+	{
+		element: 4,
 		web_name: "Senesi",
 		position: "DEF",
 		team_name: "Bournemouth",
@@ -195,6 +310,22 @@ const playerDetail = {
 			rolling_xgi90: 0.9,
 			rolling_defcon: 1.5,
 		},
+		{
+			round: 2,
+			kickoff_time: null,
+			minutes: 70,
+			total_points: 4,
+			price: 8,
+			expected_goals: 0.2,
+			expected_assists: 0.1,
+			expected_goal_involvements: 0.3,
+			defensive_contribution: 6,
+			defcon_hit: false,
+			rolling_xg90: 0.39,
+			rolling_xa90: 0.28,
+			rolling_xgi90: 0.68,
+			rolling_defcon: 1.2,
+		},
 	],
 	seasons: [
 		{
@@ -220,6 +351,114 @@ const playerDetail = {
 			defcon_hit_rate: null,
 		},
 	],
+};
+
+const playerDetails = {
+	1: playerDetail,
+	2: {
+		...playerDetail,
+		element: 2,
+		code: 8888,
+		web_name: "Saka",
+		team_name: "Arsenal",
+		gameweeks: [
+			{
+				round: 1,
+				kickoff_time: null,
+				minutes: 80,
+				total_points: 5,
+				price: 10,
+				expected_goals: 0.3,
+				expected_assists: 0.5,
+				expected_goal_involvements: 0.8,
+				defensive_contribution: 8,
+				defcon_hit: true,
+				rolling_xg90: 0.3,
+				rolling_xa90: 0.5,
+				rolling_xgi90: 0.8,
+				rolling_defcon: 1.8,
+			},
+			{
+				round: 2,
+				kickoff_time: null,
+				minutes: 90,
+				total_points: 8,
+				price: 10,
+				expected_goals: 0.6,
+				expected_assists: 0.2,
+				expected_goal_involvements: 0.8,
+				defensive_contribution: 9,
+				defcon_hit: true,
+				rolling_xg90: 0.45,
+				rolling_xa90: 0.35,
+				rolling_xgi90: 0.8,
+				rolling_defcon: 1.6,
+			},
+		],
+		seasons: [
+			{
+				season: "2025-26",
+				games: 1,
+				minutes: 80,
+				points: 5,
+				xg90: 0.3,
+				xa90: 0.5,
+				xgi90: 0.8,
+				points_per_million: 0.5,
+				defcon_hit_rate: 1,
+			},
+			{
+				season: "2024-25",
+				games: 35,
+				minutes: 2900,
+				points: 190,
+				xg90: 0.35,
+				xa90: 0.34,
+				xgi90: 0.69,
+				points_per_million: 19,
+				defcon_hit_rate: null,
+			},
+		],
+	},
+	3: {
+		...playerDetail,
+		element: 3,
+		code: 7777,
+		web_name: "Haaland",
+		position: "FWD",
+		team_name: "Man City",
+		gameweeks: [
+			{
+				round: 1,
+				kickoff_time: null,
+				minutes: 90,
+				total_points: 7,
+				price: 14,
+				expected_goals: 0.7,
+				expected_assists: 0.1,
+				expected_goal_involvements: 0.8,
+				defensive_contribution: 1,
+				defcon_hit: false,
+				rolling_xg90: 0.7,
+				rolling_xa90: 0.1,
+				rolling_xgi90: 0.8,
+				rolling_defcon: 0.4,
+			},
+		],
+		seasons: [
+			{
+				season: "2025-26",
+				games: 1,
+				minutes: 90,
+				points: 7,
+				xg90: 0.7,
+				xa90: 0.1,
+				xgi90: 0.8,
+				points_per_million: 0.5,
+				defcon_hit_rate: 0,
+			},
+		],
+	},
 };
 
 function mockLocalStorage() {
@@ -259,8 +498,12 @@ beforeEach(() => {
 				body = clubRows;
 			} else if (input.includes("/players/defcon-probability")) {
 				body = probRows;
+			} else if (input.includes("/players/defcon?")) {
+				body = defconRows;
 			} else if (/\/players\/\d+/.test(input)) {
-				body = playerDetail;
+				const element = Number(input.match(/\/players\/(\d+)/)?.[1]);
+				body =
+					playerDetails[element as keyof typeof playerDetails] ?? playerDetail;
 			} else if (input.includes("/players/")) {
 				body = [];
 			}
@@ -560,6 +803,157 @@ test("shortlists players and filters the interactive table", async () => {
 	const params = new URLSearchParams(window.location.search);
 	expect(params.get("shortlist")).toBeNull();
 	expect(params.get("shortlist_only")).toBeNull();
+});
+
+test("opens the compare panel without arbitrary default players", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Compare Players" }));
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(within(dialog).getByLabelText("First Player")).toHaveValue("");
+		expect(within(dialog).getByLabelText("Second Player")).toHaveValue("");
+	});
+	expect(
+		within(dialog).getByText("Select two players to compare."),
+	).toBeInTheDocument();
+});
+
+test("compares two shortlisted players in a side-by-side panel", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Mbeumo to shortlist" }),
+	);
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Saka to shortlist" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Compare Players" }));
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(
+			within(dialog).getByDisplayValue("Mbeumo - Man Utd - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(dialog).getByDisplayValue("Saka - Arsenal - MID"),
+		).toBeInTheDocument();
+	});
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("compare")).toBe("1");
+		expect(params.get("compare_a")).toBe("1");
+		expect(params.get("compare_b")).toBe("2");
+	});
+
+	fireEvent.change(within(dialog).getByLabelText("Window (Games)"), {
+		target: { value: "2" },
+	});
+	fireEvent.change(within(dialog).getByLabelText("As Of GW"), {
+		target: { value: "2" },
+	});
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("compare_window")).toBe("2");
+		expect(params.get("compare_as_of_gw")).toBe("2");
+	});
+	await waitFor(() => {
+		expect(
+			within(dialog).queryByText("Loading comparison..."),
+		).not.toBeInTheDocument();
+	});
+
+	function expectCompareRow(label: string, left: string, right: string) {
+		const row = within(dialog).getByText(label).closest("tr");
+		expect(row).not.toBeNull();
+		const cells = within(row as HTMLElement).getAllByRole("cell");
+		expect(cells[0]).toHaveTextContent(left);
+		expect(cells[1]).toHaveTextContent(right);
+		return { row: row as HTMLElement, cells };
+	}
+
+	expectCompareRow("Price", "£8.0m", "£10.0m");
+	expectCompareRow("Window Range", "GW1-GW2", "GW1-GW2");
+	const xgiRow = expectCompareRow("Window xGI", "1.20", "1.60");
+	expect(xgiRow.cells[0]).not.toHaveClass("bg-emerald-50");
+	expect(xgiRow.cells[1]).toHaveClass("bg-emerald-50");
+	expectCompareRow("Window xGI Per 90", "0.67", "0.85");
+	expectCompareRow("Window DefCon Hit Rate", "0%", "100%");
+	expectCompareRow("Season Range", "GW1-GW2", "GW1-GW2");
+	expectCompareRow("Season Points", "10", "13");
+	expectCompareRow("Season xGI", "1.20", "1.60");
+	const attackFormRow = expectCompareRow("Attack Form", "+0.30", "+0.40");
+	expect(attackFormRow.cells[0]).not.toHaveClass("bg-emerald-50");
+	expect(attackFormRow.cells[1]).toHaveClass("bg-emerald-50");
+	expect(within(dialog).queryByText("Gameweek Detail")).not.toBeInTheDocument();
+	expect(within(dialog).queryByText("GW1 xGI")).not.toBeInTheDocument();
+	expect(within(dialog).queryByText("GW2 xGI")).not.toBeInTheDocument();
+
+	fireEvent.change(within(dialog).getByLabelText("Second Player"), {
+		target: { value: "Haaland - Man City - FWD" },
+	});
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("compare_b")).toBe(
+			"3",
+		);
+	});
+	await waitFor(() => {
+		expect(
+			within(dialog).getByRole("columnheader", { name: "Haaland" }),
+		).toBeInTheDocument();
+	});
+
+	fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+	await waitFor(() => {
+		expect(
+			new URLSearchParams(window.location.search).get("compare"),
+		).toBeNull();
+	});
+});
+
+test("initialises the player compare panel from the URL", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?compare=1&compare_a=2&compare_b=3&compare_window=3&compare_as_of_gw=20",
+	);
+
+	render(withProviders(<App />));
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(
+			within(dialog).getByDisplayValue("Saka - Arsenal - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(dialog).getByDisplayValue("Haaland - Man City - FWD"),
+		).toBeInTheDocument();
+	});
+	expect(within(dialog).getByLabelText("Window (Games)")).toHaveValue("3");
+	expect(within(dialog).getByLabelText("As Of GW")).toHaveValue("20");
+	await waitFor(() => {
+		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+		expect(
+			calls.some((input) => input.includes("/api/players/2?window=3")),
+		).toBe(true);
+		expect(
+			calls.some((input) => input.includes("/api/players/3?window=3")),
+		).toBe(true);
+		expect(
+			calls.some((input) =>
+				input.includes(
+					"/api/players/form?window=3&min_minutes=0&as_of_gw=20&min_delta=-1000",
+				),
+			),
+		).toBe(true);
+	});
 });
 
 test("toggles attacking form metric columns", async () => {
