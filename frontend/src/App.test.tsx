@@ -222,8 +222,32 @@ const playerDetail = {
 	],
 };
 
+function mockLocalStorage() {
+	const storage = new Map<string, string>();
+	const localStorageMock: Storage = {
+		get length() {
+			return storage.size;
+		},
+		clear: () => storage.clear(),
+		getItem: (key) => storage.get(key) ?? null,
+		key: (index) => Array.from(storage.keys())[index] ?? null,
+		removeItem: (key) => {
+			storage.delete(key);
+		},
+		setItem: (key, value) => {
+			storage.set(key, value);
+		},
+	};
+	Object.defineProperty(window, "localStorage", {
+		configurable: true,
+		value: localStorageMock,
+	});
+}
+
 beforeEach(() => {
+	mockLocalStorage();
 	window.history.replaceState(null, "", "/");
+	window.localStorage.clear();
 	vi.stubGlobal(
 		"fetch",
 		vi.fn((input: string) => {
@@ -263,6 +287,40 @@ test("renders the attacking form table with flagged players", async () => {
 	await waitFor(() => {
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
+});
+
+test("collapses the attacking form chart and remembers the preference", async () => {
+	const firstRender = render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).toBeInTheDocument();
+
+	const hideButton = screen.getByRole("button", { name: "Hide Chart" });
+	expect(hideButton).toHaveAttribute("aria-expanded", "true");
+	fireEvent.click(hideButton);
+
+	expect(
+		screen.queryByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).not.toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Show Chart" })).toHaveAttribute(
+		"aria-expanded",
+		"false",
+	);
+	expect(window.localStorage.getItem("fpl-form-scatter-collapsed")).toBe(
+		"true",
+	);
+
+	firstRender.unmount();
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("button", { name: "Show Chart" }),
+	).toBeInTheDocument();
 });
 
 test("filters the table by the player search box", async () => {

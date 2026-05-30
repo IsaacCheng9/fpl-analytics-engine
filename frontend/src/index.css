@@ -13,6 +13,23 @@ body {
 	margin: 0;
 }
 
+.app-shell {
+	max-width: 90rem;
+}
+
+@media (min-width: 1536px) {
+	.app-shell {
+		max-width: 112rem;
+	}
+}
+
+@media (min-width: 2240px) {
+	.app-shell {
+		width: 90vw;
+		max-width: none;
+	}
+}
+
 /* Compact range slider with a filled track. The filled portion is set inline
    as a gradient based on the current value. */
 .range-slider {
