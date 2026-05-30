@@ -222,8 +222,32 @@ const playerDetail = {
 	],
 };
 
+function mockLocalStorage() {
+	const storage = new Map<string, string>();
+	const localStorageMock: Storage = {
+		get length() {
+			return storage.size;
+		},
+		clear: () => storage.clear(),
+		getItem: (key) => storage.get(key) ?? null,
+		key: (index) => Array.from(storage.keys())[index] ?? null,
+		removeItem: (key) => {
+			storage.delete(key);
+		},
+		setItem: (key, value) => {
+			storage.set(key, value);
+		},
+	};
+	Object.defineProperty(window, "localStorage", {
+		configurable: true,
+		value: localStorageMock,
+	});
+}
+
 beforeEach(() => {
+	mockLocalStorage();
 	window.history.replaceState(null, "", "/");
+	window.localStorage.clear();
 	vi.stubGlobal(
 		"fetch",
 		vi.fn((input: string) => {
@@ -265,6 +289,40 @@ test("renders the attacking form table with flagged players", async () => {
 	});
 });
 
+test("collapses the attacking form chart and remembers the preference", async () => {
+	const firstRender = render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).toBeInTheDocument();
+
+	const hideButton = screen.getByRole("button", { name: "Hide Chart" });
+	expect(hideButton).toHaveAttribute("aria-expanded", "true");
+	fireEvent.click(hideButton);
+
+	expect(
+		screen.queryByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).not.toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Show Chart" })).toHaveAttribute(
+		"aria-expanded",
+		"false",
+	);
+	expect(window.localStorage.getItem("fpl-form-scatter-collapsed")).toBe(
+		"true",
+	);
+
+	firstRender.unmount();
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("button", { name: "Show Chart" }),
+	).toBeInTheDocument();
+});
+
 test("filters the table by the player search box", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
@@ -281,29 +339,42 @@ test("filters the table by the player search box", async () => {
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
 });
 
-test("shows the full pool by default and search bypasses the Min Delta filter", async () => {
+test("filters attacking form candidates by explicit threat thresholds", async () => {
 	render(withProviders(<App />));
-	// No delta floor by default, so even a declining player is present.
+	// No threat threshold by default, so even a recently declining player is present.
 	await waitFor(() => {
 		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
+	expect(screen.getByLabelText("Min Window xGI/90")).toBeInTheDocument();
+	expect(screen.getByLabelText("Min Season xGI/90")).toBeInTheDocument();
+	expect(screen.getByLabelText("Min Window xG/90")).toBeInTheDocument();
+	expect(screen.getByLabelText("Min Season xG/90")).toBeInTheDocument();
+	expect(screen.queryByLabelText("Min Window xA/90")).not.toBeInTheDocument();
 
-	// Applying a Min Delta filter drops the declining player from the pool.
-	fireEvent.change(screen.getByLabelText("Min Delta xGI Per 90"), {
-		target: { value: "0.1" },
+	fireEvent.change(screen.getByLabelText("Min Window xGI/90"), {
+		target: { value: "0.9" },
 	});
 	await waitFor(() => {
 		expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
 	});
+	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
+	expect(
+		new URLSearchParams(window.location.search).get("min_window_xgi90"),
+	).toBe("0.9");
 
-	// Searching queries the full pool, so the filtered-out player still appears.
+	// Threat filters are hard candidate constraints, so search does not bypass them.
 	fireEvent.change(screen.getByPlaceholderText("e.g. Saka"), {
 		target: { value: "Haaland" },
 	});
 	await waitFor(() => {
-		expect(screen.getByText("Haaland")).toBeInTheDocument();
+		expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
 	});
-	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+
+	fireEvent.click(screen.getByLabelText("xA"));
+	expect(screen.getByLabelText("Min Window xA/90")).toBeInTheDocument();
+	expect(screen.getByLabelText("Min Season xA/90")).toBeInTheDocument();
 });
 
 test("filters player tables with transfer candidate controls", async () => {
@@ -362,6 +433,135 @@ test("filters player tables with transfer candidate controls", async () => {
 	expect(screen.queryByText("Saka")).not.toBeInTheDocument();
 });
 
+test("surfaces active filters with reset controls and presets", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("columnheader", { name: /Shortlist/ }),
+	).toBeInTheDocument();
+
+	fireEvent.click(screen.getByRole("button", { name: "Value Attack" }));
+	expect(screen.getByLabelText("Max Price")).toHaveValue(7.5);
+	expect(screen.getByLabelText("Min Window xGI/90")).toHaveValue(0.35);
+	expect(screen.getByLabelText("Min Season xGI/90")).toHaveValue(0.25);
+	expect(
+		screen.getByRole("button", { name: /Price <= £7.5m/ }),
+	).toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: /Min Window xGI\/90 >= 0.35/ }),
+	).toBeInTheDocument();
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Reset Transfer Filters" }),
+	);
+	expect(screen.getByLabelText("Max Price")).toHaveValue(null);
+	expect(
+		screen.queryByRole("button", { name: /Price <= £7.5m/ }),
+	).not.toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: /Min Window xGI\/90 >= 0.35/ }),
+	).toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Min Window xGI/90"), {
+		target: { value: "99" },
+	});
+	await waitFor(() => {
+		expect(
+			screen.getByText("No Players Match These Filters"),
+		).toBeInTheDocument();
+	});
+
+	fireEvent.click(
+		screen.getAllByRole("button", { name: "Clear Active Filters" })[0],
+	);
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(
+		screen.queryByText("No Players Match These Filters"),
+	).not.toBeInTheDocument();
+	expect(screen.queryByText("Active Filters")).not.toBeInTheDocument();
+});
+
+test("shortlists players and filters the interactive table", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByRole("button", { name: "Shortlisted (0)" }),
+	).toBeDisabled();
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Mbeumo to shortlist" }),
+	);
+
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Shortlisted (1)" }),
+		).toBeEnabled();
+	});
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("shortlist")).toBe(
+			"1",
+		);
+	});
+	expect(screen.queryByText("Season History")).not.toBeInTheDocument();
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Saka to shortlist" }),
+	);
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("shortlist")).toBe(
+			"1,2",
+		);
+	});
+	expect(screen.getByRole("button", { name: "Shortlisted (2)" })).toBeEnabled();
+
+	fireEvent.click(screen.getByRole("button", { name: "Shortlisted (2)" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("shortlist")).toBe("1,2");
+		expect(params.get("shortlist_only")).toBe("1");
+	});
+	expect(screen.getByText("Showing 2 shortlisted players")).toBeInTheDocument();
+	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	expect(screen.getByText("Saka")).toBeInTheDocument();
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+
+	fireEvent.click(screen.getByText("Mbeumo"));
+	await waitFor(() => {
+		expect(screen.getByText("Season History")).toBeInTheDocument();
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Close" }));
+	await waitFor(() => {
+		expect(screen.queryByText("Season History")).not.toBeInTheDocument();
+	});
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Remove Mbeumo from shortlist" }),
+	);
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("shortlist")).toBe("2");
+		expect(params.get("shortlist_only")).toBe("1");
+	});
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+	expect(screen.getByText("Saka")).toBeInTheDocument();
+
+	fireEvent.click(screen.getByRole("button", { name: "Clear Shortlist" }));
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Shortlisted (0)" }),
+		).toBeDisabled();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("shortlist")).toBeNull();
+	expect(params.get("shortlist_only")).toBeNull();
+});
+
 test("toggles attacking form metric columns", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
@@ -392,9 +592,13 @@ test("toggles attacking form metric columns", async () => {
 		.map((header) => header.textContent ?? "");
 	const headerIndex = (text: string) =>
 		headers.findIndex((header) => header.includes(text));
+	expect(headerIndex("Price")).toBeLessThan(headerIndex("FDR (Next 5)"));
+	expect(headerIndex("FDR (Next 5)")).toBeLessThan(headerIndex("Owned %"));
+	expect(headerIndex("Owned %")).toBeLessThan(headerIndex("Mins"));
 	const metricLabels = screen
 		.getAllByRole("checkbox")
-		.map((checkbox) => checkbox.parentElement?.textContent ?? "");
+		.map((checkbox) => checkbox.parentElement?.textContent ?? "")
+		.filter((label) => ["xGI", "xG", "xA"].includes(label));
 	expect(metricLabels).toEqual(["xGI", "xG", "xA"]);
 	expect(headerIndex("Window xGI Per 90")).toBeLessThan(
 		headerIndex("Season xGI Per 90"),
@@ -493,7 +697,7 @@ test("initialises filters and player panel state from the URL", async () => {
 	window.history.replaceState(
 		null,
 		"",
-		"/?tab=defcon-prob&q=Sen&position=DEF&team=Bournemouth&min_games=10&as_of_gw=20&player=1&player_window=6&season=2024-25",
+		"/?tab=defcon-prob&q=Sen&position=DEF&team=Bournemouth&min_games=10&as_of_gw=20&shortlist=1,3&player=1&player_window=6&season=2024-25",
 	);
 
 	render(withProviders(<App />));
@@ -506,6 +710,7 @@ test("initialises filters and player panel state from the URL", async () => {
 	expect(screen.getByLabelText("Team")).toHaveValue("Bournemouth");
 	expect(screen.getByLabelText("Min Games")).toHaveValue(10);
 	expect(screen.getByLabelText(/As Of GW/)).toHaveValue("20");
+	expect(screen.getByRole("button", { name: "Shortlisted (2)" })).toBeEnabled();
 
 	await waitFor(() => {
 		expect(screen.getByText("Season History")).toBeInTheDocument();
@@ -548,6 +753,9 @@ test("persists filter changes and player panel state to the URL", async () => {
 	fireEvent.change(screen.getByLabelText("Max Owned %"), {
 		target: { value: "45" },
 	});
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Saka to shortlist" }),
+	);
 	fireEvent.click(screen.getByLabelText("xA"));
 	fireEvent.click(screen.getByText("DefCon Form"));
 	fireEvent.change(screen.getByLabelText("Min Hit Rate"), {
@@ -571,13 +779,18 @@ test("persists filter changes and player panel state to the URL", async () => {
 		expect(params.get("min_mins_app")).toBe("75");
 		expect(params.get("min_owned")).toBe("10");
 		expect(params.get("max_owned")).toBe("45");
+		expect(params.get("shortlist")).toBe("2");
 	});
 
 	fireEvent.click(screen.getByText("Attacking Form"));
 	await waitFor(() => {
-		expect(screen.getByText("Saka")).toBeInTheDocument();
+		expect(screen.getAllByText("Saka").length).toBeGreaterThan(0);
 	});
-	fireEvent.click(screen.getByText("Saka"));
+	const tableSaka = screen
+		.getAllByText("Saka")
+		.find((element) => element.closest("tbody") !== null);
+	expect(tableSaka).toBeDefined();
+	fireEvent.click(tableSaka as HTMLElement);
 	await waitFor(() => {
 		expect(new URLSearchParams(window.location.search).get("player")).toBe("2");
 	});

@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { CellContext, ColumnDef } from "@tanstack/react-table";
+import type { Cell, CellContext, ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
 	type ClubForm,
@@ -23,6 +23,11 @@ type Tab = "form" | "defcon" | "defconProb" | "clubs";
 type AttackingMetric = "xg" | "xa" | "xgi";
 type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
+type AttackingThreatPeriod = "window" | "season";
+type AttackingThreatFilters = Record<
+	AttackingMetric,
+	Record<AttackingThreatPeriod, number | null>
+>;
 type ClubActualMetric = "goals" | "ga";
 type ClubActualMetricVisibility = Record<ClubActualMetric, boolean>;
 type TransferFilters = {
@@ -39,6 +44,20 @@ type TransferFilterRow = {
 	window_start_rate?: number | null;
 	window_mins_per_appearance?: number | null;
 	current_ownership?: number | null;
+};
+type ShortlistablePlayer = {
+	element: number;
+	web_name: string;
+};
+type ActiveFilterChip = {
+	id: string;
+	label: string;
+	onClear: () => void;
+};
+type FilterPreset = "nailed" | "value" | "differential" | "fixture";
+type HeatCellOptions = {
+	lowerIsBetter?: boolean;
+	format?: (value: number | null) => string;
 };
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -57,9 +76,9 @@ const DEFAULT_TEAM_FILTER = "";
 const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_POSITION: Position | "" = "";
 const DEFAULT_MIN_MINUTES = 180;
-const DEFAULT_MIN_DELTA: number | null = null;
 const DEFAULT_MIN_HIT_RATE = 0;
 const DEFAULT_MIN_GAMES = 5;
+const FORM_MIN_DELTA_FLOOR = -1000;
 const DEFAULT_AS_OF_GW: number | null = null;
 const DEFAULT_SELECTED_ELEMENT: number | null = null;
 const DEFAULT_PLAYER_WINDOW = 5;
@@ -75,6 +94,7 @@ const DEFAULT_TRANSFER_FILTERS: TransferFilters = {
 const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
 const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
 const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
+const ATTACKING_THREAT_PERIODS: AttackingThreatPeriod[] = ["window", "season"];
 const ATTACKING_METRIC_GROUP_LABELS: Record<AttackingMetricColumn, string> = {
 	window: "Window",
 	season: "Season",
@@ -109,6 +129,44 @@ const ATTACKING_METRIC_KEYS: Record<
 		value: "window_xgi90_per_million",
 	},
 };
+const ATTACKING_THREAT_FILTER_KEYS: Record<
+	AttackingMetric,
+	Record<AttackingThreatPeriod, keyof FormPlayer & string>
+> = {
+	xg: {
+		window: "window_xg90",
+		season: "season_xg90",
+	},
+	xa: {
+		window: "window_xa90",
+		season: "season_xa90",
+	},
+	xgi: {
+		window: "window_xgi90",
+		season: "season_xgi90",
+	},
+};
+const ATTACKING_THREAT_QUERY_KEYS: Record<
+	AttackingMetric,
+	Record<AttackingThreatPeriod, string>
+> = {
+	xg: {
+		window: "min_window_xg90",
+		season: "min_season_xg90",
+	},
+	xa: {
+		window: "min_window_xa90",
+		season: "min_season_xa90",
+	},
+	xgi: {
+		window: "min_window_xgi90",
+		season: "min_season_xgi90",
+	},
+};
+const ATTACKING_THREAT_PERIOD_LABELS: Record<AttackingThreatPeriod, string> = {
+	window: "Window",
+	season: "Season",
+};
 const ATTACKING_METRIC_NOUNS: Record<AttackingMetric, string> = {
 	xg: "goals",
 	xa: "assists",
@@ -130,6 +188,11 @@ const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
 	xa: false,
 	xgi: true,
 };
+const DEFAULT_ATTACKING_THREAT_FILTERS: AttackingThreatFilters = {
+	xg: { window: null, season: null },
+	xa: { window: null, season: null },
+	xgi: { window: null, season: null },
+};
 const CLUB_ACTUAL_METRICS: ClubActualMetric[] = ["goals", "ga"];
 const CLUB_ACTUAL_METRIC_LABELS: Record<ClubActualMetric, string> = {
 	goals: "Goals",
@@ -139,6 +202,12 @@ const DEFAULT_CLUB_ACTUAL_METRICS: ClubActualMetricVisibility = {
 	goals: false,
 	ga: false,
 };
+const FILTER_PRESETS: Array<{ id: FilterPreset; label: string }> = [
+	{ id: "nailed", label: "Nailed Starters" },
+	{ id: "value", label: "Value Attack" },
+	{ id: "differential", label: "Differentials" },
+	{ id: "fixture", label: "Fixture Swing" },
+];
 const TAB_QUERY_VALUES: Record<Tab, string> = {
 	form: "form",
 	defcon: "defcon",
@@ -160,7 +229,6 @@ type UrlState = {
 	windowSize: number;
 	position: Position | "";
 	minMinutes: number;
-	minDelta: number | null;
 	minHitRate: number;
 	minGames: number;
 	asOfGw: number | null;
@@ -168,8 +236,11 @@ type UrlState = {
 	playerWindow: number;
 	playerSeason: string | null;
 	attackingMetrics: AttackingMetricVisibility;
+	attackingThreatFilters: AttackingThreatFilters;
 	clubActualMetrics: ClubActualMetricVisibility;
 	transferFilters: TransferFilters;
+	shortlist: number[];
+	showShortlistedOnly: boolean;
 };
 
 const DEFAULT_URL_STATE: UrlState = {
@@ -179,7 +250,6 @@ const DEFAULT_URL_STATE: UrlState = {
 	windowSize: DEFAULT_WINDOW_SIZE,
 	position: DEFAULT_POSITION,
 	minMinutes: DEFAULT_MIN_MINUTES,
-	minDelta: DEFAULT_MIN_DELTA,
 	minHitRate: DEFAULT_MIN_HIT_RATE,
 	minGames: DEFAULT_MIN_GAMES,
 	asOfGw: DEFAULT_AS_OF_GW,
@@ -187,8 +257,11 @@ const DEFAULT_URL_STATE: UrlState = {
 	playerWindow: DEFAULT_PLAYER_WINDOW,
 	playerSeason: DEFAULT_PLAYER_SEASON,
 	attackingMetrics: DEFAULT_ATTACKING_METRICS,
+	attackingThreatFilters: DEFAULT_ATTACKING_THREAT_FILTERS,
 	clubActualMetrics: DEFAULT_CLUB_ACTUAL_METRICS,
 	transferFilters: DEFAULT_TRANSFER_FILTERS,
+	shortlist: [],
+	showShortlistedOnly: false,
 };
 
 function isBrowser() {
@@ -273,11 +346,42 @@ function parseClubActualMetrics(
 	) as ClubActualMetricVisibility;
 }
 
+function parseAttackingThreatFilters(
+	params: URLSearchParams,
+): AttackingThreatFilters {
+	return Object.fromEntries(
+		ATTACKING_METRICS.map((metric) => [
+			metric,
+			Object.fromEntries(
+				ATTACKING_THREAT_PERIODS.map((period) => [
+					period,
+					parseOptionalNumber(
+						params.get(ATTACKING_THREAT_QUERY_KEYS[metric][period]),
+						{ min: 0 },
+					),
+				]),
+			),
+		]),
+	) as AttackingThreatFilters;
+}
+
+function parseShortlist(value: string | null): number[] {
+	if (value === null || value.trim() === "") {
+		return [];
+	}
+	const elements = value
+		.split(",")
+		.map((part) => Number(part))
+		.filter((element) => Number.isInteger(element) && element > 0);
+	return Array.from(new Set(elements));
+}
+
 function readUrlState(): UrlState {
 	if (!isBrowser()) {
 		return { ...DEFAULT_URL_STATE };
 	}
 	const params = new URLSearchParams(window.location.search);
+	const shortlist = parseShortlist(params.get("shortlist"));
 	return {
 		tab: parseTab(params.get("tab")),
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
@@ -289,7 +393,6 @@ function readUrlState(): UrlState {
 		minMinutes: parseNumber(params.get("min_minutes"), DEFAULT_MIN_MINUTES, {
 			min: 0,
 		}),
-		minDelta: parseOptionalNumber(params.get("min_delta")),
 		minHitRate: parseNumber(params.get("min_hit_rate"), DEFAULT_MIN_HIT_RATE, {
 			min: 0,
 			max: 1,
@@ -319,13 +422,30 @@ function readUrlState(): UrlState {
 		),
 		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
 		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
+		attackingThreatFilters: parseAttackingThreatFilters(params),
 		clubActualMetrics: parseClubActualMetrics(params.get("club_actuals")),
+		shortlist,
+		showShortlistedOnly:
+			shortlist.length > 0 && params.get("shortlist_only") === "1",
 	};
 }
 
 function metricsMatchDefault(metrics: AttackingMetricVisibility): boolean {
 	return ATTACKING_METRICS.every(
 		(metric) => metrics[metric] === DEFAULT_ATTACKING_METRICS[metric],
+	);
+}
+
+function visibleAttackingThreatFiltersMatchDefault(
+	filters: AttackingThreatFilters,
+	visibleMetrics: AttackingMetricVisibility,
+): boolean {
+	return ATTACKING_METRICS.every(
+		(metric) =>
+			!visibleMetrics[metric] ||
+			ATTACKING_THREAT_PERIODS.every(
+				(period) => filters[metric][period] === null,
+			),
 	);
 }
 
@@ -346,6 +466,18 @@ function transferFiltersMatchDefault(filters: TransferFilters): boolean {
 		filters.minOwnership === null &&
 		filters.maxOwnership === null
 	);
+}
+
+function defaultTransferFilters(): TransferFilters {
+	return { ...DEFAULT_TRANSFER_FILTERS };
+}
+
+function defaultAttackingThreatFilters(): AttackingThreatFilters {
+	return {
+		xg: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xg },
+		xa: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xa },
+		xgi: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xgi },
+	};
 }
 
 function writeUrlState(state: UrlState) {
@@ -375,9 +507,6 @@ function writeUrlState(state: UrlState) {
 	) {
 		params.set("min_minutes", String(state.minMinutes));
 	}
-	if (state.tab === "form" && state.minDelta !== DEFAULT_MIN_DELTA) {
-		params.set("min_delta", String(state.minDelta));
-	}
 	if (state.tab === "defcon" && state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
 		params.set("min_hit_rate", String(state.minHitRate));
 	}
@@ -395,6 +524,28 @@ function writeUrlState(state: UrlState) {
 			),
 		);
 	}
+	if (
+		state.tab === "form" &&
+		!visibleAttackingThreatFiltersMatchDefault(
+			state.attackingThreatFilters,
+			state.attackingMetrics,
+		)
+	) {
+		for (const metric of ATTACKING_METRICS) {
+			if (!state.attackingMetrics[metric]) {
+				continue;
+			}
+			for (const period of ATTACKING_THREAT_PERIODS) {
+				const value = state.attackingThreatFilters[metric][period];
+				if (value !== null) {
+					params.set(
+						ATTACKING_THREAT_QUERY_KEYS[metric][period],
+						String(value),
+					);
+				}
+			}
+		}
+	}
 	if (!clubActualMetricsMatchDefault(state.clubActualMetrics)) {
 		params.set(
 			"club_actuals",
@@ -402,6 +553,12 @@ function writeUrlState(state: UrlState) {
 				(metric) => state.clubActualMetrics[metric],
 			).join(","),
 		);
+	}
+	if (state.shortlist.length > 0) {
+		params.set("shortlist", state.shortlist.join(","));
+		if (state.tab !== "clubs" && state.showShortlistedOnly) {
+			params.set("shortlist_only", "1");
+		}
 	}
 	if (
 		state.tab !== "clubs" &&
@@ -498,6 +655,46 @@ function filterTransferCandidates<T extends TransferFilterRow>(
 	);
 }
 
+function filterAttackingThreatCandidates(
+	rows: FormPlayer[],
+	filters: AttackingThreatFilters,
+	visibleMetrics: AttackingMetricVisibility,
+): FormPlayer[] {
+	if (visibleAttackingThreatFiltersMatchDefault(filters, visibleMetrics)) {
+		return rows;
+	}
+	return rows.filter((row) =>
+		ATTACKING_METRICS.every((metric) => {
+			if (!visibleMetrics[metric]) {
+				return true;
+			}
+			return ATTACKING_THREAT_PERIODS.every((period) => {
+				const value = row[ATTACKING_THREAT_FILTER_KEYS[metric][period]];
+				return passesMin(
+					typeof value === "number" ? value : null,
+					filters[metric][period],
+				);
+			});
+		}),
+	);
+}
+
+function filterShortlistedPlayers<T extends { element: number }>(
+	rows: T[],
+	shortlist: number[],
+	showShortlistedOnly: boolean,
+): T[] {
+	if (!showShortlistedOnly) {
+		return rows;
+	}
+	const shortlistedElements = new Set(shortlist);
+	return rows.filter((row) => shortlistedElements.has(row.element));
+}
+
+function formatPlayerCount(count: number): string {
+	return `${count} ${count === 1 ? "player" : "players"}`;
+}
+
 type Range = { min: number; max: number };
 
 // Metric columns that get heat shading. The range is computed league-wide from
@@ -516,12 +713,14 @@ const FORM_HEAT_KEYS = [
 	"window_xa90_per_million",
 	"window_xgi90_per_million",
 	"season_points_per_million",
+	"window_minutes",
 	"window_start_rate",
 	"window_mins_per_appearance",
 	"avg_fdr",
 	"current_ownership",
 ];
 const DEFCON_HEAT_KEYS = [
+	"window_minutes",
 	"window_games",
 	"window_defcon_hits",
 	"window_defcon_hit_rate",
@@ -533,6 +732,7 @@ const DEFCON_HEAT_KEYS = [
 	"current_ownership",
 ];
 const DEFCON_PROB_HEAT_KEYS = [
+	"window_minutes",
 	"games",
 	"hits",
 	"raw_rate",
@@ -584,56 +784,68 @@ function computeRanges(
 	return ranges;
 }
 
-// Shade a cell red (worst) to green (best) by its position in the league-wide
-// range, so relative standing is readable at a glance.
+// Render the cell text; the table cell owns the background fill.
 function HeatCell({
 	value,
-	range,
-	lowerIsBetter,
 	text,
 }: {
 	value: number | null | undefined;
-	range: Range;
-	lowerIsBetter: boolean;
 	text: string;
 }) {
 	if (value == null) {
 		return <span className="text-zinc-400">-</span>;
 	}
+	return <span>{text}</span>;
+}
+
+// Shade a cell red (worst) to green (best) by its position in the league-wide
+// range, so relative standing is readable at a glance.
+function heatCellColour(
+	value: number | null | undefined,
+	range: Range,
+	lowerIsBetter: boolean,
+) {
+	if (value == null) {
+		return undefined;
+	}
 	const { min, max } = range;
 	const t = max > min ? (value - min) / (max - min) : 0.5;
 	const score = lowerIsBetter ? 1 - t : t;
 	const hue = score * 120; // 0 = red (worst), 120 = green (best).
-	return (
-		<span
-			className="-mx-3 -my-2 block px-3 py-2"
-			style={{ backgroundColor: `hsl(${hue}, 68%, 80%)` }}
-		>
-			{text}
-		</span>
-	);
+	return `hsl(${hue}, 68%, 80%)`;
 }
 
-// Build a heat-shaded cell renderer scaled against a fixed league-wide range.
-function heatCell<T>(
-	range: Range,
-	opts: {
-		lowerIsBetter?: boolean;
-		format?: (value: number | null) => string;
-	} = {},
-) {
+// Build the text renderer for a heat-shaded cell.
+function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
 	const format = opts.format ?? ((value: number | null) => fmtNum(value));
-	const lowerIsBetter = opts.lowerIsBetter ?? false;
 	return (info: CellContext<T, unknown>) => {
 		const value = info.getValue<number | null>();
-		return (
-			<HeatCell
-				value={value}
-				range={range}
-				lowerIsBetter={lowerIsBetter}
-				text={format(value)}
-			/>
+		return <HeatCell value={value} text={format(value)} />;
+	};
+}
+
+function heatCellStyle<T>(
+	range: Range,
+	lowerIsBetter: boolean,
+): (cell: Cell<T, unknown>) => { backgroundColor: string } | undefined {
+	return (cell) => {
+		const backgroundColor = heatCellColour(
+			cell.getValue<number | null>(),
+			range,
+			lowerIsBetter,
 		);
+		return backgroundColor ? { backgroundColor } : undefined;
+	};
+}
+
+function heatMeta<T>(
+	meta: ColumnDef<T>["meta"],
+	range: Range,
+	opts: HeatCellOptions = {},
+): ColumnDef<T>["meta"] {
+	return {
+		...meta,
+		cellStyle: heatCellStyle<T>(range, opts.lowerIsBetter ?? false),
 	};
 }
 
@@ -666,12 +878,60 @@ function buildFormMetricColumns(
 			accessorKey: key,
 			header,
 			cell: heatCell<FormPlayer>(ranges[key], formatter),
-			meta: {
-				tooltip,
-				headerClassName: styles.header,
-			},
+			meta: heatMeta<FormPlayer>(
+				{
+					tooltip,
+					headerClassName: styles.header,
+				},
+				ranges[key],
+				formatter,
+			),
 		} satisfies ColumnDef<FormPlayer>;
 	});
+}
+
+function buildPlayerContextColumns<T extends TransferFilterRow>(
+	ranges: Record<string, Range>,
+): ColumnDef<T>[] {
+	return [
+		{
+			accessorKey: "price",
+			header: "Price",
+			cell: (info) => fmtPrice(info.getValue<number | null>()),
+		},
+		{
+			accessorKey: "avg_fdr",
+			header: "FDR (Next 5)",
+			cell: heatCell<T>(ranges.avg_fdr, {
+				lowerIsBetter: true,
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: heatMeta<T>(
+				{
+					tooltip:
+						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+				},
+				ranges.avg_fdr,
+				{ lowerIsBetter: true },
+			),
+		},
+		{
+			accessorKey: "current_ownership",
+			header: "Owned %",
+			cell: heatCell<T>(ranges.current_ownership, {
+				lowerIsBetter: true,
+				format: (v) => fmtPctPoints(v, 1),
+			}),
+			meta: heatMeta<T>(
+				{
+					tooltip:
+						"Current ownership percentage; a live snapshot, not point-in-time",
+				},
+				ranges.current_ownership,
+				{ lowerIsBetter: true },
+			),
+		},
+	];
 }
 
 function buildFormColumns(
@@ -682,15 +942,17 @@ function buildFormColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		{
-			accessorKey: "price",
-			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number>()),
-		},
+		...buildPlayerContextColumns<FormPlayer>(ranges),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			meta: { tooltip: "Total minutes played across the window" },
+			cell: heatCell<FormPlayer>(ranges.window_minutes, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: heatMeta<FormPlayer>(
+				{ tooltip: "Total minutes played across the window" },
+				ranges.window_minutes,
+			),
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
@@ -698,16 +960,22 @@ function buildFormColumns(
 			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: {
-				tooltip:
-					"Average minutes per appearance in the window; 0-minute games are excluded",
-			},
+			meta: heatMeta<FormPlayer>(
+				{
+					tooltip:
+						"Average minutes per appearance in the window; 0-minute games are excluded",
+				},
+				ranges.window_mins_per_appearance,
+			),
 		},
 		{
 			accessorKey: "window_start_rate",
 			header: "Start %",
 			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
-			meta: { tooltip: "Share of window games the player started" },
+			meta: heatMeta<FormPlayer>(
+				{ tooltip: "Share of window games the player started" },
+				ranges.window_start_rate,
+			),
 		},
 		...ATTACKING_METRIC_COLUMN_ORDER.filter(
 			(metric) => visibleMetrics[metric],
@@ -718,31 +986,10 @@ function buildFormColumns(
 			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: { tooltip: "Total season points divided by price" },
-		},
-		{
-			accessorKey: "avg_fdr",
-			header: "FDR (Next 5)",
-			cell: heatCell<FormPlayer>(ranges.avg_fdr, {
-				lowerIsBetter: true,
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-			},
-		},
-		{
-			accessorKey: "current_ownership",
-			header: "Owned %",
-			cell: heatCell<FormPlayer>(ranges.current_ownership, {
-				lowerIsBetter: true,
-				format: (v) => fmtPctPoints(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Current ownership percentage; a live snapshot, not point-in-time",
-			},
+			meta: heatMeta<FormPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
 		},
 	];
 }
@@ -754,15 +1001,17 @@ function buildDefconColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		{
-			accessorKey: "price",
-			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number | null>()),
-		},
+		...buildPlayerContextColumns<DefconPlayer>(ranges),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			meta: { tooltip: "Total minutes played across the window" },
+			cell: heatCell<DefconPlayer>(ranges.window_minutes, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Total minutes played across the window" },
+				ranges.window_minutes,
+			),
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
@@ -770,10 +1019,13 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: {
-				tooltip:
-					"Average minutes per appearance in the window; 0-minute games are excluded",
-			},
+			meta: heatMeta<DefconPlayer>(
+				{
+					tooltip:
+						"Average minutes per appearance in the window; 0-minute games are excluded",
+				},
+				ranges.window_mins_per_appearance,
+			),
 		},
 		{
 			accessorKey: "window_start_rate",
@@ -781,7 +1033,10 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_start_rate, {
 				format: fmtPct,
 			}),
-			meta: { tooltip: "Share of window games the player started" },
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Share of window games the player started" },
+				ranges.window_start_rate,
+			),
 		},
 		{
 			accessorKey: "window_games",
@@ -789,7 +1044,10 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_games, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: { tooltip: "Eligible games in the window" },
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Eligible games in the window" },
+				ranges.window_games,
+			),
 		},
 		{
 			accessorKey: "window_defcon_hits",
@@ -797,7 +1055,10 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_defcon_hits, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: { tooltip: "Window games clearing the DefCon threshold" },
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Window games clearing the DefCon threshold" },
+				ranges.window_defcon_hits,
+			),
 		},
 		{
 			accessorKey: "window_defcon_hit_rate",
@@ -805,7 +1066,10 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
 				format: fmtPct,
 			}),
-			meta: { tooltip: "Share of window games clearing the DefCon threshold" },
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Share of window games clearing the DefCon threshold" },
+				ranges.window_defcon_hit_rate,
+			),
 		},
 		{
 			accessorKey: "window_defcon",
@@ -813,10 +1077,13 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.window_defcon, {
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: {
-				tooltip:
-					"Average defensive-contribution count per game over the window",
-			},
+			meta: heatMeta<DefconPlayer>(
+				{
+					tooltip:
+						"Average defensive-contribution count per game over the window",
+				},
+				ranges.window_defcon,
+			),
 		},
 		{
 			accessorKey: "season_points_per_million",
@@ -824,31 +1091,10 @@ function buildDefconColumns(
 			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: { tooltip: "Total season points divided by price" },
-		},
-		{
-			accessorKey: "avg_fdr",
-			header: "FDR (Next 5)",
-			cell: heatCell<DefconPlayer>(ranges.avg_fdr, {
-				lowerIsBetter: true,
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-			},
-		},
-		{
-			accessorKey: "current_ownership",
-			header: "Owned %",
-			cell: heatCell<DefconPlayer>(ranges.current_ownership, {
-				lowerIsBetter: true,
-				format: (v) => fmtPctPoints(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Current ownership percentage; a live snapshot, not point-in-time",
-			},
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
 		},
 	];
 }
@@ -860,15 +1106,17 @@ function buildDefconProbColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		{
-			accessorKey: "price",
-			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number | null>()),
-		},
+		...buildPlayerContextColumns<DefconProbabilityPlayer>(ranges),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			meta: { tooltip: "Total minutes played across the recent window" },
+			cell: heatCell<DefconProbabilityPlayer>(ranges.window_minutes, {
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Total minutes played across the recent window" },
+				ranges.window_minutes,
+			),
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
@@ -877,10 +1125,13 @@ function buildDefconProbColumns(
 				ranges.window_mins_per_appearance,
 				{ format: (v) => fmtNum(v, 0) },
 			),
-			meta: {
-				tooltip:
-					"Average minutes per appearance in the recent window; 0-minute games are excluded",
-			},
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{
+					tooltip:
+						"Average minutes per appearance in the recent window; 0-minute games are excluded",
+				},
+				ranges.window_mins_per_appearance,
+			),
 		},
 		{
 			accessorKey: "window_start_rate",
@@ -888,7 +1139,10 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.window_start_rate, {
 				format: fmtPct,
 			}),
-			meta: { tooltip: "Share of recent window games the player started" },
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Share of recent window games the player started" },
+				ranges.window_start_rate,
+			),
 		},
 		{
 			accessorKey: "games",
@@ -896,7 +1150,10 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.games, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: { tooltip: "Eligible appearances up to this gameweek" },
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Eligible appearances up to this gameweek" },
+				ranges.games,
+			),
 		},
 		{
 			accessorKey: "hits",
@@ -904,7 +1161,10 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.hits, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: { tooltip: "Appearances clearing the DefCon threshold" },
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Appearances clearing the DefCon threshold" },
+				ranges.hits,
+			),
 		},
 		{
 			accessorKey: "raw_rate",
@@ -912,16 +1172,22 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.raw_rate, {
 				format: fmtPct,
 			}),
-			meta: { tooltip: "Observed DefCon hit rate (hits / games)" },
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Observed DefCon hit rate (hits / games)" },
+				ranges.raw_rate,
+			),
 		},
 		{
 			accessorKey: "prob",
 			header: "P(Hit Next GW)",
 			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
-			meta: {
-				tooltip:
-					"Modelled probability of clearing the DefCon threshold next gameweek",
-			},
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{
+					tooltip:
+						"Modelled probability of clearing the DefCon threshold next gameweek",
+				},
+				ranges.prob,
+			),
 		},
 		{
 			accessorKey: "prob_std",
@@ -929,7 +1195,11 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.prob_std, {
 				lowerIsBetter: true,
 			}),
-			meta: { tooltip: "Uncertainty (standard deviation) of the probability" },
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Uncertainty (standard deviation) of the probability" },
+				ranges.prob_std,
+				{ lowerIsBetter: true },
+			),
 		},
 		{
 			accessorKey: "window_defcon",
@@ -937,10 +1207,13 @@ function buildDefconProbColumns(
 			cell: heatCell<DefconProbabilityPlayer>(ranges.window_defcon, {
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: {
-				tooltip:
-					"Average defensive-contribution count per game over the recent window",
-			},
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{
+					tooltip:
+						"Average defensive-contribution count per game over the recent window",
+				},
+				ranges.window_defcon,
+			),
 		},
 		{
 			accessorKey: "season_points_per_million",
@@ -949,31 +1222,10 @@ function buildDefconProbColumns(
 				ranges.season_points_per_million,
 				{ format: (v) => fmtNum(v, 1) },
 			),
-			meta: { tooltip: "Total season points divided by price" },
-		},
-		{
-			accessorKey: "avg_fdr",
-			header: "FDR (Next 5)",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.avg_fdr, {
-				lowerIsBetter: true,
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-			},
-		},
-		{
-			accessorKey: "current_ownership",
-			header: "Owned %",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.current_ownership, {
-				lowerIsBetter: true,
-				format: (v) => fmtPctPoints(v, 1),
-			}),
-			meta: {
-				tooltip:
-					"Current ownership percentage; a live snapshot, not point-in-time",
-			},
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
 		},
 	];
 }
@@ -990,19 +1242,28 @@ function buildClubColumns(
 			cell: heatCell<ClubForm>(ranges.window_matches, {
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: { tooltip: "Club matches in the recent window" },
+			meta: heatMeta<ClubForm>(
+				{ tooltip: "Club matches in the recent window" },
+				ranges.window_matches,
+			),
 		},
 		{
 			accessorKey: "window_xg_per_match",
 			header: "Window xG",
 			cell: heatCell<ClubForm>(ranges.window_xg_per_match),
-			meta: { tooltip: "Expected goals per match over the recent window" },
+			meta: heatMeta<ClubForm>(
+				{ tooltip: "Expected goals per match over the recent window" },
+				ranges.window_xg_per_match,
+			),
 		},
 		{
 			accessorKey: "season_xg_per_match",
 			header: "Season xG",
 			cell: heatCell<ClubForm>(ranges.season_xg_per_match),
-			meta: { tooltip: "Expected goals per match, season to date" },
+			meta: heatMeta<ClubForm>(
+				{ tooltip: "Expected goals per match, season to date" },
+				ranges.season_xg_per_match,
+			),
 		},
 		{
 			accessorKey: "delta_xg_per_match",
@@ -1010,10 +1271,13 @@ function buildClubColumns(
 			cell: heatCell<ClubForm>(ranges.delta_xg_per_match, {
 				format: fmtDelta,
 			}),
-			meta: {
-				tooltip:
-					"Window xG per match minus season xG per match; positive means the attack is creating more",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip:
+						"Window xG per match minus season xG per match; positive means the attack is creating more",
+				},
+				ranges.delta_xg_per_match,
+			),
 		},
 		...(visibleActualMetrics.goals
 			? [
@@ -1021,7 +1285,12 @@ function buildClubColumns(
 						accessorKey: "window_goals_for_per_match",
 						header: "Window Goals",
 						cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
-						meta: { tooltip: "Goals scored per match over the recent window" },
+						meta: heatMeta<ClubForm>(
+							{
+								tooltip: "Goals scored per match over the recent window",
+							},
+							ranges.window_goals_for_per_match,
+						),
 					},
 					{
 						accessorKey: "delta_goals_for_per_match",
@@ -1029,10 +1298,13 @@ function buildClubColumns(
 						cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
 							format: fmtDelta,
 						}),
-						meta: {
-							tooltip:
-								"Window goals per match minus season goals per match; useful context for finishing variance",
-						},
+						meta: heatMeta<ClubForm>(
+							{
+								tooltip:
+									"Window goals per match minus season goals per match; useful context for finishing variance",
+							},
+							ranges.delta_goals_for_per_match,
+						),
 					},
 				]
 			: []),
@@ -1040,9 +1312,12 @@ function buildClubColumns(
 			accessorKey: "attack_form",
 			header: "Attack Form",
 			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
-			meta: {
-				tooltip: "Recent xG per match improvement versus the season baseline",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip: "Recent xG per match improvement versus the season baseline",
+				},
+				ranges.attack_form,
+			),
 		},
 		{
 			accessorKey: "window_xgc_per_match",
@@ -1050,9 +1325,13 @@ function buildClubColumns(
 			cell: heatCell<ClubForm>(ranges.window_xgc_per_match, {
 				lowerIsBetter: true,
 			}),
-			meta: {
-				tooltip: "Expected goals conceded per match over the recent window",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip: "Expected goals conceded per match over the recent window",
+				},
+				ranges.window_xgc_per_match,
+				{ lowerIsBetter: true },
+			),
 		},
 		{
 			accessorKey: "season_xgc_per_match",
@@ -1060,7 +1339,11 @@ function buildClubColumns(
 			cell: heatCell<ClubForm>(ranges.season_xgc_per_match, {
 				lowerIsBetter: true,
 			}),
-			meta: { tooltip: "Expected goals conceded per match, season to date" },
+			meta: heatMeta<ClubForm>(
+				{ tooltip: "Expected goals conceded per match, season to date" },
+				ranges.season_xgc_per_match,
+				{ lowerIsBetter: true },
+			),
 		},
 		{
 			accessorKey: "delta_xgc_per_match",
@@ -1069,10 +1352,14 @@ function buildClubColumns(
 				lowerIsBetter: true,
 				format: fmtDelta,
 			}),
-			meta: {
-				tooltip:
-					"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip:
+						"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
+				},
+				ranges.delta_xgc_per_match,
+				{ lowerIsBetter: true },
+			),
 		},
 		...(visibleActualMetrics.ga
 			? [
@@ -1082,9 +1369,13 @@ function buildClubColumns(
 						cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
 							lowerIsBetter: true,
 						}),
-						meta: {
-							tooltip: "Goals conceded per match over the recent window",
-						},
+						meta: heatMeta<ClubForm>(
+							{
+								tooltip: "Goals conceded per match over the recent window",
+							},
+							ranges.window_goals_against_per_match,
+							{ lowerIsBetter: true },
+						),
 					},
 					{
 						accessorKey: "delta_goals_against_per_match",
@@ -1093,10 +1384,14 @@ function buildClubColumns(
 							lowerIsBetter: true,
 							format: fmtDelta,
 						}),
-						meta: {
-							tooltip:
-								"Window goals conceded per match minus season goals conceded per match",
-						},
+						meta: heatMeta<ClubForm>(
+							{
+								tooltip:
+									"Window goals conceded per match minus season goals conceded per match",
+							},
+							ranges.delta_goals_against_per_match,
+							{ lowerIsBetter: true },
+						),
 					},
 				]
 			: []),
@@ -1104,10 +1399,13 @@ function buildClubColumns(
 			accessorKey: "defence_form",
 			header: "Defence Form",
 			cell: heatCell<ClubForm>(ranges.defence_form, { format: fmtDelta }),
-			meta: {
-				tooltip:
-					"Recent xGC per match improvement versus the season baseline; positive is better",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip:
+						"Recent xGC per match improvement versus the season baseline; positive is better",
+				},
+				ranges.defence_form,
+			),
 		},
 		{
 			accessorKey: "avg_fdr",
@@ -1116,10 +1414,14 @@ function buildClubColumns(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: {
-				tooltip:
-					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-			},
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip:
+						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+				},
+				ranges.avg_fdr,
+				{ lowerIsBetter: true },
+			),
 		},
 	];
 }
@@ -1129,6 +1431,7 @@ const fieldClass =
 	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
 // Most controls sit below a label, so the shared input class adds the gap.
 const inputClass = `mt-1 ${fieldClass}`;
+const transferInputClass = `${inputClass} w-[5.5rem]`;
 
 // Keep the window within bounds and tolerate an empty/NaN number input.
 function clampWindowSize(value: number): number {
@@ -1172,11 +1475,6 @@ export default function App() {
 		initialUrlState.position,
 	);
 	const [minMinutes, setMinMinutes] = useState(initialUrlState.minMinutes);
-	// Null means no delta floor - show every qualifying player by default; the
-	// delta column and scatter still convey who is improving.
-	const [minDelta, setMinDelta] = useState<number | null>(
-		initialUrlState.minDelta,
-	);
 	const [minHitRate, setMinHitRate] = useState(initialUrlState.minHitRate);
 	const [minGames, setMinGames] = useState(initialUrlState.minGames);
 	const [asOfGw, setAsOfGw] = useState<number | null>(initialUrlState.asOfGw);
@@ -1191,10 +1489,18 @@ export default function App() {
 	);
 	const [attackingMetrics, setAttackingMetrics] =
 		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
+	const [attackingThreatFilters, setAttackingThreatFilters] =
+		useState<AttackingThreatFilters>(initialUrlState.attackingThreatFilters);
 	const [clubActualMetrics, setClubActualMetrics] =
 		useState<ClubActualMetricVisibility>(initialUrlState.clubActualMetrics);
 	const [transferFilters, setTransferFilters] = useState<TransferFilters>(
 		initialUrlState.transferFilters,
+	);
+	const [shortlist, setShortlist] = useState<number[]>(
+		initialUrlState.shortlist,
+	);
+	const [showShortlistedOnly, setShowShortlistedOnly] = useState(
+		initialUrlState.showShortlistedOnly,
 	);
 
 	useEffect(() => {
@@ -1206,7 +1512,6 @@ export default function App() {
 			setWindowSize(next.windowSize);
 			setPosition(next.position);
 			setMinMinutes(next.minMinutes);
-			setMinDelta(next.minDelta);
 			setMinHitRate(next.minHitRate);
 			setMinGames(next.minGames);
 			setAsOfGw(next.asOfGw);
@@ -1214,8 +1519,11 @@ export default function App() {
 			setPlayerWindow(next.playerWindow);
 			setPlayerSeason(next.playerSeason);
 			setAttackingMetrics(next.attackingMetrics);
+			setAttackingThreatFilters(next.attackingThreatFilters);
 			setClubActualMetrics(next.clubActualMetrics);
 			setTransferFilters(next.transferFilters);
+			setShortlist(next.shortlist);
+			setShowShortlistedOnly(next.showShortlistedOnly);
 		}
 
 		window.addEventListener("popstate", applyCurrentUrlState);
@@ -1230,7 +1538,6 @@ export default function App() {
 			windowSize,
 			position,
 			minMinutes,
-			minDelta,
 			minHitRate,
 			minGames,
 			asOfGw,
@@ -1238,8 +1545,11 @@ export default function App() {
 			playerWindow,
 			playerSeason,
 			attackingMetrics,
+			attackingThreatFilters,
 			clubActualMetrics,
 			transferFilters,
+			shortlist,
+			showShortlistedOnly,
 		});
 	}, [
 		tab,
@@ -1248,7 +1558,6 @@ export default function App() {
 		windowSize,
 		position,
 		minMinutes,
-		minDelta,
 		minHitRate,
 		minGames,
 		asOfGw,
@@ -1256,15 +1565,118 @@ export default function App() {
 		playerWindow,
 		playerSeason,
 		attackingMetrics,
+		attackingThreatFilters,
 		clubActualMetrics,
 		transferFilters,
+		shortlist,
+		showShortlistedOnly,
 	]);
+
+	useEffect(() => {
+		if (shortlist.length === 0 && showShortlistedOnly) {
+			setShowShortlistedOnly(false);
+		}
+	}, [shortlist.length, showShortlistedOnly]);
 
 	function updateTransferFilter(
 		filter: keyof TransferFilters,
 		value: number | null,
 	) {
 		setTransferFilters((current) => ({ ...current, [filter]: value }));
+	}
+
+	function resetTransferFilters() {
+		setMinMinutes(DEFAULT_MIN_MINUTES);
+		setTransferFilters(defaultTransferFilters());
+	}
+
+	function updateAttackingThreatFilter(
+		metric: AttackingMetric,
+		period: AttackingThreatPeriod,
+		value: number | null,
+	) {
+		setAttackingThreatFilters((current) => ({
+			...current,
+			[metric]: { ...current[metric], [period]: value },
+		}));
+	}
+
+	function resetAttackingThreatFilters() {
+		setAttackingThreatFilters(defaultAttackingThreatFilters());
+	}
+
+	function clearActiveFilters() {
+		setPlayerSearch(DEFAULT_PLAYER_SEARCH);
+		setTeamFilter(DEFAULT_TEAM_FILTER);
+		setWindowSize(DEFAULT_WINDOW_SIZE);
+		setPosition(DEFAULT_POSITION);
+		setMinMinutes(DEFAULT_MIN_MINUTES);
+		setMinHitRate(DEFAULT_MIN_HIT_RATE);
+		setMinGames(DEFAULT_MIN_GAMES);
+		setAsOfGw(DEFAULT_AS_OF_GW);
+		setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS });
+		setAttackingThreatFilters(defaultAttackingThreatFilters());
+		setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS });
+		setTransferFilters(defaultTransferFilters());
+		setShowShortlistedOnly(false);
+	}
+
+	function applyFilterPreset(preset: FilterPreset) {
+		setTab("form");
+		setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS });
+		setAttackingThreatFilters((current) => {
+			const next = defaultAttackingThreatFilters();
+			if (preset === "value") {
+				next.xgi = { window: 0.35, season: 0.25 };
+			} else if (preset === "differential") {
+				next.xgi = { ...current.xgi, window: 0.3 };
+			} else if (preset === "fixture") {
+				next.xgi = { ...current.xgi, window: 0.25 };
+			}
+			return next;
+		});
+		setTransferFilters((current) => {
+			if (preset === "nailed") {
+				return {
+					...current,
+					minMinsPerAppearance: 70,
+					minStartPct: 80,
+				};
+			}
+			if (preset === "value") {
+				return {
+					...current,
+					maxPrice: 7.5,
+				};
+			}
+			if (preset === "differential") {
+				return {
+					...current,
+					maxOwnership: 10,
+				};
+			}
+			return {
+				...current,
+				maxFdr: 3,
+			};
+		});
+		if (preset === "nailed") {
+			setMinMinutes(270);
+		}
+	}
+
+	function openPlayerDetail(element: number) {
+		setSelectedElement(element);
+		setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+		setPlayerSeason(DEFAULT_PLAYER_SEASON);
+	}
+
+	function toggleShortlist(element: number) {
+		setShortlist((current) =>
+			current.includes(element)
+				? current.filter((value) => value !== element)
+				: [...current, element],
+		);
 	}
 
 	function toggleAttackingMetric(metric: AttackingMetric) {
@@ -1292,19 +1704,11 @@ export default function App() {
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const formQuery = useQuery({
-		queryKey: [
-			"form",
-			windowSize,
-			position,
-			minMinutes,
-			minDelta,
-			asOfGw,
-			hasPlayerSearch,
-		],
+		queryKey: ["form", windowSize, position, minMinutes, asOfGw],
 		queryFn: () =>
 			fetchForm({
 				...base,
-				minDelta: hasPlayerSearch ? -1000 : (minDelta ?? -1000),
+				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
 		enabled: tab === "form",
 		placeholderData: keepPreviousData,
@@ -1351,7 +1755,7 @@ export default function App() {
 				window: windowSize,
 				position: "",
 				minMinutes,
-				minDelta: -1000,
+				minDelta: FORM_MIN_DELTA_FLOOR,
 				asOfGw,
 			}),
 		enabled: tab === "form",
@@ -1443,6 +1847,16 @@ export default function App() {
 		filteredForm,
 		transferFilters,
 	);
+	const filteredThreatForm = filterAttackingThreatCandidates(
+		filteredTransferForm,
+		attackingThreatFilters,
+		attackingMetrics,
+	);
+	const visibleFormRows = filterShortlistedPlayers(
+		filteredThreatForm,
+		shortlist,
+		showShortlistedOnly,
+	);
 	const filteredDefcon = filterPlayers(
 		defconQuery.data ?? [],
 		playerSearch,
@@ -1451,6 +1865,11 @@ export default function App() {
 	const filteredTransferDefcon = filterTransferCandidates(
 		filteredDefcon,
 		transferFilters,
+	);
+	const visibleDefconRows = filterShortlistedPlayers(
+		filteredTransferDefcon,
+		shortlist,
+		showShortlistedOnly,
 	);
 	const filteredDefconProb = filterPlayers(
 		defconProbQuery.data ?? [],
@@ -1461,16 +1880,251 @@ export default function App() {
 		filteredDefconProb,
 		transferFilters,
 	);
+	const visibleDefconProbRows = filterShortlistedPlayers(
+		filteredTransferDefconProb,
+		shortlist,
+		showShortlistedOnly,
+	);
 	const filteredClubs = (clubQuery.data ?? []).filter(
 		(row) => teamFilter === "" || row.team_name === teamFilter,
 	);
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
 	const showTransferFilters = tab !== "clubs";
+	const isShortlistViewActive =
+		tab !== "clubs" && showShortlistedOnly && shortlist.length > 0;
+	const hasActiveTransferFilters =
+		tab !== "clubs" &&
+		(minMinutes !== DEFAULT_MIN_MINUTES ||
+			!transferFiltersMatchDefault(transferFilters));
+	const hasActiveAttackingThreatFilters =
+		tab === "form" &&
+		!visibleAttackingThreatFiltersMatchDefault(
+			attackingThreatFilters,
+			attackingMetrics,
+		);
+	const hasActiveClubActualMetrics =
+		tab === "clubs" && !clubActualMetricsMatchDefault(clubActualMetrics);
+	const visiblePlayerRowCount =
+		tab === "form"
+			? visibleFormRows.length
+			: tab === "defcon"
+				? visibleDefconRows.length
+				: tab === "defconProb"
+					? visibleDefconProbRows.length
+					: 0;
+	const shortlistSummary =
+		visiblePlayerRowCount === shortlist.length
+			? `Showing ${visiblePlayerRowCount} shortlisted ${visiblePlayerRowCount === 1 ? "player" : "players"}`
+			: `Showing ${visiblePlayerRowCount} of ${formatPlayerCount(shortlist.length)} shortlisted`;
+	const shortlistRowClassName = (row: ShortlistablePlayer) =>
+		shortlist.includes(row.element) ? "bg-amber-50/50" : "";
+	const shortlistStickyClassName = (row: ShortlistablePlayer) =>
+		shortlist.includes(row.element)
+			? "bg-amber-50 group-hover:bg-amber-100/70"
+			: "bg-white group-hover:bg-zinc-50";
+	const renderShortlistAction = (row: ShortlistablePlayer) => {
+		const isShortlisted = shortlist.includes(row.element);
+		return (
+			<button
+				type="button"
+				aria-pressed={isShortlisted}
+				aria-label={
+					isShortlisted
+						? `Remove ${row.web_name} from shortlist`
+						: `Add ${row.web_name} to shortlist`
+				}
+				title={isShortlisted ? "Remove from shortlist" : "Add to shortlist"}
+				className={`flex h-7 w-7 items-center justify-center rounded-md border text-base leading-none ${
+					isShortlisted
+						? "border-amber-300 bg-amber-100 text-amber-700"
+						: "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+				}`}
+				onClick={(event) => {
+					event.stopPropagation();
+					toggleShortlist(row.element);
+				}}
+			>
+				<span aria-hidden="true">{isShortlisted ? "\u2605" : "\u2606"}</span>
+			</button>
+		);
+	};
+	const activeFilterChips: ActiveFilterChip[] = [];
+
+	if (tab !== "clubs" && playerSearch.trim() !== "") {
+		activeFilterChips.push({
+			id: "player",
+			label: `Player ${playerSearch.trim()}`,
+			onClear: () => setPlayerSearch(DEFAULT_PLAYER_SEARCH),
+		});
+	}
+	if (tab !== "clubs" && position !== DEFAULT_POSITION) {
+		activeFilterChips.push({
+			id: "position",
+			label: `Position ${position}`,
+			onClear: () => setPosition(DEFAULT_POSITION),
+		});
+	}
+	if (teamFilter !== DEFAULT_TEAM_FILTER) {
+		activeFilterChips.push({
+			id: "team",
+			label: `Team ${teamFilter}`,
+			onClear: () => setTeamFilter(DEFAULT_TEAM_FILTER),
+		});
+	}
+	if (tab !== "defconProb" && windowSize !== DEFAULT_WINDOW_SIZE) {
+		activeFilterChips.push({
+			id: "window",
+			label: `Window ${windowSize}`,
+			onClear: () => setWindowSize(DEFAULT_WINDOW_SIZE),
+		});
+	}
+	if (
+		tab !== "clubs" &&
+		tab !== "defconProb" &&
+		minMinutes !== DEFAULT_MIN_MINUTES
+	) {
+		activeFilterChips.push({
+			id: "min-minutes",
+			label: `Minutes >= ${minMinutes}`,
+			onClear: () => setMinMinutes(DEFAULT_MIN_MINUTES),
+		});
+	}
+	if (tab === "defcon" && minHitRate !== DEFAULT_MIN_HIT_RATE) {
+		activeFilterChips.push({
+			id: "min-hit-rate",
+			label: `Hit Rate >= ${Math.round(minHitRate * 100)}%`,
+			onClear: () => setMinHitRate(DEFAULT_MIN_HIT_RATE),
+		});
+	}
+	if (tab === "defconProb" && minGames !== DEFAULT_MIN_GAMES) {
+		activeFilterChips.push({
+			id: "min-games",
+			label: `Games >= ${minGames}`,
+			onClear: () => setMinGames(DEFAULT_MIN_GAMES),
+		});
+	}
+	if (asOfGw !== DEFAULT_AS_OF_GW) {
+		activeFilterChips.push({
+			id: "as-of-gw",
+			label: `As Of GW ${asOfGw}`,
+			onClear: () => setAsOfGw(DEFAULT_AS_OF_GW),
+		});
+	}
+	if (tab === "form" && !metricsMatchDefault(attackingMetrics)) {
+		activeFilterChips.push({
+			id: "metrics",
+			label: `Metrics ${ATTACKING_METRIC_COLUMN_ORDER.filter(
+				(metric) => attackingMetrics[metric],
+			)
+				.map((metric) => ATTACKING_METRIC_LABELS[metric])
+				.join(", ")}`,
+			onClear: () => setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS }),
+		});
+	}
+	if (tab === "form") {
+		for (const metric of ATTACKING_METRIC_COLUMN_ORDER) {
+			if (!attackingMetrics[metric]) {
+				continue;
+			}
+			for (const period of ATTACKING_THREAT_PERIODS) {
+				const value = attackingThreatFilters[metric][period];
+				if (value !== null) {
+					activeFilterChips.push({
+						id: `${metric}-${period}`,
+						label: `Min ${ATTACKING_THREAT_PERIOD_LABELS[period]} ${ATTACKING_METRIC_LABELS[metric]}/90 >= ${fmtNum(value)}`,
+						onClear: () => updateAttackingThreatFilter(metric, period, null),
+					});
+				}
+			}
+		}
+	}
+	if (tab !== "clubs") {
+		if (transferFilters.maxPrice !== null) {
+			activeFilterChips.push({
+				id: "max-price",
+				label: `Price <= ${fmtPrice(transferFilters.maxPrice)}`,
+				onClear: () => updateTransferFilter("maxPrice", null),
+			});
+		}
+		if (transferFilters.maxFdr !== null) {
+			activeFilterChips.push({
+				id: "max-fdr",
+				label: `FDR <= ${fmtNum(transferFilters.maxFdr, 1)}`,
+				onClear: () => updateTransferFilter("maxFdr", null),
+			});
+		}
+		if (transferFilters.minMinsPerAppearance !== null) {
+			activeFilterChips.push({
+				id: "min-mins-app",
+				label: `Mins/App >= ${fmtNum(transferFilters.minMinsPerAppearance, 0)}`,
+				onClear: () => updateTransferFilter("minMinsPerAppearance", null),
+			});
+		}
+		if (transferFilters.minStartPct !== null) {
+			activeFilterChips.push({
+				id: "min-start",
+				label: `Start >= ${fmtPctPoints(transferFilters.minStartPct, 0)}`,
+				onClear: () => updateTransferFilter("minStartPct", null),
+			});
+		}
+		if (transferFilters.minOwnership !== null) {
+			activeFilterChips.push({
+				id: "min-owned",
+				label: `Owned >= ${fmtPctPoints(transferFilters.minOwnership, 0)}`,
+				onClear: () => updateTransferFilter("minOwnership", null),
+			});
+		}
+		if (transferFilters.maxOwnership !== null) {
+			activeFilterChips.push({
+				id: "max-owned",
+				label: `Owned <= ${fmtPctPoints(transferFilters.maxOwnership, 0)}`,
+				onClear: () => updateTransferFilter("maxOwnership", null),
+			});
+		}
+	}
+	if (hasActiveClubActualMetrics) {
+		activeFilterChips.push({
+			id: "club-actuals",
+			label: `Actuals ${CLUB_ACTUAL_METRICS.filter(
+				(metric) => clubActualMetrics[metric],
+			)
+				.map((metric) => CLUB_ACTUAL_METRIC_LABELS[metric])
+				.join(", ")}`,
+			onClear: () => setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS }),
+		});
+	}
+	if (isShortlistViewActive) {
+		activeFilterChips.push({
+			id: "shortlisted-only",
+			label: "Shortlisted Only",
+			onClear: () => setShowShortlistedOnly(false),
+		});
+	}
+
+	const hasActiveFilters = activeFilterChips.length > 0;
+	const clearActiveFiltersButton = hasActiveFilters ? (
+		<button
+			type="button"
+			className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:bg-zinc-50"
+			onClick={clearActiveFilters}
+		>
+			Clear Active Filters
+		</button>
+	) : null;
+	const playerEmptyTitle = hasActiveFilters
+		? "No Players Match These Filters"
+		: "No Players Available";
+	const playerEmptyDescription = hasActiveFilters
+		? "Try clearing active filters or lowering the strongest thresholds"
+		: undefined;
+	const clubEmptyTitle = hasActiveFilters
+		? "No Clubs Match These Filters"
+		: "No Clubs Available";
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
-			<div className="mx-auto max-w-[90rem] px-6 py-8">
+			<div className="app-shell mx-auto px-6 py-8">
 				<header className="mb-6">
 					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
 					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
@@ -1573,61 +2227,30 @@ export default function App() {
 							</div>
 						)}
 
-						{tab !== "defconProb" && tab !== "clubs" && (
-							<label className={labelClass}>
-								Min Minutes
-								<input
-									type="number"
-									min={0}
-									className={`${inputClass} w-24`}
-									value={minMinutes}
-									onChange={(e) => setMinMinutes(Number(e.target.value))}
-								/>
-							</label>
-						)}
-
 						{tab === "form" && (
-							<>
-								<label className={labelClass}>
-									Min Delta xGI Per 90
-									<input
-										type="number"
-										step={0.05}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={minDelta ?? ""}
-										onChange={(e) =>
-											setMinDelta(
-												e.target.value === "" ? null : Number(e.target.value),
-											)
-										}
-									/>
-								</label>
-
-								<div className={labelClass}>
-									<span>Metrics</span>
-									<div className="mt-1 flex h-[34px] items-center gap-4">
-										{ATTACKING_METRICS.map((metric) => (
-											<label
-												key={metric}
-												className="flex items-center gap-1 text-xs text-zinc-900"
-											>
-												<input
-													type="checkbox"
-													className="accent-blue-600"
-													checked={attackingMetrics[metric]}
-													disabled={
-														attackingMetrics[metric] &&
-														enabledAttackingMetricCount === 1
-													}
-													onChange={() => toggleAttackingMetric(metric)}
-												/>
-												{ATTACKING_METRIC_LABELS[metric]}
-											</label>
-										))}
-									</div>
+							<div className={labelClass}>
+								<span>Metrics</span>
+								<div className="mt-1 flex h-[34px] items-center gap-4">
+									{ATTACKING_METRICS.map((metric) => (
+										<label
+											key={metric}
+											className="flex items-center gap-1 text-xs text-zinc-900"
+										>
+											<input
+												type="checkbox"
+												className="accent-blue-600"
+												checked={attackingMetrics[metric]}
+												disabled={
+													attackingMetrics[metric] &&
+													enabledAttackingMetricCount === 1
+												}
+												onChange={() => toggleAttackingMetric(metric)}
+											/>
+											{ATTACKING_METRIC_LABELS[metric]}
+										</label>
+									))}
 								</div>
-							</>
+							</div>
 						)}
 
 						{tab === "defcon" && (
@@ -1721,131 +2344,325 @@ export default function App() {
 							</select>
 						</div>
 					</div>
-					{showTransferFilters ? (
-						<fieldset className="mt-4 min-w-0 border-0 border-zinc-100 border-t p-0 pt-4">
-							<legend className="pr-2 font-medium text-xs text-zinc-600">
-								Transfer Filters
-							</legend>
-							<div className="flex flex-wrap items-start gap-4">
-								<label className={labelClass}>
-									Max Price
-									<input
-										type="number"
-										min={0}
-										step={0.1}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.maxPrice ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"maxPrice",
-												parseOptionalInputNumber(e.target.value, { min: 0 }),
-											)
-										}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Max FDR
-									<input
-										type="number"
-										min={1}
-										max={5}
-										step={0.1}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.maxFdr ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"maxFdr",
-												parseOptionalInputNumber(e.target.value, {
-													min: 1,
-													max: 5,
-												}),
-											)
-										}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Min Start %
-									<input
-										type="number"
-										min={0}
-										max={100}
-										step={5}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.minStartPct ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"minStartPct",
-												parseOptionalInputNumber(e.target.value, {
-													min: 0,
-													max: 100,
-												}),
-											)
-										}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Min Mins/App
-									<input
-										type="number"
-										min={0}
-										step={1}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.minMinsPerAppearance ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"minMinsPerAppearance",
-												parseOptionalInputNumber(e.target.value, { min: 0 }),
-											)
-										}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Min Owned %
-									<input
-										type="number"
-										min={0}
-										step={1}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.minOwnership ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"minOwnership",
-												parseOptionalInputNumber(e.target.value, { min: 0 }),
-											)
-										}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Max Owned %
-									<input
-										type="number"
-										min={0}
-										step={1}
-										placeholder="Any"
-										className={`${inputClass} w-24`}
-										value={transferFilters.maxOwnership ?? ""}
-										onChange={(e) =>
-											updateTransferFilter(
-												"maxOwnership",
-												parseOptionalInputNumber(e.target.value, { min: 0 }),
-											)
-										}
-									/>
-								</label>
+					{tab === "form" ? (
+						<div className="mt-4 border-zinc-100 border-t pt-4">
+							<div className="mb-2 font-medium text-xs text-zinc-600">
+								Filter Presets
 							</div>
-						</fieldset>
+							<div className="flex flex-wrap gap-2">
+								{FILTER_PRESETS.map((preset) => (
+									<button
+										key={preset.id}
+										type="button"
+										className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white"
+										onClick={() => applyFilterPreset(preset.id)}
+									>
+										{preset.label}
+									</button>
+								))}
+							</div>
+						</div>
+					) : null}
+					{tab === "form" || showTransferFilters ? (
+						<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
+							{tab === "form" ? (
+								<fieldset className="min-w-0 border-0 p-0">
+									<legend className="sr-only">Attacking Threat Filters</legend>
+									<div className="mb-2 flex items-center gap-2">
+										<span className="font-medium text-xs text-zinc-600">
+											Attacking Threat Filters
+										</span>
+										{hasActiveAttackingThreatFilters ? (
+											<button
+												type="button"
+												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+												onClick={resetAttackingThreatFilters}
+											>
+												Reset Threat Filters
+											</button>
+										) : null}
+									</div>
+									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
+										{ATTACKING_METRIC_COLUMN_ORDER.filter(
+											(metric) => attackingMetrics[metric],
+										).flatMap((metric) =>
+											ATTACKING_THREAT_PERIODS.map((period) => (
+												<label
+													key={`${metric}-${period}`}
+													className={labelClass}
+												>
+													{`Min ${ATTACKING_THREAT_PERIOD_LABELS[period]} ${ATTACKING_METRIC_LABELS[metric]}/90`}
+													<input
+														type="number"
+														min={0}
+														step={0.05}
+														placeholder="Any"
+														className={`${inputClass} w-28`}
+														value={attackingThreatFilters[metric][period] ?? ""}
+														onChange={(e) =>
+															updateAttackingThreatFilter(
+																metric,
+																period,
+																parseOptionalInputNumber(e.target.value, {
+																	min: 0,
+																}),
+															)
+														}
+													/>
+												</label>
+											)),
+										)}
+									</div>
+								</fieldset>
+							) : null}
+							{showTransferFilters ? (
+								<fieldset className="min-w-0 border-0 p-0">
+									<legend className="sr-only">Transfer Filters</legend>
+									<div className="mb-2 flex items-center gap-2">
+										<span className="font-medium text-xs text-zinc-600">
+											Transfer Filters
+										</span>
+										{hasActiveTransferFilters ? (
+											<button
+												type="button"
+												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+												onClick={resetTransferFilters}
+											>
+												Reset Transfer Filters
+											</button>
+										) : null}
+									</div>
+									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
+										<label className={labelClass}>
+											Max Price
+											<input
+												type="number"
+												min={0}
+												step={0.1}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.maxPrice ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"maxPrice",
+														parseOptionalInputNumber(e.target.value, {
+															min: 0,
+														}),
+													)
+												}
+											/>
+										</label>
+
+										<label className={labelClass}>
+											Max FDR
+											<input
+												type="number"
+												min={1}
+												max={5}
+												step={0.1}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.maxFdr ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"maxFdr",
+														parseOptionalInputNumber(e.target.value, {
+															min: 1,
+															max: 5,
+														}),
+													)
+												}
+											/>
+										</label>
+
+										{tab !== "defconProb" && (
+											<label className={labelClass}>
+												Min Minutes
+												<input
+													type="number"
+													min={0}
+													className={transferInputClass}
+													value={minMinutes}
+													onChange={(e) =>
+														setMinMinutes(Number(e.target.value))
+													}
+												/>
+											</label>
+										)}
+
+										<label className={labelClass}>
+											Min Mins/App
+											<input
+												type="number"
+												min={0}
+												step={1}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.minMinsPerAppearance ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"minMinsPerAppearance",
+														parseOptionalInputNumber(e.target.value, {
+															min: 0,
+														}),
+													)
+												}
+											/>
+										</label>
+
+										<label className={labelClass}>
+											Min Start %
+											<input
+												type="number"
+												min={0}
+												max={100}
+												step={5}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.minStartPct ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"minStartPct",
+														parseOptionalInputNumber(e.target.value, {
+															min: 0,
+															max: 100,
+														}),
+													)
+												}
+											/>
+										</label>
+
+										<label className={labelClass}>
+											Min Owned %
+											<input
+												type="number"
+												min={0}
+												step={1}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.minOwnership ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"minOwnership",
+														parseOptionalInputNumber(e.target.value, {
+															min: 0,
+														}),
+													)
+												}
+											/>
+										</label>
+
+										<label className={labelClass}>
+											Max Owned %
+											<input
+												type="number"
+												min={0}
+												step={1}
+												placeholder="Any"
+												className={transferInputClass}
+												value={transferFilters.maxOwnership ?? ""}
+												onChange={(e) =>
+													updateTransferFilter(
+														"maxOwnership",
+														parseOptionalInputNumber(e.target.value, {
+															min: 0,
+														}),
+													)
+												}
+											/>
+										</label>
+									</div>
+								</fieldset>
+							) : null}
+						</div>
 					) : null}
 				</div>
+
+				{hasActiveFilters ? (
+					<div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
+						<span className="mr-1 font-medium text-xs text-zinc-500">
+							Active Filters
+						</span>
+						{activeFilterChips.map((chip) => (
+							<button
+								key={chip.id}
+								type="button"
+								className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-zinc-300 hover:bg-white"
+								onClick={chip.onClear}
+							>
+								<span>{chip.label}</span>
+								<span aria-hidden="true" className="text-zinc-400">
+									x
+								</span>
+								<span className="sr-only">Clear {chip.label}</span>
+							</button>
+						))}
+						<div className="ml-auto">{clearActiveFiltersButton}</div>
+					</div>
+				) : null}
+
+				{tab !== "clubs" ? (
+					<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+						<p className="text-sm text-zinc-500">
+							Click a player row to open the detailed stats view.
+						</p>
+						<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
+							<legend className="sr-only">Player View</legend>
+							<button
+								type="button"
+								aria-pressed={!isShortlistViewActive}
+								className={`rounded px-3 py-1.5 font-medium text-sm ${
+									isShortlistViewActive
+										? "text-zinc-600 hover:bg-zinc-50"
+										: "bg-zinc-900 text-white"
+								}`}
+								onClick={() => setShowShortlistedOnly(false)}
+							>
+								All Players
+							</button>
+							<button
+								type="button"
+								aria-pressed={isShortlistViewActive}
+								disabled={shortlist.length === 0}
+								className={`rounded px-3 py-1.5 font-medium text-sm ${
+									isShortlistViewActive
+										? "bg-zinc-900 text-white"
+										: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+								}`}
+								onClick={() => setShowShortlistedOnly(true)}
+							>
+								Shortlisted ({shortlist.length})
+							</button>
+						</fieldset>
+					</div>
+				) : null}
+
+				{isShortlistViewActive ? (
+					<div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+						<p className="font-medium text-amber-900 text-sm">
+							{shortlistSummary}
+						</p>
+						<div className="flex gap-2">
+							<button
+								type="button"
+								className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
+								onClick={() => setShowShortlistedOnly(false)}
+							>
+								Show All
+							</button>
+							<button
+								type="button"
+								className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
+								onClick={() => {
+									setShortlist([]);
+									setShowShortlistedOnly(false);
+								}}
+							>
+								Clear Shortlist
+							</button>
+						</div>
+					</div>
+				) : null}
 
 				{active.isPending ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
@@ -1855,57 +2672,73 @@ export default function App() {
 					</p>
 				) : tab === "form" ? (
 					<>
-						<FormScatter players={filteredTransferForm} />
-						<p className="mb-2 text-sm text-zinc-500">
-							Click a player row to open the detailed stats view.
-						</p>
+						<FormScatter players={visibleFormRows} />
 						<DataTable
-							data={filteredTransferForm}
+							data={visibleFormRows}
 							columns={formColumns}
-							onRowClick={(row) => {
-								setSelectedElement(row.element);
-								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
-								setPlayerSeason(DEFAULT_PLAYER_SEASON);
-							}}
+							onRowClick={(row) => openPlayerDetail(row.element)}
+							rowClassName={shortlistRowClassName}
+							rowStickyClassName={shortlistStickyClassName}
+							renderRowActions={renderShortlistAction}
+							rowActionsHeader={"\u2605"}
+							rowActionsHeaderLabel="Shortlist"
+							rowActionsHeaderTooltip="Add or remove players from the shortlist"
+							stickyDataColumns={4}
+							emptyTitle={playerEmptyTitle}
+							emptyDescription={playerEmptyDescription}
+							emptyAction={clearActiveFiltersButton}
 						/>
 					</>
 				) : tab === "defcon" ? (
-					<>
-						<p className="mb-2 text-sm text-zinc-500">
-							Click a player row to open the detailed stats view.
-						</p>
-						<DataTable
-							data={filteredTransferDefcon}
-							columns={defconColumns}
-							onRowClick={(row) => {
-								setSelectedElement(row.element);
-								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
-								setPlayerSeason(DEFAULT_PLAYER_SEASON);
-							}}
-						/>
-					</>
+					<DataTable
+						data={visibleDefconRows}
+						columns={defconColumns}
+						onRowClick={(row) => openPlayerDetail(row.element)}
+						rowClassName={shortlistRowClassName}
+						rowStickyClassName={shortlistStickyClassName}
+						renderRowActions={renderShortlistAction}
+						rowActionsHeader={"\u2605"}
+						rowActionsHeaderLabel="Shortlist"
+						rowActionsHeaderTooltip="Add or remove players from the shortlist"
+						stickyDataColumns={4}
+						emptyTitle={playerEmptyTitle}
+						emptyDescription={playerEmptyDescription}
+						emptyAction={clearActiveFiltersButton}
+					/>
 				) : tab === "defconProb" ? (
-					<>
-						<p className="mb-2 text-sm text-zinc-500">
-							Click a player row to open the detailed stats view.
-						</p>
-						<DataTable
-							data={filteredTransferDefconProb}
-							columns={defconProbColumns}
-							onRowClick={(row) => {
-								setSelectedElement(row.element);
-								setPlayerWindow(DEFAULT_PLAYER_WINDOW);
-								setPlayerSeason(DEFAULT_PLAYER_SEASON);
-							}}
-						/>
-					</>
+					<DataTable
+						data={visibleDefconProbRows}
+						columns={defconProbColumns}
+						onRowClick={(row) => openPlayerDetail(row.element)}
+						rowClassName={shortlistRowClassName}
+						rowStickyClassName={shortlistStickyClassName}
+						renderRowActions={renderShortlistAction}
+						rowActionsHeader={"\u2605"}
+						rowActionsHeaderLabel="Shortlist"
+						rowActionsHeaderTooltip="Add or remove players from the shortlist"
+						stickyDataColumns={4}
+						emptyTitle={playerEmptyTitle}
+						emptyDescription={playerEmptyDescription}
+						emptyAction={clearActiveFiltersButton}
+					/>
 				) : (
 					<>
 						<p className="mb-2 text-sm text-zinc-500">
 							Club form compares recent per-match output with the season
 							baseline, then shows the next fixture run alongside it.
 						</p>
-						<DataTable data={filteredClubs} columns={clubColumns} />
+						<DataTable
+							data={filteredClubs}
+							columns={clubColumns}
+							stickyDataColumns={1}
+							emptyTitle={clubEmptyTitle}
+							emptyDescription={
+								hasActiveFilters
+									? "Try clearing active filters or selecting a different team"
+									: undefined
+							}
+							emptyAction={clearActiveFiltersButton}
+						/>
 					</>
 				)}
 			</div>
