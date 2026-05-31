@@ -468,3 +468,28 @@ def test_player_detail_404_for_unknown_season(client: TestClient) -> None:
 def test_player_detail_404_for_unknown_element(client: TestClient) -> None:
     api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
     assert client.get("/players/999").status_code == 404
+
+
+def test_player_detail_uses_latest_season_as_current(client: TestClient) -> None:
+    def rows() -> pl.DataFrame:
+        base = _detail_rows()
+        newer = pl.DataFrame(
+            [
+                {
+                    **base.row(0, named=True),
+                    "season": "2026-27",
+                    "element": 11,
+                    "round": 1,
+                }
+            ],
+            schema_overrides={"defcon_hit": pl.Boolean},
+        )
+        return pl.concat([base, newer], how="vertical_relaxed")
+
+    api.app.dependency_overrides[api.get_all_seasons] = rows
+
+    body = client.get("/players/11").json()
+
+    assert body["selected_season"] == "2026-27"
+    assert body["element"] == 11
+    assert client.get("/players/7").status_code == 404

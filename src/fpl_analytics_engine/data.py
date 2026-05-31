@@ -15,6 +15,67 @@ EXPECTED_STAT_COLUMNS = [
 ]
 
 
+def season_sort_key(season: str) -> tuple[int, int]:
+    """Return a sortable key for a season label such as ``2025-26``.
+
+    Args:
+        season: Season label in ``YYYY-YY`` form.
+
+    Returns:
+        A tuple ordered by the season start and end years.
+
+    Raises:
+        ValueError: If the season label is not in the expected form.
+    """
+    start, end = season.split("-", maxsplit=1)
+    if len(start) != 4 or len(end) != 2:
+        raise ValueError(f"Invalid season label: {season}")
+    start_year = int(start)
+    end_year = int(f"{start[:2]}{end}")
+    if end_year < start_year:
+        end_year += 100
+    return start_year, end_year
+
+
+def latest_enriched_season(data_root: Path) -> str:
+    """Return the latest season with an ``enriched.parquet`` snapshot.
+
+    Args:
+        data_root: Root directory holding per-season folders.
+
+    Returns:
+        The latest season label by chronological order.
+
+    Raises:
+        FileNotFoundError: If no enriched season snapshots exist.
+    """
+    seasons = [path.parent.name for path in data_root.glob("*/enriched.parquet")]
+    if not seasons:
+        raise FileNotFoundError(f"No enriched season snapshots found under {data_root}")
+    return max(seasons, key=season_sort_key)
+
+
+def latest_archived_season(data_root: Path) -> str:
+    """Return the latest season with non-empty raw live-archive snapshots.
+
+    Args:
+        data_root: Root directory holding per-season folders.
+
+    Returns:
+        The latest season label by chronological order. Falls back to the latest
+        enriched snapshot when no playable raw live archive exists.
+    """
+    paths = sorted(
+        data_root.glob("*/player_gw_history.parquet"),
+        key=lambda path: season_sort_key(path.parent.name),
+        reverse=True,
+    )
+    for path in paths:
+        if pl.read_parquet(path).height:
+            return path.parent.name
+    return latest_enriched_season(data_root)
+
+
 def load_player_history(data_dir: Path) -> pl.DataFrame:
     """Read the per-gameweek player history snapshot.
 
