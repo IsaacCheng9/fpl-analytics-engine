@@ -36,6 +36,9 @@ replayed and scored against what actually happened next.
 - **Historical backfill** – adapts the vaastav community archive (2022-23
   onward) into the same enriched schema, so the form engine runs across seasons
   for cross-season comparison
+- **One-command data refresh** – archives the latest live season, refreshes the
+  cross-season enriched snapshots, validates the Parquet data, and runs the
+  real-data smoke check before refreshed snapshots are pushed
 - **REST API** – a FastAPI gateway exposing the form, DefCon, and
   DefCon-probability views, plus a player-detail endpoint for selected-season
   gameweek detail and cross-season summaries
@@ -56,8 +59,6 @@ replayed and scored against what actually happened next.
 
 ### Planned Features
 
-- One-command data refresh and rollover workflow for updating the committed
-  Parquet snapshots once the 2026-27 season opens
 - A recalibrated count-based DefCon model (negative-binomial) that keeps the
   sharper margin signal of contribution counts while matching the calibration of
   the binary model
@@ -219,9 +220,29 @@ Run from the project root:
 uv sync --all-extras --dev
 ```
 
+### Refreshing Data
+
+Refresh the committed Parquet snapshots with one command:
+
+```bash
+uv run python -m fpl_analytics_engine.refresh
+```
+
+The refresh command archives the current live FPL season into the detected
+`data/<season>/` folder, backfills historical seasons from the vaastav archive,
+canonicalises the current season's `enriched.parquet`, runs data-health
+validation, and finishes with the real-data smoke check. Use it before pushing
+updated `data/` snapshots during the season.
+
+For a validation-only check of existing local snapshots:
+
+```bash
+uv run python -m fpl_analytics_engine.refresh --skip-archive --skip-backfill
+```
+
 ### Archiving the Current Season
 
-Snapshot the live FPL season to `data/2025-26/`:
+Snapshot the live FPL season to its detected `data/<season>/` folder:
 
 ```bash
 uv run python -m fpl_analytics_engine.archive
@@ -236,7 +257,7 @@ uv run python -m fpl_analytics_engine.backfill
 ```
 
 The committed snapshots make the dashboard usable immediately after checkout;
-rerun the archive/backfill commands when refreshing the data.
+the refresh command above is the preferred way to update them.
 
 ### Validating Local Data
 
