@@ -11,9 +11,9 @@ strictly point-in-time – as of any gameweek, only data from that gameweek and
 earlier is used – so the engine is fully back-testable with no look-ahead.
 
 The differentiator over public form tables is the combination of a configurable
-recent-form window, expected-stats (xG/xA/xGI) rather than raw points, and a
-point-in-time design that lets every recommendation be replayed and scored
-against what actually happened next.
+recent-form window, expected-stats (xG/xA/xGI) rather than raw points, transfer
+candidate context, and a point-in-time design that lets every recommendation be
+replayed and scored against what actually happened next.
 
 ## Key Features
 
@@ -38,8 +38,13 @@ against what actually happened next.
   gameweek detail and cross-season summaries
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables across four views (Attacking Form, DefCon Form, DefCon
-  Probability, Club Form), plus a form-versus-baseline scatter plot in Attacking
-  Form
+  Probability, Club Form), URL-backed controls, active filter chips, presets,
+  heat-shaded metrics, sticky player context columns, and a collapsible
+  form-versus-baseline scatter plot in Attacking Form
+- **Transfer decision workflow** – combines attacking-threat thresholds, price,
+  FDR, minutes, starts, ownership, shortlist filtering, and side-by-side player
+  comparison so transfer candidates can be narrowed and inspected without
+  leaving the table context
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
@@ -48,8 +53,8 @@ against what actually happened next.
 
 ### Planned Features
 
-- Live data path that refreshes straight from the FPL API once the 2026-27
-  season opens, removing the manual archival step
+- One-command data refresh and rollover workflow for updating the committed
+  Parquet snapshots once the 2026-27 season opens
 - A recalibrated count-based DefCon model (negative-binomial) that keeps the
   sharper margin signal of contribution counts while matching the calibration of
   the binary model
@@ -85,6 +90,18 @@ games up to and including the as-of gameweek, so the table is exactly what was
 knowable at that point in the season. The dashboard exposes xGI, xG, and xA as
 separate metric groups, with window, season, delta, and per-price views for each
 enabled metric.
+
+### Transfer Workflow
+
+The dashboard is designed around narrowing transfer candidates without hiding
+the underlying evidence. Transfer filters apply across the player tables: price
+ceiling, FDR ceiling, minutes floor, minutes per appearance, start percentage,
+ownership range, and minimum attacking-threat thresholds for the enabled
+expected-stat metrics. Presets provide quick starting points for common
+candidate types, while active filter chips make the current constraints visible
+and removable. Shortlisting is URL-backed, so a focused candidate list can be
+shared or reopened, and the compare panel shows two selected players side by
+side using the same point-in-time window and as-of gameweek assumptions.
 
 ### Defensive Contribution (DefCon)
 
