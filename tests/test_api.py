@@ -16,13 +16,14 @@ def _game(
     xgi: float = 0.0,
     defcon_hit: bool | None = False,
     position: str = "MID",
+    minutes: int = 90,
 ) -> dict:
     """Build one enriched per-gameweek history row for tests."""
     return {
         "element": element,
         "round": round_,
         "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
-        "minutes": 90,
+        "minutes": minutes,
         "total_points": 0,
         "value": 50,
         "expected_goals": 0.0,
@@ -192,6 +193,61 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     assert p3["upcoming_fixtures"] == 2
     assert p3["avg_fdr"] == pytest.approx(2.5)
     assert p3["current_ownership"] == pytest.approx(12.0)
+
+
+def test_defcon_probability_validation_endpoint_returns_backtest_summary(
+    client: TestClient,
+) -> None:
+    body = client.get(
+        "/players/defcon-probability-validation",
+        params={"bins": 4},
+    ).json()
+
+    assert body["n_predictions"] == 9
+    assert body["model_brier"] is not None
+    assert body["raw_rate_brier"] is not None
+    assert body["constant_brier"] is not None
+    assert body["model_ece"] is not None
+    assert body["raw_rate_ece"] is not None
+    assert body["model_improvement_vs_raw"] is not None
+    assert body["calibration"]
+    assert {"bin", "n", "mean_predicted", "observed_rate", "abs_error"} <= set(
+        body["calibration"][0]
+    )
+
+
+def test_defcon_probability_validation_defaults_to_display_minutes_threshold(
+    client: TestClient,
+) -> None:
+    low_minute_history = pl.concat(
+        [
+            _history(),
+            pl.DataFrame(
+                [
+                    _game(
+                        5,
+                        round_,
+                        defcon_hit=True,
+                        position="MID",
+                        minutes=1,
+                    )
+                    for round_ in (1, 2, 3, 4)
+                ],
+                schema_overrides={"defcon_hit": pl.Boolean},
+            ),
+        ],
+        how="vertical",
+    )
+    api.app.dependency_overrides[api.get_history] = lambda: low_minute_history
+
+    default_body = client.get("/players/defcon-probability-validation").json()
+    low_minute_body = client.get(
+        "/players/defcon-probability-validation",
+        params={"min_minutes": 1},
+    ).json()
+
+    assert default_body["n_predictions"] == 9
+    assert low_minute_body["n_predictions"] > default_body["n_predictions"]
 
 
 def _club_history() -> pl.DataFrame:
