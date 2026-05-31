@@ -1,5 +1,6 @@
 import type { ClubFormValidation, DefconProbabilityValidation } from "../api";
 import { fmtNum } from "../lib/format";
+import { InfoTooltip } from "./InfoTooltip";
 
 type Tone = "good" | "bad" | "neutral";
 
@@ -135,7 +136,12 @@ export function ModelEvidence({
 					<table className="w-full min-w-[36rem] border-collapse text-sm">
 						<thead className="bg-zinc-100 text-left text-zinc-600">
 							<tr>
-								<th className="px-3 py-2 font-medium">Bucket</th>
+								<th className="px-3 py-2 font-medium">
+									<span className="flex items-center gap-1">
+										Bucket
+										<InfoTooltip text="Buckets group predicted probabilities into 10 percentage point bands: 0 = 0% to under 10%, 1 = 10% to under 20%, etc. Mean Predicted is compared with Observed Rate." />
+									</span>
+								</th>
 								<th className="px-3 py-2 font-medium">Predictions</th>
 								<th className="px-3 py-2 font-medium">Mean Predicted</th>
 								<th className="px-3 py-2 font-medium">Observed Rate</th>

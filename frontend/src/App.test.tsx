@@ -1088,6 +1088,13 @@ test("renders the model evidence tab with backtest summaries", async () => {
 	expect(screen.getByText("+7.3% vs raw rate")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xG")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xGC")).toBeInTheDocument();
+	const bucketHeader = screen.getByRole("columnheader", { name: /Bucket/ });
+	fireEvent.click(
+		within(bucketHeader).getByRole("button", { name: "Show explanation" }),
+	);
+	expect(
+		screen.getByText(/Buckets group predicted probabilities/),
+	).toBeInTheDocument();
 	await waitFor(() => {
 		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
 		expect(
