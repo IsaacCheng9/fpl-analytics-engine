@@ -23,8 +23,6 @@ from fpl_analytics_engine.schemas import (
 )
 
 DATA_ROOT = Path("data")
-DATA_DIR = DATA_ROOT / "2025-26"
-CURRENT_SEASON = "2025-26"
 DEFAULT_FDR_HORIZON = 5
 AS_OF_GW_DESCRIPTION = (
     "Evaluate the point-in-time view as of this gameweek (defaults to the "
@@ -155,27 +153,38 @@ DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES = 60
 
 
 @lru_cache
+def _current_season() -> str:
+    """Return the latest live-archived season available to serve."""
+    return data.latest_archived_season(DATA_ROOT)
+
+
+def _current_data_dir() -> Path:
+    """Return the data directory for the latest live-archived season."""
+    return DATA_ROOT / _current_season()
+
+
+@lru_cache
 def _load_history() -> pl.DataFrame:
     """Load and cache the enriched season history from the archive."""
-    return data.prepare_history(DATA_DIR)
+    return data.prepare_history(_current_data_dir())
 
 
 @lru_cache
 def _load_fixtures() -> pl.DataFrame:
     """Load and cache the archived fixtures (empty if not yet captured)."""
-    return data.load_fixtures(DATA_DIR)
+    return data.load_fixtures(_current_data_dir())
 
 
 @lru_cache
 def _load_teams() -> pl.DataFrame:
     """Load and cache the team metadata for the fixture-id-to-name bridge."""
-    return data.load_teams(DATA_DIR)
+    return data.load_teams(_current_data_dir())
 
 
 @lru_cache
 def _load_players_snapshot() -> pl.DataFrame:
     """Load and cache the current player metadata for the live overlay."""
-    return data.load_players(DATA_DIR)
+    return data.load_players(_current_data_dir())
 
 
 @lru_cache
@@ -212,6 +221,14 @@ def get_all_seasons() -> pl.DataFrame:
 def _latest_gw(history: pl.DataFrame) -> int:
     """Return the most recent gameweek present in the data."""
     return cast(int, history["round"].max())
+
+
+def _latest_season_in_history(history: pl.DataFrame) -> str:
+    """Return the latest season label present in a history frame."""
+    seasons = [str(season) for season in history["season"].drop_nulls().unique()]
+    if not seasons:
+        raise HTTPException(status_code=404, detail="No seasons found")
+    return max(seasons, key=data.season_sort_key)
 
 
 def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
@@ -524,8 +541,9 @@ def player_detail(
     ``element`` is the current-season FPL id; the player is tracked across
     seasons by their stable ``code``. Rolling figures use a trailing ``window``.
     """
+    current_season = _latest_season_in_history(all_seasons)
     current = all_seasons.filter(
-        pl.col("season") == CURRENT_SEASON, pl.col("element") == element
+        pl.col("season") == current_season, pl.col("element") == element
     )
     if current.is_empty():
         raise HTTPException(status_code=404, detail="Player not found")
@@ -538,7 +556,7 @@ def player_detail(
         all_seasons.filter(pl.col("code") == code) if code is not None else current
     )
     seasons = player.season_summaries(history)
-    selected_season = season or CURRENT_SEASON
+    selected_season = season or current_season
     season_history = history.filter(pl.col("season") == selected_season)
     if season_history.is_empty():
         raise HTTPException(status_code=404, detail="Season not found for player")

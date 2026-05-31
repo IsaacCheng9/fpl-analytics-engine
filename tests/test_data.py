@@ -99,3 +99,46 @@ def test_load_all_seasons_stamps_missing_season_from_folder(
     out = data.load_all_seasons(tmp_path)
 
     assert out.to_dicts() == [{"element": 1, "web_name": "Saka", "season": "2025-26"}]
+
+
+def test_latest_archived_season_uses_raw_live_archive(tmp_path: Path) -> None:
+    (tmp_path / "2025-26").mkdir()
+    (tmp_path / "2026-27").mkdir()
+    pl.DataFrame({"round": [1]}).write_parquet(
+        tmp_path / "2025-26" / "player_gw_history.parquet"
+    )
+    pl.DataFrame({"round": [1]}).write_parquet(
+        tmp_path / "2026-27" / "player_gw_history.parquet"
+    )
+
+    assert data.latest_archived_season(tmp_path) == "2026-27"
+
+
+def test_latest_archived_season_ignores_empty_preseason_archive(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "2025-26").mkdir()
+    (tmp_path / "2026-27").mkdir()
+    pl.DataFrame({"round": [1]}).write_parquet(
+        tmp_path / "2025-26" / "player_gw_history.parquet"
+    )
+    pl.DataFrame(schema={"round": pl.Int64}).write_parquet(
+        tmp_path / "2026-27" / "player_gw_history.parquet"
+    )
+
+    assert data.latest_archived_season(tmp_path) == "2025-26"
+
+
+def test_latest_archived_season_falls_back_to_enriched_snapshots(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "2024-25").mkdir()
+    (tmp_path / "2025-26").mkdir()
+    pl.DataFrame({"round": [1]}).write_parquet(
+        tmp_path / "2024-25" / "enriched.parquet"
+    )
+    pl.DataFrame({"round": [1]}).write_parquet(
+        tmp_path / "2025-26" / "enriched.parquet"
+    )
+
+    assert data.latest_archived_season(tmp_path) == "2025-26"

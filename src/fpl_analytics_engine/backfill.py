@@ -26,9 +26,9 @@ VAASTAV_PLAYERS_URL = (
     "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/"
     "master/data/{season}/players_raw.csv"
 )
-# Seasons with expected stats; earlier seasons lack them and are not useful here.
+# Historical seasons with expected stats; earlier seasons lack them and are not
+# useful here. The current live-archived season is detected from ``data/``.
 SEASONS = ["2022-23", "2023-24", "2024-25"]
-CURRENT_SEASON = "2025-26"
 REQUEST_TIMEOUT_SECONDS = 30
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fpl-analytics-engine/0.1)"}
 
@@ -142,11 +142,15 @@ def _to_canonical(enriched: pl.DataFrame, season: str) -> pl.DataFrame:
     ).select(CANONICAL_COLUMNS)
 
 
-def backfill(data_dir: Path = Path("data")) -> dict[str, Path]:
+def backfill(
+    data_dir: Path = Path("data"), current_season: str | None = None
+) -> dict[str, Path]:
     """Archive each historical season plus a canonical view of the current one.
 
     Args:
         data_dir: Root directory holding per-season folders.
+        current_season: Live-archived season to canonicalise. Detected from
+            ``data_dir`` when not supplied.
 
     Returns:
         A mapping of season to the ``enriched.parquet`` path written.
@@ -162,14 +166,28 @@ def backfill(data_dir: Path = Path("data")) -> dict[str, Path]:
         paths[season] = path
         print(f"Wrote {season}: {enriched.height} rows -> {path}")
 
-    # Re-express the live-archived current season in the same schema.
-    current = _to_canonical(
-        data.prepare_history(data_dir / CURRENT_SEASON), CURRENT_SEASON
-    )
-    current_path = data_dir / CURRENT_SEASON / "enriched.parquet"
-    current.write_parquet(current_path)
-    paths[CURRENT_SEASON] = current_path
-    print(f"Wrote {CURRENT_SEASON}: {current.height} rows -> {current_path}")
+    # Re-express the live-archived current season in the same schema. This is
+    # deliberately detected so the July rollover does not require code edits.
+    live_season = current_season or data.latest_archived_season(data_dir)
+    current_dir = data_dir / live_season
+    history_path = current_dir / "player_gw_history.parquet"
+    if history_path.exists():
+        raw_history = data.load_player_history(current_dir)
+        if raw_history.height:
+            current = _to_canonical(
+                data.enrich_history(
+                    raw_history,
+                    data.load_players(current_dir),
+                    data.load_teams(current_dir),
+                ),
+                live_season,
+            )
+            current_path = current_dir / "enriched.parquet"
+            current.write_parquet(current_path)
+            paths[live_season] = current_path
+            print(f"Wrote {live_season}: {current.height} rows -> {current_path}")
+        else:
+            print(f"Skipped {live_season}: no per-gameweek history yet")
     return paths
 
 

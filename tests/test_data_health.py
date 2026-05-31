@@ -92,7 +92,7 @@ def test_validate_data_root_reports_missing_snapshot(tmp_path: Path) -> None:
 
     assert not checks[0].ok
     assert "Snapshot is missing" in checks[0].message
-    assert "backfill" in checks[0].message
+    assert "refresh" in checks[0].message
 
 
 def test_validate_data_root_requires_stable_code(tmp_path: Path) -> None:
@@ -132,3 +132,26 @@ def test_validate_data_root_rejects_historical_defcon(tmp_path: Path) -> None:
     checks = data_health.validate_data_root(tmp_path, seasons=("2024-25",))
 
     assert any("historical defcon_hit" in check.message for check in checks)
+
+
+def test_validate_data_root_discovers_newer_enriched_seasons(
+    tmp_path: Path,
+) -> None:
+    _write_valid_data_root(tmp_path)
+    _write_enriched(
+        tmp_path,
+        "2026-27",
+        [
+            _row(
+                "2026-27",
+                defcon_hit=True,
+                defcon_threshold=12,
+                defensive_contribution=14,
+            )
+        ],
+    )
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    assert all(check.ok for check in checks)
+    assert any(check.subject == "2026-27/enriched.parquet" for check in checks)

@@ -1,6 +1,9 @@
 """Tests for the historical-season backfill adapter."""
 
+from pathlib import Path
+
 import polars as pl
+import pytest
 
 from fpl_analytics_engine import backfill
 
@@ -52,3 +55,57 @@ def test_adapt_vaastav_season_maps_keepers() -> None:
         pl.DataFrame([_raw_row("GKP")]), _players_raw(), "2024-25"
     )
     assert out.to_dicts()[0]["position"] == "GK"
+
+
+def test_backfill_canonicalises_supplied_current_season(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    season_dir = tmp_path / "2026-27"
+    season_dir.mkdir()
+    pl.DataFrame(
+        [
+            {
+                "element": 1,
+                "round": 1,
+                "kickoff_time": "2026-08-15T14:00:00Z",
+                "minutes": 90,
+                "total_points": 6,
+                "value": 85,
+                "expected_goals": "0.20",
+                "expected_assists": "0.10",
+                "expected_goal_involvements": "0.30",
+                "expected_goals_conceded": "1.00",
+                "defensive_contribution": 12,
+            }
+        ]
+    ).write_parquet(season_dir / "player_gw_history.parquet")
+    pl.DataFrame(
+        [{"id": 1, "code": 223340, "web_name": "Saka", "element_type": 3, "team": 10}]
+    ).write_parquet(season_dir / "players.parquet")
+    pl.DataFrame([{"id": 10, "name": "Arsenal"}]).write_parquet(
+        season_dir / "teams.parquet"
+    )
+    monkeypatch.setattr(backfill, "SEASONS", [])
+
+    paths = backfill.backfill(tmp_path, current_season="2026-27")
+
+    assert paths == {"2026-27": season_dir / "enriched.parquet"}
+    row = pl.read_parquet(paths["2026-27"]).to_dicts()[0]
+    assert row["season"] == "2026-27"
+    assert row["web_name"] == "Saka"
+
+
+def test_backfill_skips_empty_preseason_current_archive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    season_dir = tmp_path / "2026-27"
+    season_dir.mkdir()
+    pl.DataFrame(schema={"round": pl.Int64}).write_parquet(
+        season_dir / "player_gw_history.parquet"
+    )
+    monkeypatch.setattr(backfill, "SEASONS", [])
+
+    paths = backfill.backfill(tmp_path, current_season="2026-27")
+
+    assert paths == {}
+    assert not (season_dir / "enriched.parquet").exists()
