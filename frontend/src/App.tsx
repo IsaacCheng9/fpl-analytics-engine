@@ -7,8 +7,10 @@ import {
 	type DefconProbabilityPlayer,
 	type FormPlayer,
 	fetchClubForm,
+	fetchClubFormValidation,
 	fetchDefcon,
 	fetchDefconProbability,
+	fetchDefconProbabilityValidation,
 	fetchForm,
 	fetchMeta,
 	type Position,
@@ -16,11 +18,12 @@ import {
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
+import { ModelEvidence } from "./components/ModelEvidence";
 import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
-type Tab = "form" | "defcon" | "defconProb" | "clubs";
+type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
 type AttackingMetric = "xg" | "xa" | "xgi";
 type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
@@ -66,8 +69,9 @@ const TAB_LABELS: Record<Tab, string> = {
 	defcon: "DefCon Form",
 	defconProb: "DefCon Probability",
 	clubs: "Club Form",
+	evidence: "Model Evidence",
 };
-const TABS: Tab[] = ["form", "defcon", "defconProb", "clubs"];
+const TABS: Tab[] = ["form", "defcon", "defconProb", "clubs", "evidence"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOW_MIN = 2;
 const WINDOW_MAX = 20;
@@ -218,6 +222,7 @@ const TAB_QUERY_VALUES: Record<Tab, string> = {
 	defcon: "defcon",
 	defconProb: "defcon-prob",
 	clubs: "clubs",
+	evidence: "evidence",
 };
 const QUERY_VALUE_TABS: Record<string, Tab> = {
 	form: "form",
@@ -225,6 +230,7 @@ const QUERY_VALUE_TABS: Record<string, Tab> = {
 	defconProb: "defconProb",
 	"defcon-prob": "defconProb",
 	clubs: "clubs",
+	evidence: "evidence",
 };
 
 type UrlState = {
@@ -302,6 +308,10 @@ function parseNumber(
 		return fallback;
 	}
 	return parsed;
+}
+
+function isPlayerTab(tab: Tab): boolean {
+	return tab !== "clubs" && tab !== "evidence";
 }
 
 function parseOptionalNumber(
@@ -519,20 +529,20 @@ function writeUrlState(state: UrlState) {
 	if (state.tab !== DEFAULT_TAB) {
 		params.set("tab", TAB_QUERY_VALUES[state.tab]);
 	}
-	if (state.tab !== "clubs" && state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
+	if (isPlayerTab(state.tab) && state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
 		params.set("q", state.playerSearch);
 	}
-	if (state.teamFilter !== DEFAULT_TEAM_FILTER) {
+	if (state.tab !== "evidence" && state.teamFilter !== DEFAULT_TEAM_FILTER) {
 		params.set("team", state.teamFilter);
 	}
-	if (state.windowSize !== DEFAULT_WINDOW_SIZE) {
+	if (state.tab !== "evidence" && state.windowSize !== DEFAULT_WINDOW_SIZE) {
 		params.set("window", String(state.windowSize));
 	}
-	if (state.tab !== "clubs" && state.position !== DEFAULT_POSITION) {
+	if (isPlayerTab(state.tab) && state.position !== DEFAULT_POSITION) {
 		params.set("position", state.position);
 	}
 	if (
-		state.tab !== "clubs" &&
+		isPlayerTab(state.tab) &&
 		state.tab !== "defconProb" &&
 		state.minMinutes !== DEFAULT_MIN_MINUTES
 	) {
@@ -544,7 +554,7 @@ function writeUrlState(state: UrlState) {
 	if (state.tab === "defconProb" && state.minGames !== DEFAULT_MIN_GAMES) {
 		params.set("min_games", String(state.minGames));
 	}
-	if (state.asOfGw !== DEFAULT_AS_OF_GW) {
+	if (state.tab !== "evidence" && state.asOfGw !== DEFAULT_AS_OF_GW) {
 		params.set("as_of_gw", String(state.asOfGw));
 	}
 	if (!metricsMatchDefault(state.attackingMetrics)) {
@@ -587,12 +597,12 @@ function writeUrlState(state: UrlState) {
 	}
 	if (state.shortlist.length > 0) {
 		params.set("shortlist", state.shortlist.join(","));
-		if (state.tab !== "clubs" && state.showShortlistedOnly) {
+		if (isPlayerTab(state.tab) && state.showShortlistedOnly) {
 			params.set("shortlist_only", "1");
 		}
 	}
 	if (
-		state.tab !== "clubs" &&
+		isPlayerTab(state.tab) &&
 		!transferFiltersMatchDefault(state.transferFilters)
 	) {
 		if (state.transferFilters.maxPrice !== null) {
@@ -618,7 +628,7 @@ function writeUrlState(state: UrlState) {
 		}
 	}
 	if (
-		state.tab !== "clubs" &&
+		isPlayerTab(state.tab) &&
 		state.selectedElement !== DEFAULT_SELECTED_ELEMENT
 	) {
 		params.set("player", String(state.selectedElement));
@@ -1847,6 +1857,18 @@ export default function App() {
 		enabled: tab === "clubs",
 		placeholderData: keepPreviousData,
 	});
+	const defconValidationQuery = useQuery({
+		queryKey: ["defconValidation"],
+		queryFn: () => fetchDefconProbabilityValidation(),
+		enabled: tab === "evidence",
+		placeholderData: keepPreviousData,
+	});
+	const clubValidationQuery = useQuery({
+		queryKey: ["clubValidation"],
+		queryFn: () => fetchClubFormValidation(),
+		enabled: tab === "evidence",
+		placeholderData: keepPreviousData,
+	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
 	// colour scale, so a player's colour is fixed regardless of the active filters.
@@ -2034,17 +2056,19 @@ export default function App() {
 				? defconQuery
 				: tab === "defconProb"
 					? defconProbQuery
-					: clubQuery;
+					: tab === "clubs"
+						? clubQuery
+						: null;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
 	const teamOptions = useMemo(() => {
-		const rows = (active.data ?? []) as Array<{ team_name: string | null }>;
+		const rows = (active?.data ?? []) as Array<{ team_name: string | null }>;
 		const names = rows
 			.map((row) => row.team_name)
 			.filter((name): name is string => name !== null);
 		return Array.from(new Set(names)).sort();
-	}, [active.data]);
+	}, [active?.data]);
 
 	const filteredForm = filterPlayers(
 		formQuery.data ?? [],
@@ -2098,11 +2122,11 @@ export default function App() {
 	);
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
-	const showTransferFilters = tab !== "clubs";
+	const showTransferFilters = isPlayerTab(tab);
 	const isShortlistViewActive =
-		tab !== "clubs" && showShortlistedOnly && shortlist.length > 0;
+		isPlayerTab(tab) && showShortlistedOnly && shortlist.length > 0;
 	const hasActiveTransferFilters =
-		tab !== "clubs" &&
+		isPlayerTab(tab) &&
 		(minMinutes !== DEFAULT_MIN_MINUTES ||
 			!transferFiltersMatchDefault(transferFilters));
 	const hasActiveAttackingThreatFilters =
@@ -2159,28 +2183,32 @@ export default function App() {
 	};
 	const activeFilterChips: ActiveFilterChip[] = [];
 
-	if (tab !== "clubs" && playerSearch.trim() !== "") {
+	if (isPlayerTab(tab) && playerSearch.trim() !== "") {
 		activeFilterChips.push({
 			id: "player",
 			label: `Player ${playerSearch.trim()}`,
 			onClear: () => setPlayerSearch(DEFAULT_PLAYER_SEARCH),
 		});
 	}
-	if (tab !== "clubs" && position !== DEFAULT_POSITION) {
+	if (isPlayerTab(tab) && position !== DEFAULT_POSITION) {
 		activeFilterChips.push({
 			id: "position",
 			label: `Position ${position}`,
 			onClear: () => setPosition(DEFAULT_POSITION),
 		});
 	}
-	if (teamFilter !== DEFAULT_TEAM_FILTER) {
+	if (tab !== "evidence" && teamFilter !== DEFAULT_TEAM_FILTER) {
 		activeFilterChips.push({
 			id: "team",
 			label: `Team ${teamFilter}`,
 			onClear: () => setTeamFilter(DEFAULT_TEAM_FILTER),
 		});
 	}
-	if (tab !== "defconProb" && windowSize !== DEFAULT_WINDOW_SIZE) {
+	if (
+		tab !== "evidence" &&
+		tab !== "defconProb" &&
+		windowSize !== DEFAULT_WINDOW_SIZE
+	) {
 		activeFilterChips.push({
 			id: "window",
 			label: `Window ${windowSize}`,
@@ -2188,7 +2216,7 @@ export default function App() {
 		});
 	}
 	if (
-		tab !== "clubs" &&
+		isPlayerTab(tab) &&
 		tab !== "defconProb" &&
 		minMinutes !== DEFAULT_MIN_MINUTES
 	) {
@@ -2212,7 +2240,7 @@ export default function App() {
 			onClear: () => setMinGames(DEFAULT_MIN_GAMES),
 		});
 	}
-	if (asOfGw !== DEFAULT_AS_OF_GW) {
+	if (tab !== "evidence" && asOfGw !== DEFAULT_AS_OF_GW) {
 		activeFilterChips.push({
 			id: "as-of-gw",
 			label: `As Of GW ${asOfGw}`,
@@ -2247,7 +2275,7 @@ export default function App() {
 			}
 		}
 	}
-	if (tab !== "clubs") {
+	if (isPlayerTab(tab)) {
 		if (transferFilters.maxPrice !== null) {
 			activeFilterChips.push({
 				id: "max-price",
@@ -2336,12 +2364,23 @@ export default function App() {
 				<header className="mb-6">
 					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
 					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
-						Surfaces players whose recent underlying output – expected goal
-						involvement and DefCon hit rate over your chosen window – is
-						outpacing their season-to-date baseline, alongside clubs whose
-						attack or defence has shifted against its season baseline. Figures
-						are point-in-time as of GW {asOfGw ?? latestGw}: only matches up to
-						and including that gameweek are counted, with no look-ahead.
+						{tab === "evidence" ? (
+							<>
+								Surfaces backtested evidence for the scouting signals by
+								replaying historic as-of gameweeks and scoring them against what
+								happened next, with no look-ahead.
+							</>
+						) : (
+							<>
+								Surfaces players whose recent underlying output – expected goal
+								involvement and DefCon hit rate over your chosen window – is
+								outpacing their season-to-date baseline, alongside clubs whose
+								attack or defence has shifted against its season baseline.
+								Figures are point-in-time as of GW {asOfGw ?? latestGw}: only
+								matches up to and including that gameweek are counted, with no
+								look-ahead.
+							</>
+						)}
 					</p>
 				</header>
 
@@ -2362,9 +2401,13 @@ export default function App() {
 					))}
 				</div>
 
-				<div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
+				<div
+					className={`mb-4 rounded-lg border border-zinc-200 bg-white p-4 ${
+						tab === "evidence" ? "hidden" : ""
+					}`}
+				>
 					<div className="flex flex-wrap items-start gap-4">
-						{tab !== "clubs" && (
+						{isPlayerTab(tab) && (
 							<>
 								<label className={labelClass}>
 									Player
@@ -2809,7 +2852,7 @@ export default function App() {
 					</div>
 				) : null}
 
-				{tab !== "clubs" ? (
+				{isPlayerTab(tab) ? (
 					<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
 						<p className="text-sm text-zinc-500">
 							Click a player row to open the detailed stats view.
@@ -2881,9 +2924,22 @@ export default function App() {
 					</div>
 				) : null}
 
-				{active.isPending ? (
+				{tab === "evidence" ? (
+					defconValidationQuery.isPending || clubValidationQuery.isPending ? (
+						<p className="text-sm text-zinc-500">Loading...</p>
+					) : defconValidationQuery.isError || clubValidationQuery.isError ? (
+						<p className="text-red-600 text-sm">
+							Failed to load - is the API running on port 8000?
+						</p>
+					) : (
+						<ModelEvidence
+							defconValidation={defconValidationQuery.data}
+							clubValidation={clubValidationQuery.data ?? []}
+						/>
+					)
+				) : active?.isPending ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
-				) : active.isError ? (
+				) : active?.isError ? (
 					<p className="text-red-600 text-sm">
 						Failed to load - is the API running on port 8000?
 					</p>

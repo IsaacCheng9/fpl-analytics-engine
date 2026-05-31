@@ -305,6 +305,32 @@ def calibration_table(
     )
 
 
+def expected_calibration_error(calibration: pl.DataFrame) -> float | None:
+    """Return the weighted mean absolute calibration gap.
+
+    Args:
+        calibration: Output of :func:`calibration_table`.
+
+    Returns:
+        The prediction-count-weighted absolute difference between mean
+        prediction and observed rate, or ``None`` when no predictions exist.
+    """
+    if calibration.height == 0:
+        return None
+    total = int(calibration["n"].sum())
+    if total == 0:
+        return None
+    return cast(
+        float,
+        calibration.select(
+            (
+                pl.col("n") * (pl.col("mean_predicted") - pl.col("observed_rate")).abs()
+            ).sum()
+            / total
+        ).item(),
+    )
+
+
 def _negbin_at_least(threshold: int, shape: float, prob: float) -> float:
     """Return P(X >= threshold) for X ~ NegativeBinomial(shape, prob).
 

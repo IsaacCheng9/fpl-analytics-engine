@@ -284,6 +284,58 @@ const probRows = [
 		as_of_gw: 38,
 	},
 ];
+const defconValidation = {
+	n_predictions: 100,
+	model_brier: 0.14,
+	raw_rate_brier: 0.151,
+	constant_brier: 0.162,
+	model_ece: 0.013,
+	raw_rate_ece: 0.032,
+	model_improvement_vs_raw: 0.073,
+	model_improvement_vs_constant: 0.136,
+	calibration: [
+		{
+			bin: 2,
+			n: 40,
+			mean_predicted: 0.25,
+			observed_rate: 0.27,
+			abs_error: 0.02,
+		},
+		{
+			bin: 5,
+			n: 60,
+			mean_predicted: 0.54,
+			observed_rate: 0.53,
+			abs_error: 0.01,
+		},
+	],
+};
+const clubValidationRows = [
+	{
+		target: "future_xg_per_match",
+		n_predictions: 48,
+		fdr_mae: 0.42,
+		fdr_plus_form_mae: 0.39,
+		mae_improvement: 0.03,
+		mae_improvement_pct: 0.071,
+		fdr_rmse: 0.55,
+		fdr_plus_form_rmse: 0.52,
+		rmse_improvement: 0.03,
+		rmse_improvement_pct: 0.055,
+	},
+	{
+		target: "future_xgc_per_match",
+		n_predictions: 48,
+		fdr_mae: 0.44,
+		fdr_plus_form_mae: 0.445,
+		mae_improvement: -0.005,
+		mae_improvement_pct: -0.011,
+		fdr_rmse: 0.57,
+		fdr_plus_form_rmse: 0.568,
+		rmse_improvement: 0.002,
+		rmse_improvement_pct: 0.004,
+	},
+];
 
 const playerDetail = {
 	element: 1,
@@ -494,8 +546,12 @@ beforeEach(() => {
 			if (input.includes("/players/form")) {
 				const params = new URL(input, "http://test").searchParams;
 				body = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+			} else if (input.includes("/clubs/form-validation")) {
+				body = clubValidationRows;
 			} else if (input.includes("/clubs/form")) {
 				body = clubRows;
+			} else if (input.includes("/players/defcon-probability-validation")) {
+				body = defconValidation;
 			} else if (input.includes("/players/defcon-probability")) {
 				body = probRows;
 			} else if (input.includes("/players/defcon?")) {
@@ -1016,6 +1072,63 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	fireEvent.click(screen.getByText("DefCon Probability"));
 	await waitFor(() => {
 		expect(screen.getByText("Senesi")).toBeInTheDocument();
+	});
+});
+
+test("renders the model evidence tab with backtest summaries", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(screen.getByText("Model Evidence"));
+
+	await waitFor(() => {
+		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
+	});
+	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
+	expect(screen.getByText("Model Brier")).toBeInTheDocument();
+	expect(screen.getByText("0.140")).toBeInTheDocument();
+	expect(screen.getByText("+7.3% vs raw rate")).toBeInTheDocument();
+	expect(screen.getByText("Future Club xG")).toBeInTheDocument();
+	expect(screen.getByText("Future Club xGC")).toBeInTheDocument();
+	const bucketHeader = screen.getByRole("columnheader", { name: /Bucket/ });
+	fireEvent.click(
+		within(bucketHeader).getByRole("button", { name: "Show explanation" }),
+	);
+	expect(
+		screen.getByText(/Buckets group predicted probabilities/),
+	).toBeInTheDocument();
+	await waitFor(() => {
+		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+		expect(
+			calls.some((input) =>
+				input.includes("/api/players/defcon-probability-validation"),
+			),
+		).toBe(true);
+		expect(
+			calls.some((input) => input.includes("/api/clubs/form-validation")),
+		).toBe(true);
+	});
+});
+
+test("hides point-in-time table filters on the model evidence tab", async () => {
+	window.history.replaceState(null, "", "/?tab=evidence&as_of_gw=20");
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
+	});
+	expect(
+		screen.getByText(/replaying historic as-of gameweeks/),
+	).toBeInTheDocument();
+	expect(
+		screen.queryByText(/Figures are point-in-time as of GW 20/),
+	).not.toBeInTheDocument();
+	expect(
+		screen.queryByRole("button", { name: /As Of GW 20/ }),
+	).not.toBeInTheDocument();
+	await waitFor(() => {
+		expect(
+			new URLSearchParams(window.location.search).get("as_of_gw"),
+		).toBeNull();
 	});
 });
 

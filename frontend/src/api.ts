@@ -71,6 +71,39 @@ export interface ClubForm {
 	as_of_gw: number;
 }
 
+export interface ClubFormValidation {
+	target: string;
+	n_predictions: number;
+	fdr_mae: number | null;
+	fdr_plus_form_mae: number | null;
+	mae_improvement: number | null;
+	mae_improvement_pct: number | null;
+	fdr_rmse: number | null;
+	fdr_plus_form_rmse: number | null;
+	rmse_improvement: number | null;
+	rmse_improvement_pct: number | null;
+}
+
+export interface DefconCalibrationBin {
+	bin: number;
+	n: number;
+	mean_predicted: number;
+	observed_rate: number;
+	abs_error: number;
+}
+
+export interface DefconProbabilityValidation {
+	n_predictions: number;
+	model_brier: number | null;
+	raw_rate_brier: number | null;
+	constant_brier: number | null;
+	model_ece: number | null;
+	raw_rate_ece: number | null;
+	model_improvement_vs_raw: number | null;
+	model_improvement_vs_constant: number | null;
+	calibration: DefconCalibrationBin[];
+}
+
 export interface DefconPlayer extends PlayerContext {
 	element: number;
 	web_name: string;
@@ -169,6 +202,17 @@ export interface ClubFormParams {
 	asOfGw: number | null;
 }
 
+export interface ClubFormValidationParams {
+	window?: number;
+	fdrHorizon?: number;
+	minTrainRows?: number;
+}
+
+export interface DefconProbabilityValidationParams {
+	bins?: number;
+	minMinutes?: number;
+}
+
 async function getJson<T>(path: string): Promise<T> {
 	const response = await fetch(`${API_BASE}${path}`);
 	if (!response.ok) {
@@ -229,6 +273,41 @@ export function fetchClubForm(params: ClubFormParams): Promise<ClubForm[]> {
 		search.set("as_of_gw", String(params.asOfGw));
 	}
 	return getJson<ClubForm[]>(`/clubs/form?${search.toString()}`);
+}
+
+export function fetchClubFormValidation(
+	params: ClubFormValidationParams = {},
+): Promise<ClubFormValidation[]> {
+	const search = new URLSearchParams();
+	if (params.window !== undefined) {
+		search.set("window", String(params.window));
+	}
+	if (params.fdrHorizon !== undefined) {
+		search.set("fdr_horizon", String(params.fdrHorizon));
+	}
+	if (params.minTrainRows !== undefined) {
+		search.set("min_train_rows", String(params.minTrainRows));
+	}
+	const query = search.toString();
+	return getJson<ClubFormValidation[]>(
+		`/clubs/form-validation${query ? `?${query}` : ""}`,
+	);
+}
+
+export function fetchDefconProbabilityValidation(
+	params: DefconProbabilityValidationParams = {},
+): Promise<DefconProbabilityValidation> {
+	const search = new URLSearchParams();
+	if (params.bins !== undefined) {
+		search.set("bins", String(params.bins));
+	}
+	if (params.minMinutes !== undefined) {
+		search.set("min_minutes", String(params.minMinutes));
+	}
+	const query = search.toString();
+	return getJson<DefconProbabilityValidation>(
+		`/players/defcon-probability-validation${query ? `?${query}` : ""}`,
+	);
 }
 
 export function fetchPlayerDetail(

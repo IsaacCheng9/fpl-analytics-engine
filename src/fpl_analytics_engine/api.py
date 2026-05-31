@@ -12,8 +12,10 @@ from fpl_analytics_engine.domain import Position
 from fpl_analytics_engine.schemas import (
     ClubForm,
     ClubFormValidation,
+    DefconCalibrationBin,
     DefconPlayer,
     DefconProbabilityPlayer,
+    DefconProbabilityValidation,
     FormPlayer,
     PlayerDetail,
     PlayerGameweek,
@@ -148,6 +150,8 @@ PROBABILITY_CONTEXT_COLUMNS = [
     "window_start_rate",
     "window_mins_per_appearance",
 ]
+DEFAULT_CALIBRATION_BINS = 10
+DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES = 60
 
 
 @lru_cache
@@ -256,6 +260,36 @@ def _attach_club_fdr(
     return table.join(context, on="team", how="left")
 
 
+def _brier_or_none(scored: pl.DataFrame, prob_col: str) -> float | None:
+    """Return a Brier score when there are predictions to score."""
+    if scored.is_empty():
+        return None
+    return defcon.brier_score(scored, prob_col)
+
+
+def _relative_improvement(
+    model_score: float | None, baseline_score: float | None
+) -> float | None:
+    """Return the relative error reduction of a model versus a baseline."""
+    if model_score is None or baseline_score is None or baseline_score == 0:
+        return None
+    return (baseline_score - model_score) / baseline_score
+
+
+def _calibration_bins(
+    scored: pl.DataFrame, prob_col: str, bins: int
+) -> tuple[list[DefconCalibrationBin], float | None]:
+    """Build calibration buckets and their weighted absolute error."""
+    if scored.is_empty():
+        return [], None
+    table = defcon.calibration_table(scored, prob_col=prob_col, bins=bins)
+    ece = defcon.expected_calibration_error(table)
+    table = table.with_columns(
+        (pl.col("mean_predicted") - pl.col("observed_rate")).abs().alias("abs_error")
+    )
+    return [DefconCalibrationBin(**row) for row in table.to_dicts()], ece
+
+
 app = FastAPI(title="FPL Analytics Engine")
 
 
@@ -339,7 +373,7 @@ def players_defcon_probability(
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
     position: Position | None = None,
     min_games: int = Query(0, ge=0),
-    min_minutes: int = Query(60, ge=0),
+    min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
     top_k: int | None = Query(None, ge=1),
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
@@ -369,6 +403,58 @@ def players_defcon_probability(
         DefconProbabilityPlayer(**row)
         for row in ranked.select(DEFCON_PROBABILITY_COLUMNS).to_dicts()
     ]
+
+
+@app.get("/players/defcon-probability-validation")
+def players_defcon_probability_validation(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    bins: int = Query(DEFAULT_CALIBRATION_BINS, ge=2, le=20),
+    min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
+) -> DefconProbabilityValidation:
+    """Backtest the DefCon probability model against next-GW outcomes.
+
+    The replay is point-in-time: each as-of gameweek predicts the following
+    gameweek, then Brier score and calibration are computed from the realised
+    DefCon threshold hit.
+    """
+    scored = defcon.backtest_defcon_probabilities(
+        history,
+        min_minutes=min_minutes,
+    )
+    if scored.is_empty():
+        return DefconProbabilityValidation(
+            n_predictions=0,
+            model_brier=None,
+            raw_rate_brier=None,
+            constant_brier=None,
+            model_ece=None,
+            raw_rate_ece=None,
+            model_improvement_vs_raw=None,
+            model_improvement_vs_constant=None,
+            calibration=[],
+        )
+
+    constant_rate = cast(float, scored["hit"].mean())
+    scored = scored.with_columns(pl.lit(constant_rate).alias("constant_prob"))
+    model_brier = _brier_or_none(scored, "prob")
+    raw_rate_brier = _brier_or_none(scored, "raw_rate")
+    constant_brier = _brier_or_none(scored, "constant_prob")
+    calibration, model_ece = _calibration_bins(scored, "prob", bins)
+    _, raw_rate_ece = _calibration_bins(scored, "raw_rate", bins)
+
+    return DefconProbabilityValidation(
+        n_predictions=scored.height,
+        model_brier=model_brier,
+        raw_rate_brier=raw_rate_brier,
+        constant_brier=constant_brier,
+        model_ece=model_ece,
+        raw_rate_ece=raw_rate_ece,
+        model_improvement_vs_raw=_relative_improvement(model_brier, raw_rate_brier),
+        model_improvement_vs_constant=_relative_improvement(
+            model_brier, constant_brier
+        ),
+        calibration=calibration,
+    )
 
 
 @app.get("/clubs/form")

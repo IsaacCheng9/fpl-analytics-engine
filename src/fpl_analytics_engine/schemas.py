@@ -93,6 +93,30 @@ class ClubFormValidation(BaseModel):
     rmse_improvement_pct: float | None
 
 
+class DefconCalibrationBin(BaseModel):
+    """One probability bucket from the DefCon calibration backtest."""
+
+    bin: int
+    n: int
+    mean_predicted: float
+    observed_rate: float
+    abs_error: float
+
+
+class DefconProbabilityValidation(BaseModel):
+    """Backtest summary for the DefCon probability model."""
+
+    n_predictions: int
+    model_brier: float | None
+    raw_rate_brier: float | None
+    constant_brier: float | None
+    model_ece: float | None
+    raw_rate_ece: float | None
+    model_improvement_vs_raw: float | None
+    model_improvement_vs_constant: float | None
+    calibration: list[DefconCalibrationBin]
+
+
 class DefconPlayer(PlayerContext):
     """A player's recent defensive-contribution form."""
 

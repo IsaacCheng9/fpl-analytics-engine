@@ -71,6 +71,7 @@ def test_brier_score_and_calibration() -> None:
     table = defcon.calibration_table(scored, bins=10)
     assert table["n"].sum() == 4
     assert {"mean_predicted", "observed_rate"} <= set(table.columns)
+    assert defcon.expected_calibration_error(table) == pytest.approx(0.0)
 
 
 def test_backtest_scores_against_next_gameweek() -> None:

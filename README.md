@@ -28,6 +28,9 @@ replayed and scored against what actually happened next.
 - **Backtesting harness** – replays each gameweek on the point-in-time view,
   flags players, then scores the flags against the following gameweeks, with
   Brier score and a calibration table for the probability model
+- **Model evidence view** – surfaces the DefCon probability backtest and the
+  club-form-plus-FDR validation inside the dashboard, so the app shows where its
+  signals have actually beaten simpler baselines
 - **Season archival** – snapshots the current season's per-gameweek detail to
   local Parquet before the mid-July API rollover wipes it
 - **Historical backfill** – adapts the vaastav community archive (2022-23
@@ -37,9 +40,9 @@ replayed and scored against what actually happened next.
   DefCon-probability views, plus a player-detail endpoint for selected-season
   gameweek detail and cross-season summaries
 - **Interactive web dashboard** – a React single-page app with sortable,
-  filterable tables across four views (Attacking Form, DefCon Form, DefCon
-  Probability, Club Form), URL-backed controls, active filter chips, presets,
-  heat-shaded metrics, sticky player context columns, and a collapsible
+  filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
+  Form, and Model Evidence views, URL-backed controls, active filter chips,
+  presets, heat-shaded metrics, sticky player context columns, and a collapsible
   form-versus-baseline scatter plot in Attacking Form
 - **Transfer decision workflow** – combines attacking-threat thresholds, price,
   FDR, minutes, starts, ownership, shortlist filtering, and side-by-side player
@@ -301,15 +304,16 @@ from one FastAPI deployment.
 
 ## API Endpoints
 
-| Endpoint                          | Description                                           | Parameters                                                                              |
-| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `GET /`                           | Service metadata and the latest gameweek in the data  | –                                                                                       |
-| `GET /players/form`               | Players ranked by recent-versus-season xGI90 swing    | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon`    |
-| `GET /players/defcon`             | Players ranked by point-in-time DefCon hit-rate       | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability     | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon`              |
-| `GET /clubs/form`                 | Clubs ranked by recent-versus-season xG and xGC form  | `window`, `top_k`, `as_of_gw`, `fdr_horizon`                                            |
-| `GET /clubs/form-validation`      | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows`                                               |
-| `GET /players/{element}`          | Player gameweeks and cross-season season summaries    | Path: `element`; query: `window`, `season`                                              |
+| Endpoint | Description | Parameters |
+| --- | --- | --- |
+| `GET /` | Service metadata and the latest gameweek in the data | – |
+| `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes` |
+| `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /clubs/form-validation` | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows` |
+| `GET /players/{element}` | Player gameweeks and cross-season season summaries | Path: `element`; query: `window`, `season` |
 
 The four table endpoints accept `as_of_gw` to evaluate the point-in-time view as
 it would have looked after an earlier gameweek; it defaults to the latest
