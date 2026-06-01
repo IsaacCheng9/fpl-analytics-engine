@@ -8,6 +8,7 @@ import requests
 FPL_BASE_URL = "https://fantasy.premierleague.com/api"
 BOOTSTRAP_ENDPOINT = f"{FPL_BASE_URL}/bootstrap-static/"
 ELEMENT_SUMMARY_ENDPOINT = f"{FPL_BASE_URL}/element-summary/{{element_id}}/"
+ENTRY_EVENT_PICKS_ENDPOINT = f"{FPL_BASE_URL}/entry/{{entry_id}}/event/{{event}}/picks/"
 FIXTURES_ENDPOINT = f"{FPL_BASE_URL}/fixtures/"
 REQUEST_TIMEOUT_SECONDS = 10
 MAX_RETRIES = 3
@@ -78,6 +79,19 @@ def get_fixtures() -> list[dict]:
         the home and away team ids, and their fixture-difficulty ratings.
     """
     return cast(list[dict], _get_json(FIXTURES_ENDPOINT))
+
+
+def get_entry_event_picks(entry_id: int, event: int) -> dict:
+    """Fetch the public picks for an FPL entry and completed gameweek.
+
+    Args:
+        entry_id: Public FPL entry/team identifier.
+        event: Gameweek number to fetch picks for.
+
+    Returns:
+        The decoded picks payload for the requested entry and gameweek.
+    """
+    return _get_json(ENTRY_EVENT_PICKS_ENDPOINT.format(entry_id=entry_id, event=event))
 
 
 if __name__ == "__main__":

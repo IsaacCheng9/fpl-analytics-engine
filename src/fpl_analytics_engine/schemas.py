@@ -192,6 +192,29 @@ class PlayerDetail(BaseModel):
     seasons: list[PlayerSeasonSummary]
 
 
+class FplTeamPick(BaseModel):
+    """One player from a public FPL entry's latest visible squad."""
+
+    element: int
+    web_name: str | None
+    position: str | None
+    team_name: str | None
+    squad_position: int
+    multiplier: int
+    is_captain: bool
+    is_vice_captain: bool
+    is_starting: bool
+
+
+class FplTeam(BaseModel):
+    """A public FPL entry's imported squad for one visible gameweek."""
+
+    entry_id: int
+    as_of_gw: int
+    owned_elements: list[int]
+    picks: list[FplTeamPick]
+
+
 class DefconProbabilityPlayer(PlayerContext):
     """A player's modelled probability of hitting the DefCon threshold.
 

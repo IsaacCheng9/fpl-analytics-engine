@@ -94,7 +94,7 @@ export function DataTable<T>({
 
 	function stickyBodyClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "sticky z-20 bg-white shadow-[1px_0_0_#e4e4e7]"
+			? "sticky z-20 shadow-[1px_0_0_#e4e4e7]"
 			: "";
 	}
 

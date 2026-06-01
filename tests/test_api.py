@@ -82,6 +82,75 @@ def test_root_reports_latest_gameweek(client: TestClient) -> None:
     assert body["latest_gw"] == 4
 
 
+def test_fpl_team_endpoint_imports_public_picks(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [1, 3],
+            "web_name": ["P1", "P3"],
+            "element_type": [3, 2],
+            "team": [10, 20],
+        }
+    )
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {"id": [10, 20], "name": ["Arsenal", "Chelsea"]}
+    )
+
+    def fake_fetch(entry_id: int, event: int) -> dict:
+        assert entry_id == 123
+        assert event == 4
+        return {
+            "picks": [
+                {
+                    "element": 3,
+                    "position": 2,
+                    "multiplier": 1,
+                    "is_captain": False,
+                    "is_vice_captain": True,
+                },
+                {
+                    "element": 1,
+                    "position": 1,
+                    "multiplier": 2,
+                    "is_captain": True,
+                    "is_vice_captain": False,
+                },
+            ]
+        }
+
+    api.app.dependency_overrides[api.get_entry_picks_fetcher] = lambda: fake_fetch
+
+    body = client.get("/fpl-team/123").json()
+
+    assert body["entry_id"] == 123
+    assert body["as_of_gw"] == 4
+    assert body["owned_elements"] == [1, 3]
+    assert body["picks"][0]["web_name"] == "P1"
+    assert body["picks"][0]["position"] == "MID"
+    assert body["picks"][0]["team_name"] == "Arsenal"
+    assert body["picks"][0]["is_starting"] is True
+    assert body["picks"][0]["is_captain"] is True
+    assert body["picks"][1]["web_name"] == "P3"
+    assert body["picks"][1]["position"] == "DEF"
+    assert body["picks"][1]["is_vice_captain"] is True
+
+
+def test_fpl_team_endpoint_uses_requested_event(client: TestClient) -> None:
+    seen = {}
+
+    def fake_fetch(entry_id: int, event: int) -> dict:
+        seen["entry_id"] = entry_id
+        seen["event"] = event
+        return {"picks": []}
+
+    api.app.dependency_overrides[api.get_entry_picks_fetcher] = lambda: fake_fetch
+
+    body = client.get("/fpl-team/123", params={"event": 2}).json()
+
+    assert body["as_of_gw"] == 2
+    assert body["owned_elements"] == []
+    assert seen == {"entry_id": 123, "event": 2}
+
+
 def test_form_endpoint_flags_improving_player(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2}).json()
     names = [row["web_name"] for row in body]
