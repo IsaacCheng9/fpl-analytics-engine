@@ -8,6 +8,10 @@ class FixtureContext(BaseModel):
 
     upcoming_fixtures: int | None
     avg_fdr: float | None
+    next_fixture_gw: int | None = None
+    next_opponent_name: str | None = None
+    next_was_home: bool | None = None
+    next_fdr: int | None = None
     current_ownership: float | None = Field(
         description=(
             "Live ownership percentage. Always the present-day snapshot - it is "
