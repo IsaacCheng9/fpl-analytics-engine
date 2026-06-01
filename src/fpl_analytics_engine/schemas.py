@@ -108,11 +108,17 @@ class DefconProbabilityValidation(BaseModel):
 
     n_predictions: int
     model_brier: float | None
+    binary_model_brier: float | None
+    count_model_brier: float | None
     raw_rate_brier: float | None
     constant_brier: float | None
     model_ece: float | None
+    binary_model_ece: float | None
+    count_model_ece: float | None
     raw_rate_ece: float | None
     model_improvement_vs_raw: float | None
+    model_improvement_vs_binary: float | None
+    model_improvement_vs_count: float | None
     model_improvement_vs_constant: float | None
     calibration: list[DefconCalibrationBin]
 

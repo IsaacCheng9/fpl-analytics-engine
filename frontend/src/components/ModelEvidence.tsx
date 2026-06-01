@@ -101,26 +101,26 @@ export function ModelEvidence({
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">DefCon Probability Model</h3>
 					<p className="mt-1 text-sm text-zinc-500">
-						Next-appearance DefCon hit predictions, scored against the following
-						gameweek.
+						Calibrated contribution-count predictions, scored against the
+						following gameweek.
 					</p>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					<MetricCard
-						label="Model Brier"
+						label="Calibrated Count Brier"
 						value={fmtNum(defconValidation?.model_brier, 3)}
-						detail={`${fmtSignedRate(defconValidation?.model_improvement_vs_raw)} vs raw rate`}
-						tone={toneFromValue(defconValidation?.model_improvement_vs_raw)}
+						detail={`${fmtSignedRate(defconValidation?.model_improvement_vs_binary)} vs binary`}
+						tone={toneFromValue(defconValidation?.model_improvement_vs_binary)}
 					/>
 					<MetricCard
-						label="Raw-Rate Brier"
-						value={fmtNum(defconValidation?.raw_rate_brier, 3)}
-						detail="Observed player rate baseline"
+						label="Binary Brier"
+						value={fmtNum(defconValidation?.binary_model_brier, 3)}
+						detail="Previous surfaced model"
 					/>
 					<MetricCard
 						label="Calibration Error"
 						value={fmtNum(defconValidation?.model_ece, 3)}
-						detail={`Raw rate ${fmtNum(defconValidation?.raw_rate_ece, 3)}`}
+						detail={`Raw count ${fmtNum(defconValidation?.count_model_ece, 3)}`}
 					/>
 					<MetricCard
 						label="Predictions"

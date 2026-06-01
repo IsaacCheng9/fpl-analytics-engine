@@ -95,11 +95,17 @@ export interface DefconCalibrationBin {
 export interface DefconProbabilityValidation {
 	n_predictions: number;
 	model_brier: number | null;
+	binary_model_brier: number | null;
+	count_model_brier: number | null;
 	raw_rate_brier: number | null;
 	constant_brier: number | null;
 	model_ece: number | null;
+	binary_model_ece: number | null;
+	count_model_ece: number | null;
 	raw_rate_ece: number | null;
 	model_improvement_vs_raw: number | null;
+	model_improvement_vs_binary: number | null;
+	model_improvement_vs_count: number | null;
 	model_improvement_vs_constant: number | null;
 	calibration: DefconCalibrationBin[];
 }

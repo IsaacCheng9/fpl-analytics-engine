@@ -25,6 +25,11 @@ DEFAULT_PRIOR_STRENGTH = 5.0
 # Concentration is clamped to this range to avoid degenerate priors.
 MIN_CONCENTRATION = 1.0
 MAX_CONCENTRATION = 100.0
+DEFAULT_COUNT_CALIBRATION_BINS = 10
+# Pseudo-predictions used when mapping the raw count probability to observed
+# hit rates from prior as-of predictions. Higher values keep more of the count
+# model's sharpness; lower values trust the empirical bucket rate faster.
+DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH = 50.0
 
 
 def _estimate_position_priors(
@@ -352,6 +357,11 @@ def _negbin_at_least(threshold: int, shape: float, prob: float) -> float:
     return max(0.0, 1.0 - cdf)
 
 
+def _probability_bin(prob: str, bins: int) -> pl.Expr:
+    """Return an expression that maps a probability column to a bucket."""
+    return (pl.col(prob) * bins).floor().clip(0, bins - 1).cast(pl.Int64)
+
+
 def _gamma_position_priors(
     per_player: pl.DataFrame,
     min_games_for_prior: int,
@@ -462,3 +472,240 @@ def defcon_count_probabilities(
             }
         )
     return pl.DataFrame(records, schema_overrides={"prob_std": pl.Float64})
+
+
+def _count_and_binary_probabilities(
+    history: pl.DataFrame,
+    as_of_gw: int,
+    prior_strength: float,
+    min_minutes: int,
+    empirical_bayes: bool,
+    min_games_for_prior: int,
+) -> pl.DataFrame:
+    """Return count and binary model probabilities for one as-of gameweek."""
+    count_model = defcon_count_probabilities(
+        history,
+        as_of_gw,
+        prior_strength,
+        min_minutes,
+        empirical_bayes,
+        min_games_for_prior,
+    ).rename({"prob": "count_prob"})
+    binary_model = defcon_probabilities(
+        history,
+        as_of_gw,
+        prior_strength,
+        min_minutes,
+        empirical_bayes,
+        min_games_for_prior,
+    ).select(
+        "element",
+        "as_of_gw",
+        pl.col("prob").alias("binary_prob"),
+        pl.col("prob_std").alias("binary_prob_std"),
+    )
+    return count_model.join(binary_model, on=["element", "as_of_gw"], how="left")
+
+
+def _apply_count_calibration(
+    predictions: pl.DataFrame,
+    calibration_rows: pl.DataFrame,
+    bins: int,
+    prior_strength: float,
+) -> pl.DataFrame:
+    """Calibrate count probabilities from prior prediction buckets.
+
+    The raw count model is sharp but overconfident. For each probability bucket,
+    prior as-of predictions provide an observed hit rate. Each current
+    prediction is then shrunk toward that bucket outcome, using its own raw
+    count probability as the prior mean so unseen buckets degrade gracefully.
+    """
+    if predictions.is_empty():
+        return predictions
+
+    if calibration_rows.is_empty():
+        return predictions.with_columns(pl.col("count_prob").alias("prob"))
+
+    calibration = (
+        calibration_rows.with_columns(
+            _probability_bin("count_prob", bins).alias("calibration_bin")
+        )
+        .group_by("calibration_bin")
+        .agg(
+            pl.len().alias("calibration_n"),
+            pl.col("hit").sum().alias("calibration_hits"),
+        )
+    )
+    return (
+        predictions.with_columns(
+            _probability_bin("count_prob", bins).alias("calibration_bin")
+        )
+        .join(calibration, on="calibration_bin", how="left")
+        .with_columns(
+            pl.col("calibration_n").fill_null(0),
+            pl.col("calibration_hits").fill_null(0),
+        )
+        .with_columns(
+            (
+                (pl.col("calibration_hits") + prior_strength * pl.col("count_prob"))
+                / (pl.col("calibration_n") + prior_strength)
+            ).alias("prob")
+        )
+        .drop("calibration_bin", "calibration_n", "calibration_hits")
+    )
+
+
+def backtest_defcon_count_probabilities(
+    history: pl.DataFrame,
+    gw_range: range | None = None,
+    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
+    min_minutes: int = 1,
+    empirical_bayes: bool = True,
+    min_games_for_prior: int = 3,
+    calibration_bins: int = DEFAULT_COUNT_CALIBRATION_BINS,
+    calibration_prior_strength: float = DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH,
+) -> pl.DataFrame:
+    """Score the recalibrated count model against following-GW outcomes.
+
+    Calibration is nested point-in-time: the GW N prediction can only use
+    realised outcomes from predictions made before GW N.
+
+    Args:
+        history: Enriched per-gameweek history.
+        gw_range: Gameweeks to evaluate; defaults to GW1 through the
+            second-to-last.
+        prior_strength: Forwarded to the binary and count probability models.
+        min_minutes: Forwarded to the probability models and target frame.
+        empirical_bayes: Forwarded to the probability models.
+        min_games_for_prior: Forwarded to the probability models.
+        calibration_bins: Number of probability buckets for count calibration.
+        calibration_prior_strength: Pseudo-prediction strength for each bucket.
+
+    Returns:
+        Per-prediction rows with calibrated ``prob``, uncalibrated
+        ``count_prob``, ``binary_prob`` and realised ``hit``.
+    """
+    max_round = cast(int, history["round"].max())
+    if gw_range is None:
+        gw_range = range(1, max_round)
+
+    next_hit = (
+        history.filter(
+            (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
+        )
+        .group_by("element", "round")
+        .agg(pl.col("defcon_hit").max().alias("hit"))
+    )
+
+    frames = [
+        _count_and_binary_probabilities(
+            history,
+            as_of_gw,
+            prior_strength,
+            min_minutes,
+            empirical_bayes,
+            min_games_for_prior,
+        ).with_columns((pl.lit(as_of_gw) + 1).alias("next_round"))
+        for as_of_gw in gw_range
+    ]
+    if not frames:
+        return pl.DataFrame()
+
+    raw_scored = (
+        pl.concat(frames, how="vertical")
+        .join(
+            next_hit,
+            left_on=["element", "next_round"],
+            right_on=["element", "round"],
+            how="left",
+        )
+        .filter(pl.col("hit").is_not_null())
+        .with_columns(pl.col("hit").cast(pl.Float64))
+    )
+
+    calibrated_frames = []
+    for as_of_gw in gw_range:
+        predictions = raw_scored.filter(pl.col("as_of_gw") == as_of_gw)
+        calibration_rows = raw_scored.filter(pl.col("as_of_gw") < as_of_gw)
+        if predictions.is_empty():
+            continue
+        calibrated_frames.append(
+            _apply_count_calibration(
+                predictions,
+                calibration_rows,
+                calibration_bins,
+                calibration_prior_strength,
+            )
+        )
+    if not calibrated_frames:
+        return pl.DataFrame()
+    return pl.concat(calibrated_frames, how="vertical")
+
+
+def calibrated_defcon_count_probabilities(
+    history: pl.DataFrame,
+    as_of_gw: int,
+    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
+    min_minutes: int = 1,
+    empirical_bayes: bool = True,
+    min_games_for_prior: int = 3,
+    calibration_bins: int = DEFAULT_COUNT_CALIBRATION_BINS,
+    calibration_prior_strength: float = DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH,
+) -> pl.DataFrame:
+    """Estimate calibrated DefCon hit probabilities from contribution counts.
+
+    Args:
+        history: Enriched per-gameweek history.
+        as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
+        prior_strength: Forwarded to the binary and count probability models.
+        min_minutes: Minimum minutes for a game to count as an appearance.
+        empirical_bayes: Forwarded to the probability models.
+        min_games_for_prior: Minimum games for a player to inform the prior.
+        calibration_bins: Number of probability buckets for count calibration.
+        calibration_prior_strength: Pseudo-prediction strength for each bucket.
+
+    Returns:
+        One row per eligible player with calibrated ``prob``, raw hit-rate,
+        uncalibrated count probability, and binary-model probability.
+    """
+    current = _count_and_binary_probabilities(
+        history,
+        as_of_gw,
+        prior_strength,
+        min_minutes,
+        empirical_bayes,
+        min_games_for_prior,
+    )
+    if current.is_empty():
+        return current
+
+    calibration_rows = backtest_defcon_count_probabilities(
+        history,
+        gw_range=range(1, as_of_gw),
+        prior_strength=prior_strength,
+        min_minutes=min_minutes,
+        empirical_bayes=empirical_bayes,
+        min_games_for_prior=min_games_for_prior,
+        calibration_bins=calibration_bins,
+        calibration_prior_strength=calibration_prior_strength,
+    )
+    calibrated = _apply_count_calibration(
+        current,
+        calibration_rows,
+        calibration_bins,
+        calibration_prior_strength,
+    )
+    return calibrated.select(
+        "element",
+        "web_name",
+        "position",
+        "team_name",
+        "games",
+        "hits",
+        "raw_rate",
+        "prob",
+        pl.lit(None, dtype=pl.Float64).alias("prob_std"),
+        "count_prob",
+        "binary_prob",
+        "as_of_gw",
+    )

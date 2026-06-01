@@ -286,12 +286,18 @@ const probRows = [
 ];
 const defconValidation = {
 	n_predictions: 100,
-	model_brier: 0.14,
+	model_brier: 0.139,
+	binary_model_brier: 0.141,
+	count_model_brier: 0.139,
 	raw_rate_brier: 0.151,
 	constant_brier: 0.162,
-	model_ece: 0.013,
+	model_ece: 0.007,
+	binary_model_ece: 0.013,
+	count_model_ece: 0.032,
 	raw_rate_ece: 0.032,
 	model_improvement_vs_raw: 0.073,
+	model_improvement_vs_binary: 0.014,
+	model_improvement_vs_count: 0.004,
 	model_improvement_vs_constant: 0.136,
 	calibration: [
 		{
@@ -1083,9 +1089,9 @@ test("renders the model evidence tab with backtest summaries", async () => {
 		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
 	});
 	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
-	expect(screen.getByText("Model Brier")).toBeInTheDocument();
-	expect(screen.getByText("0.140")).toBeInTheDocument();
-	expect(screen.getByText("+7.3% vs raw rate")).toBeInTheDocument();
+	expect(screen.getByText("Calibrated Count Brier")).toBeInTheDocument();
+	expect(screen.getByText("0.139")).toBeInTheDocument();
+	expect(screen.getByText("+1.4% vs binary")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xG")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xGC")).toBeInTheDocument();
 	const bucketHeader = screen.getByRole("columnheader", { name: /Bucket/ });
