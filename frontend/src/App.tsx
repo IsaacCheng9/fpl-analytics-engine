@@ -2280,7 +2280,7 @@ export default function App() {
 			return "bg-amber-50 group-hover:bg-amber-100/70";
 		}
 		return isOwned
-			? "bg-sky-50 group-hover:bg-sky-100/70"
+			? "bg-sky-100 group-hover:bg-sky-100"
 			: "bg-white group-hover:bg-zinc-50";
 	};
 	const renderShortlistAction = (row: ShortlistablePlayer) => {
@@ -3044,7 +3044,7 @@ export default function App() {
 										? "Team Import Failed"
 										: fplTeamQuery.isPending
 											? "Loading Team..."
-											: `Owned As Of GW ${fplTeamQuery.data?.as_of_gw ?? latestGw} (${ownedCount})`}
+											: `Currently Owned (${ownedCount})`}
 								</span>
 							) : null}
 							{fplTeamId !== null ? (

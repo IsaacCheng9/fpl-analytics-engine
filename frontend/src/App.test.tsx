@@ -910,7 +910,7 @@ test("imports an FPL team and filters owned players", async () => {
 	fireEvent.click(screen.getByRole("button", { name: "Import" }));
 
 	await waitFor(() => {
-		expect(screen.getByText("Owned As Of GW 38 (2)")).toBeInTheDocument();
+		expect(screen.getByText("Currently Owned (2)")).toBeInTheDocument();
 	});
 	await waitFor(() => {
 		const params = new URLSearchParams(window.location.search);
@@ -922,9 +922,9 @@ test("imports an FPL team and filters owned players", async () => {
 	expect(mbeumoElement).toHaveClass("bg-sky-50/50");
 	const mbeumoCells = within(mbeumoElement).getAllByRole("cell");
 	for (const cell of mbeumoCells.slice(0, 5)) {
-		expect(cell).toHaveClass("bg-sky-50");
+		expect(cell).toHaveClass("bg-sky-100");
 	}
-	expect(mbeumoCells[5]).not.toHaveClass("bg-sky-50");
+	expect(mbeumoCells[5]).not.toHaveClass("bg-sky-100");
 
 	fireEvent.click(screen.getByRole("button", { name: "Owned (2)" }));
 	await waitFor(() => {
@@ -982,7 +982,7 @@ test("defaults player comparison to imported owned players", async () => {
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Import" }));
 	await waitFor(() => {
-		expect(screen.getByText("Owned As Of GW 38 (2)")).toBeInTheDocument();
+		expect(screen.getByText("Currently Owned (2)")).toBeInTheDocument();
 	});
 
 	fireEvent.click(screen.getByRole("button", { name: "Compare Players" }));
