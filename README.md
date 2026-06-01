@@ -21,10 +21,9 @@ replayed and scored against what actually happened next.
   recent N-gameweek per-90 expected output (xG/xA/xGI) and their season-to-date
   baseline, so a player heating up shows a positive `delta_xgi90` before the raw
   points catch up
-- **DefCon hit-probability model** – an empirical-Bayes beta-binomial estimate
-  of each player's probability of hitting the defensive-contribution threshold
-  next match, shrinking small samples toward a fitted per-position prior so a
-  2-from-2 record does not outrank an 18-from-20 one
+- **DefCon hit-probability model** – a calibrated contribution-count model that
+  uses the size of each defensive-contribution performance, then recalibrates
+  those probabilities against prior point-in-time prediction buckets
 - **Backtesting harness** – replays each gameweek on the point-in-time view,
   flags players, then scores the flags against the following gameweeks, with
   Brier score and a calibration table for the probability model
@@ -56,12 +55,6 @@ replayed and scored against what actually happened next.
   and cross-season history keyed by stable FPL `code`
 - **Club form context** – compares each club's recent attacking and defensive
   output with its season baseline, then shows that form next to upcoming FDR
-
-### Planned Features
-
-- A recalibrated count-based DefCon model (negative-binomial) that keeps the
-  sharper margin signal of contribution counts while matching the calibration of
-  the binary model
 
 ## Screenshots
 
@@ -113,13 +106,34 @@ DefCon awards 2 FPL points when a player clears a positional threshold of
 defensive actions in a match – defenders need 10+ CBIT (clearances, blocks,
 interceptions, tackles); midfielders and forwards need 12+ CBIRT (CBIT plus
 recoveries). Rather than report a raw hit-rate, the engine models each player's
-probability of hitting next match as a beta-binomial: a per-position prior
-fitted from the whole population shrinks thin samples toward the position mean,
-and the shrinkage eases as a player's sample grows. The model is evaluated by
-backtest – Brier score for sharpness and a calibration table to check that
-predicted probabilities match observed frequencies. The UI also surfaces average
-defensive-contribution counts, which show whether a player is trending near the
-threshold even when their binary hit-rate is flat.
+probability of hitting next match from their defensive-contribution counts: a
+Gamma-Poisson count model estimates the chance of clearing the positional
+threshold, then a point-in-time calibration layer shrinks that probability
+toward the observed hit-rate of similar prior predictions. The model is
+evaluated by backtest. Brier score measures average probability error, so lower
+is better: confident wrong predictions are punished more than cautious ones.
+Expected calibration error (ECE) checks whether probabilities mean what they say
+– for example, whether players predicted around 40% actually hit around 40% of
+the time. The UI also surfaces average defensive-contribution counts, which show
+whether a player is trending near the threshold even when their binary hit-rate
+is flat.
+
+#### DefCon Probability Backtest Results (2025-26 Season)
+
+Every method was replayed point-in-time, predicting the following gameweek from
+only data that would have been known at the as-of gameweek.
+
+| Method | Brier | ECE | Verdict |
+| --- | ---: | ---: | --- |
+| Calibrated count model | 0.1387 | 0.0067 | Best displayed probability – keeps the count signal while making the probabilities trustworthy |
+| Raw count model | 0.1385 | 0.0323 | Sharpest Brier, but overconfident; useful signal, misleading as a displayed probability |
+| Binary empirical-Bayes model | 0.1406 | 0.0130 | Well-calibrated and safe, but throws away margin information from the contribution count |
+| Raw player hit-rate | 0.1510 | 0.0632 | Too noisy and overconfident for small samples |
+| Constant base rate | 0.1629 | 0.0000 | Perfectly calibrated by construction, but not useful for ranking players |
+
+The calibrated count model is preferred because it keeps almost all of the raw
+count model's Brier improvement while sharply reducing ECE, making the displayed
+probability more trustworthy.
 
 ### Club Form
 
@@ -330,7 +344,7 @@ from one FastAPI deployment.
 | `GET /` | Service metadata and the latest gameweek in the data | – |
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by modelled DefCon hit probability | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by calibrated DefCon hit probability | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes` |
 | `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /clubs/form-validation` | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows` |

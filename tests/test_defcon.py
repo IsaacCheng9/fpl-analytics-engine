@@ -149,3 +149,50 @@ def test_count_model_rewards_higher_contribution_counts() -> None:
     assert by_element[1]["raw_rate"] == by_element[2]["raw_rate"]
     # ...but the higher-margin player is judged more likely to hit.
     assert by_element[1]["prob"] > by_element[2]["prob"]
+
+
+def test_count_calibration_shrinks_overconfident_bucket() -> None:
+    predictions = pl.DataFrame(
+        {
+            "element": [1],
+            "count_prob": [0.8],
+        }
+    )
+    calibration_rows = pl.DataFrame(
+        {
+            "count_prob": [0.81, 0.82, 0.83, 0.84],
+            "hit": [0.0, 0.0, 0.0, 0.0],
+        }
+    )
+
+    calibrated = defcon._apply_count_calibration(
+        predictions, calibration_rows, bins=10, prior_strength=1
+    )
+
+    assert calibrated["prob"][0] < predictions["count_prob"][0]
+
+
+def test_backtest_count_probabilities_returns_calibrated_model() -> None:
+    rows: list[dict] = []
+    rows += [_count_game(1, r, count=20) for r in range(1, 5)]
+    rows += [_count_game(2, r, count=8) for r in range(1, 5)]
+    frame = pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+    scored = defcon.backtest_defcon_count_probabilities(frame)
+
+    assert {"prob", "count_prob", "binary_prob", "hit"} <= set(scored.columns)
+    assert all(0 <= prob <= 1 for prob in scored["prob"].to_list())
+    # Last round has no following gameweek to score against.
+    assert all(gw <= 3 for gw in scored["as_of_gw"].to_list())
+
+
+def test_calibrated_count_probabilities_keep_diagnostic_probabilities() -> None:
+    rows: list[dict] = []
+    rows += [_count_game(1, r, count=20) for r in range(1, 6)]
+    rows += [_count_game(2, r, count=8) for r in range(1, 6)]
+    frame = pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+    table = defcon.calibrated_defcon_count_probabilities(frame, as_of_gw=5)
+
+    assert {"prob", "count_prob", "binary_prob", "raw_rate"} <= set(table.columns)
+    assert all(0 <= prob <= 1 for prob in table["prob"].to_list())

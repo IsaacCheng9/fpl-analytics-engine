@@ -395,14 +395,16 @@ def players_defcon_probability(
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[DefconProbabilityPlayer]:
-    """Rank players by their modelled probability of hitting DefCon next GW.
+    """Rank players by their calibrated probability of hitting DefCon next GW.
 
-    Uses an empirical-Bayes estimate over all eligible appearances up to
-    ``as_of_gw`` (defaults to the latest gameweek).
+    Uses a recalibrated contribution-count model over all eligible appearances
+    up to ``as_of_gw`` (defaults to the latest gameweek).
     """
     latest = _latest_gw(history)
     gw = as_of_gw if as_of_gw is not None else latest
-    probabilities = defcon.defcon_probabilities(history, gw, min_minutes=min_minutes)
+    probabilities = defcon.calibrated_defcon_count_probabilities(
+        history, gw, min_minutes=min_minutes
+    )
     ranked = defcon.flag_defcon_probabilities(
         probabilities,
         min_games=min_games,
@@ -428,25 +430,32 @@ def players_defcon_probability_validation(
     bins: int = Query(DEFAULT_CALIBRATION_BINS, ge=2, le=20),
     min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
 ) -> DefconProbabilityValidation:
-    """Backtest the DefCon probability model against next-GW outcomes.
+    """Backtest the DefCon probability models against next-GW outcomes.
 
     The replay is point-in-time: each as-of gameweek predicts the following
     gameweek, then Brier score and calibration are computed from the realised
     DefCon threshold hit.
     """
-    scored = defcon.backtest_defcon_probabilities(
+    scored = defcon.backtest_defcon_count_probabilities(
         history,
         min_minutes=min_minutes,
+        calibration_bins=bins,
     )
     if scored.is_empty():
         return DefconProbabilityValidation(
             n_predictions=0,
             model_brier=None,
+            binary_model_brier=None,
+            count_model_brier=None,
             raw_rate_brier=None,
             constant_brier=None,
             model_ece=None,
+            binary_model_ece=None,
+            count_model_ece=None,
             raw_rate_ece=None,
             model_improvement_vs_raw=None,
+            model_improvement_vs_binary=None,
+            model_improvement_vs_count=None,
             model_improvement_vs_constant=None,
             calibration=[],
         )
@@ -454,19 +463,33 @@ def players_defcon_probability_validation(
     constant_rate = cast(float, scored["hit"].mean())
     scored = scored.with_columns(pl.lit(constant_rate).alias("constant_prob"))
     model_brier = _brier_or_none(scored, "prob")
+    binary_model_brier = _brier_or_none(scored, "binary_prob")
+    count_model_brier = _brier_or_none(scored, "count_prob")
     raw_rate_brier = _brier_or_none(scored, "raw_rate")
     constant_brier = _brier_or_none(scored, "constant_prob")
     calibration, model_ece = _calibration_bins(scored, "prob", bins)
+    _, binary_model_ece = _calibration_bins(scored, "binary_prob", bins)
+    _, count_model_ece = _calibration_bins(scored, "count_prob", bins)
     _, raw_rate_ece = _calibration_bins(scored, "raw_rate", bins)
 
     return DefconProbabilityValidation(
         n_predictions=scored.height,
         model_brier=model_brier,
+        binary_model_brier=binary_model_brier,
+        count_model_brier=count_model_brier,
         raw_rate_brier=raw_rate_brier,
         constant_brier=constant_brier,
         model_ece=model_ece,
+        binary_model_ece=binary_model_ece,
+        count_model_ece=count_model_ece,
         raw_rate_ece=raw_rate_ece,
         model_improvement_vs_raw=_relative_improvement(model_brier, raw_rate_brier),
+        model_improvement_vs_binary=_relative_improvement(
+            model_brier, binary_model_brier
+        ),
+        model_improvement_vs_count=_relative_improvement(
+            model_brier, count_model_brier
+        ),
         model_improvement_vs_constant=_relative_improvement(
             model_brier, constant_brier
         ),

@@ -19,6 +19,14 @@ def _game(
     minutes: int = 90,
 ) -> dict:
     """Build one enriched per-gameweek history row for tests."""
+    threshold = 10 if position == "DEF" else 12 if position in {"MID", "FWD"} else None
+    defensive_contribution = (
+        threshold
+        if defcon_hit is True
+        else threshold - 1
+        if defcon_hit is False and threshold is not None
+        else None
+    )
     return {
         "element": element,
         "round": round_,
@@ -33,6 +41,8 @@ def _game(
         "web_name": f"P{element}",
         "position": position,
         "team_name": "T",
+        "defensive_contribution": defensive_contribution,
+        "defcon_threshold": threshold,
         "defcon_hit": defcon_hit,
     }
 
@@ -205,11 +215,17 @@ def test_defcon_probability_validation_endpoint_returns_backtest_summary(
 
     assert body["n_predictions"] == 9
     assert body["model_brier"] is not None
+    assert body["binary_model_brier"] is not None
+    assert body["count_model_brier"] is not None
     assert body["raw_rate_brier"] is not None
     assert body["constant_brier"] is not None
     assert body["model_ece"] is not None
+    assert body["binary_model_ece"] is not None
+    assert body["count_model_ece"] is not None
     assert body["raw_rate_ece"] is not None
     assert body["model_improvement_vs_raw"] is not None
+    assert body["model_improvement_vs_binary"] is not None
+    assert body["model_improvement_vs_count"] is not None
     assert body["calibration"]
     assert {"bin", "n", "mean_predicted", "observed_rate", "abs_error"} <= set(
         body["calibration"][0]
