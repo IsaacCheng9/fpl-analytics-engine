@@ -12,6 +12,7 @@ import {
 	fetchDefconProbability,
 	fetchDefconProbabilityValidation,
 	fetchForm,
+	fetchFplTeam,
 	fetchMeta,
 	type Position,
 } from "./api";
@@ -28,6 +29,7 @@ type AttackingMetric = "xg" | "xa" | "xgi";
 type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
 type AttackingMetricColumn = "window" | "season" | "delta" | "value";
 type AttackingThreatPeriod = "window" | "season";
+type OwnershipFilter = "all" | "owned" | "not-owned";
 type AttackingThreatFilters = Record<
 	AttackingMetric,
 	Record<AttackingThreatPeriod, number | null>
@@ -88,6 +90,8 @@ const DEFAULT_AS_OF_GW: number | null = null;
 const DEFAULT_SELECTED_ELEMENT: number | null = null;
 const DEFAULT_PLAYER_WINDOW = 5;
 const DEFAULT_PLAYER_SEASON: string | null = null;
+const DEFAULT_FPL_TEAM_ID: number | null = null;
+const DEFAULT_OWNERSHIP_FILTER: OwnershipFilter = "all";
 const DEFAULT_COMPARE_OPEN = false;
 const DEFAULT_COMPARE_ELEMENT: number | null = null;
 const DEFAULT_COMPARE_WINDOW = DEFAULT_WINDOW_SIZE;
@@ -246,6 +250,8 @@ type UrlState = {
 	selectedElement: number | null;
 	playerWindow: number;
 	playerSeason: string | null;
+	fplTeamId: number | null;
+	ownershipFilter: OwnershipFilter;
 	compareOpen: boolean;
 	compareLeftElement: number | null;
 	compareRightElement: number | null;
@@ -272,6 +278,8 @@ const DEFAULT_URL_STATE: UrlState = {
 	selectedElement: DEFAULT_SELECTED_ELEMENT,
 	playerWindow: DEFAULT_PLAYER_WINDOW,
 	playerSeason: DEFAULT_PLAYER_SEASON,
+	fplTeamId: DEFAULT_FPL_TEAM_ID,
+	ownershipFilter: DEFAULT_OWNERSHIP_FILTER,
 	compareOpen: DEFAULT_COMPARE_OPEN,
 	compareLeftElement: DEFAULT_COMPARE_ELEMENT,
 	compareRightElement: DEFAULT_COMPARE_ELEMENT,
@@ -401,6 +409,12 @@ function parseShortlist(value: string | null): number[] {
 	return Array.from(new Set(elements));
 }
 
+function parseOwnershipFilter(value: string | null): OwnershipFilter {
+	return value === "owned" || value === "not-owned"
+		? value
+		: DEFAULT_OWNERSHIP_FILTER;
+}
+
 function readUrlState(): UrlState {
 	if (!isBrowser()) {
 		return { ...DEFAULT_URL_STATE };
@@ -427,6 +441,8 @@ function readUrlState(): UrlState {
 		}),
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
+		fplTeamId: parseOptionalNumber(params.get("fpl_team"), { min: 1 }),
+		ownershipFilter: parseOwnershipFilter(params.get("squad")),
 		compareOpen:
 			params.get("compare") === "1" ||
 			params.has("compare_a") ||
@@ -639,6 +655,12 @@ function writeUrlState(state: UrlState) {
 			params.set("season", state.playerSeason);
 		}
 	}
+	if (state.fplTeamId !== DEFAULT_FPL_TEAM_ID) {
+		params.set("fpl_team", String(state.fplTeamId));
+		if (isPlayerTab(state.tab) && state.ownershipFilter !== "all") {
+			params.set("squad", state.ownershipFilter);
+		}
+	}
 	if (state.compareOpen) {
 		params.set("compare", "1");
 		if (state.compareLeftElement !== DEFAULT_COMPARE_ELEMENT) {
@@ -745,6 +767,20 @@ function filterShortlistedPlayers<T extends { element: number }>(
 	}
 	const shortlistedElements = new Set(shortlist);
 	return rows.filter((row) => shortlistedElements.has(row.element));
+}
+
+function filterOwnedPlayers<T extends { element: number }>(
+	rows: T[],
+	ownedElements: Set<number>,
+	ownershipFilter: OwnershipFilter,
+): T[] {
+	if (ownershipFilter === "all") {
+		return rows;
+	}
+	return rows.filter((row) => {
+		const isOwned = ownedElements.has(row.element);
+		return ownershipFilter === "owned" ? isOwned : !isOwned;
+	});
 }
 
 function formatPlayerCount(count: number): string {
@@ -1543,6 +1579,15 @@ export default function App() {
 	const [playerSeason, setPlayerSeason] = useState<string | null>(
 		initialUrlState.playerSeason,
 	);
+	const [fplTeamId, setFplTeamId] = useState<number | null>(
+		initialUrlState.fplTeamId,
+	);
+	const [fplTeamInput, setFplTeamInput] = useState(
+		initialUrlState.fplTeamId?.toString() ?? "",
+	);
+	const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>(
+		initialUrlState.ownershipFilter,
+	);
 	const [compareOpen, setCompareOpen] = useState(initialUrlState.compareOpen);
 	const [compareLeftElement, setCompareLeftElement] = useState<number | null>(
 		initialUrlState.compareLeftElement,
@@ -1587,6 +1632,9 @@ export default function App() {
 			setSelectedElement(next.selectedElement);
 			setPlayerWindow(next.playerWindow);
 			setPlayerSeason(next.playerSeason);
+			setFplTeamId(next.fplTeamId);
+			setFplTeamInput(next.fplTeamId?.toString() ?? "");
+			setOwnershipFilter(next.ownershipFilter);
 			setCompareOpen(next.compareOpen);
 			setCompareLeftElement(next.compareLeftElement);
 			setCompareRightElement(next.compareRightElement);
@@ -1618,6 +1666,8 @@ export default function App() {
 			selectedElement,
 			playerWindow,
 			playerSeason,
+			fplTeamId,
+			ownershipFilter,
 			compareOpen,
 			compareLeftElement,
 			compareRightElement,
@@ -1643,6 +1693,8 @@ export default function App() {
 		selectedElement,
 		playerWindow,
 		playerSeason,
+		fplTeamId,
+		ownershipFilter,
 		compareOpen,
 		compareLeftElement,
 		compareRightElement,
@@ -1661,6 +1713,12 @@ export default function App() {
 			setShowShortlistedOnly(false);
 		}
 	}, [shortlist.length, showShortlistedOnly]);
+
+	useEffect(() => {
+		if (fplTeamId === null && ownershipFilter !== "all") {
+			setOwnershipFilter("all");
+		}
+	}, [fplTeamId, ownershipFilter]);
 
 	function updateTransferFilter(
 		filter: keyof TransferFilters,
@@ -1702,7 +1760,22 @@ export default function App() {
 		setAttackingThreatFilters(defaultAttackingThreatFilters());
 		setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS });
 		setTransferFilters(defaultTransferFilters());
+		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 		setShowShortlistedOnly(false);
+	}
+
+	function importFplTeam() {
+		const parsed = Number(fplTeamInput);
+		if (!Number.isInteger(parsed) || parsed <= 0) {
+			return;
+		}
+		setFplTeamId(parsed);
+	}
+
+	function clearFplTeam() {
+		setFplTeamId(DEFAULT_FPL_TEAM_ID);
+		setFplTeamInput("");
+		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 	}
 
 	function applyFilterPreset(preset: FilterPreset) {
@@ -1759,9 +1832,10 @@ export default function App() {
 		setCompareOpen(true);
 		setCompareWindow(windowSize);
 		setCompareAsOfGw(asOfGw);
-		if (shortlist.length > 0) {
-			setCompareLeftElement((current) => current ?? shortlist[0] ?? null);
-			setCompareRightElement((current) => current ?? shortlist[1] ?? null);
+		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
+		if (defaults.length > 0) {
+			setCompareLeftElement((current) => current ?? defaults[0] ?? null);
+			setCompareRightElement((current) => current ?? defaults[1] ?? null);
 		}
 	}
 
@@ -1813,6 +1887,29 @@ export default function App() {
 	const hasPlayerSearch = playerSearch.trim() !== "";
 	const windowFillPct =
 		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
+	const fplTeamQuery = useQuery({
+		queryKey: ["fplTeam", fplTeamId, asOfGw],
+		queryFn: () => fetchFplTeam(fplTeamId as number, asOfGw),
+		enabled: fplTeamId !== null,
+		placeholderData: keepPreviousData,
+	});
+	const parsedFplTeamInput = Number(fplTeamInput);
+	const canImportFplTeam =
+		Number.isInteger(parsedFplTeamInput) && parsedFplTeamInput > 0;
+	const ownedElements = useMemo(
+		() =>
+			new Set(
+				fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? []),
+			),
+		[fplTeamId, fplTeamQuery.data],
+	);
+	const ownedElementList = useMemo(
+		() => (fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? [])),
+		[fplTeamId, fplTeamQuery.data],
+	);
+	const ownedCount =
+		fplTeamId === null ? 0 : (fplTeamQuery.data?.owned_elements.length ?? 0);
+	const hasImportedTeam = fplTeamId !== null && fplTeamQuery.data !== undefined;
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const formQuery = useQuery({
@@ -1982,15 +2079,22 @@ export default function App() {
 		if (!compareOpen || comparePlayerOptions.length === 0) {
 			return;
 		}
-		const shortlistDefault = shortlist.find((element) =>
+		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
+		const defaultElement = defaults.find((element) =>
 			compareOptionElements.has(element),
 		);
 		setCompareLeftElement((current) =>
 			current !== null && compareOptionElements.has(current)
 				? current
-				: (shortlistDefault ?? null),
+				: (defaultElement ?? null),
 		);
-	}, [compareOpen, compareOptionElements, comparePlayerOptions, shortlist]);
+	}, [
+		compareOpen,
+		compareOptionElements,
+		comparePlayerOptions,
+		ownedElementList,
+		shortlist,
+	]);
 
 	useEffect(() => {
 		if (!compareOpen || comparePlayerOptions.length === 0) {
@@ -2004,17 +2108,19 @@ export default function App() {
 			) {
 				return current;
 			}
-			const shortlistDefault = shortlist.find(
+			const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
+			const defaultElement = defaults.find(
 				(element) =>
 					element !== compareLeftElement && compareOptionElements.has(element),
 			);
-			return shortlistDefault ?? null;
+			return defaultElement ?? null;
 		});
 	}, [
 		compareLeftElement,
 		compareOpen,
 		compareOptionElements,
 		comparePlayerOptions,
+		ownedElementList,
 		shortlist,
 	]);
 
@@ -2085,7 +2191,7 @@ export default function App() {
 		attackingMetrics,
 	);
 	const visibleFormRows = filterShortlistedPlayers(
-		filteredThreatForm,
+		filterOwnedPlayers(filteredThreatForm, ownedElements, ownershipFilter),
 		shortlist,
 		showShortlistedOnly,
 	);
@@ -2099,7 +2205,7 @@ export default function App() {
 		transferFilters,
 	);
 	const visibleDefconRows = filterShortlistedPlayers(
-		filteredTransferDefcon,
+		filterOwnedPlayers(filteredTransferDefcon, ownedElements, ownershipFilter),
 		shortlist,
 		showShortlistedOnly,
 	);
@@ -2113,7 +2219,11 @@ export default function App() {
 		transferFilters,
 	);
 	const visibleDefconProbRows = filterShortlistedPlayers(
-		filteredTransferDefconProb,
+		filterOwnedPlayers(
+			filteredTransferDefconProb,
+			ownedElements,
+			ownershipFilter,
+		),
 		shortlist,
 		showShortlistedOnly,
 	);
@@ -2149,12 +2259,30 @@ export default function App() {
 		visiblePlayerRowCount === shortlist.length
 			? `Showing ${visiblePlayerRowCount} shortlisted ${visiblePlayerRowCount === 1 ? "player" : "players"}`
 			: `Showing ${visiblePlayerRowCount} of ${formatPlayerCount(shortlist.length)} shortlisted`;
-	const shortlistRowClassName = (row: ShortlistablePlayer) =>
-		shortlist.includes(row.element) ? "bg-amber-50/50" : "";
-	const shortlistStickyClassName = (row: ShortlistablePlayer) =>
-		shortlist.includes(row.element)
-			? "bg-amber-50 group-hover:bg-amber-100/70"
+	const playerRowClassName = (row: ShortlistablePlayer) => {
+		const isShortlisted = shortlist.includes(row.element);
+		const isOwned = ownedElements.has(row.element);
+		if (isShortlisted && isOwned) {
+			return "bg-teal-50/60";
+		}
+		if (isShortlisted) {
+			return "bg-amber-50/50";
+		}
+		return isOwned ? "bg-sky-50/50" : "";
+	};
+	const playerStickyClassName = (row: ShortlistablePlayer) => {
+		const isShortlisted = shortlist.includes(row.element);
+		const isOwned = ownedElements.has(row.element);
+		if (isShortlisted && isOwned) {
+			return "bg-teal-50 group-hover:bg-teal-100/70";
+		}
+		if (isShortlisted) {
+			return "bg-amber-50 group-hover:bg-amber-100/70";
+		}
+		return isOwned
+			? "bg-sky-50 group-hover:bg-sky-100/70"
 			: "bg-white group-hover:bg-zinc-50";
+	};
 	const renderShortlistAction = (row: ShortlistablePlayer) => {
 		const isShortlisted = shortlist.includes(row.element);
 		return (
@@ -2335,6 +2463,13 @@ export default function App() {
 			id: "shortlisted-only",
 			label: "Shortlisted Only",
 			onClear: () => setShowShortlistedOnly(false),
+		});
+	}
+	if (isPlayerTab(tab) && ownershipFilter !== "all") {
+		activeFilterChips.push({
+			id: "owned-filter",
+			label: ownershipFilter === "owned" ? "Owned Only" : "Not Owned",
+			onClear: () => setOwnershipFilter("all"),
 		});
 	}
 
@@ -2594,6 +2729,45 @@ export default function App() {
 								)}
 							</select>
 						</div>
+
+						{isPlayerTab(tab) ? (
+							<form
+								className="flex items-end gap-2"
+								onSubmit={(event) => {
+									event.preventDefault();
+									importFplTeam();
+								}}
+							>
+								<label className={labelClass}>
+									FPL Team ID
+									<input
+										type="number"
+										min={1}
+										inputMode="numeric"
+										placeholder="e.g. 12345"
+										className={`${inputClass} w-32`}
+										value={fplTeamInput}
+										onChange={(event) => setFplTeamInput(event.target.value)}
+									/>
+								</label>
+								<button
+									type="submit"
+									disabled={!canImportFplTeam}
+									className="mb-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
+								>
+									Import
+								</button>
+								{fplTeamId !== null ? (
+									<button
+										type="button"
+										className="mb-0 rounded-md px-2 py-1.5 font-medium text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+										onClick={clearFplTeam}
+									>
+										Clear
+									</button>
+								) : null}
+							</form>
+						) : null}
 					</div>
 					{tab === "form" ? (
 						<div className="mt-4 border-zinc-100 border-t pt-4">
@@ -2858,6 +3032,48 @@ export default function App() {
 							Click a player row to open the detailed stats view.
 						</p>
 						<div className="flex flex-wrap items-center gap-2">
+							{fplTeamId !== null ? (
+								<span
+									className={`rounded-md border px-2.5 py-1.5 font-medium text-xs ${
+										fplTeamQuery.isError
+											? "border-red-200 bg-red-50 text-red-700"
+											: "border-sky-200 bg-sky-50 text-sky-800"
+									}`}
+								>
+									{fplTeamQuery.isError
+										? "Team Import Failed"
+										: fplTeamQuery.isPending
+											? "Loading Team..."
+											: `Owned As Of GW ${fplTeamQuery.data?.as_of_gw ?? latestGw} (${ownedCount})`}
+								</span>
+							) : null}
+							{fplTeamId !== null ? (
+								<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
+									<legend className="sr-only">Imported Team Filter</legend>
+									{(
+										[
+											["all", "All"] as const,
+											["owned", `Owned (${ownedCount})`] as const,
+											["not-owned", "Not Owned"] as const,
+										] satisfies Array<readonly [OwnershipFilter, string]>
+									).map(([value, label]) => (
+										<button
+											key={value}
+											type="button"
+											aria-pressed={ownershipFilter === value}
+											disabled={!hasImportedTeam && value !== "all"}
+											className={`rounded px-3 py-1.5 font-medium text-sm ${
+												ownershipFilter === value
+													? "bg-zinc-900 text-white"
+													: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+											}`}
+											onClick={() => setOwnershipFilter(value)}
+										>
+											{label}
+										</button>
+									))}
+								</fieldset>
+							) : null}
 							<button
 								type="button"
 								className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
@@ -2950,8 +3166,8 @@ export default function App() {
 							data={visibleFormRows}
 							columns={formColumns}
 							onRowClick={(row) => openPlayerDetail(row.element)}
-							rowClassName={shortlistRowClassName}
-							rowStickyClassName={shortlistStickyClassName}
+							rowClassName={playerRowClassName}
+							rowStickyClassName={playerStickyClassName}
 							renderRowActions={renderShortlistAction}
 							rowActionsHeader={"\u2605"}
 							rowActionsHeaderLabel="Shortlist"
@@ -2967,8 +3183,8 @@ export default function App() {
 						data={visibleDefconRows}
 						columns={defconColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={shortlistRowClassName}
-						rowStickyClassName={shortlistStickyClassName}
+						rowClassName={playerRowClassName}
+						rowStickyClassName={playerStickyClassName}
 						renderRowActions={renderShortlistAction}
 						rowActionsHeader={"\u2605"}
 						rowActionsHeaderLabel="Shortlist"
@@ -2983,8 +3199,8 @@ export default function App() {
 						data={visibleDefconProbRows}
 						columns={defconProbColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={shortlistRowClassName}
-						rowStickyClassName={shortlistStickyClassName}
+						rowClassName={playerRowClassName}
+						rowStickyClassName={playerStickyClassName}
 						renderRowActions={renderShortlistAction}
 						rowActionsHeader={"\u2605"}
 						rowActionsHeaderLabel="Shortlist"

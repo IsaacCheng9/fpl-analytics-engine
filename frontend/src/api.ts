@@ -182,6 +182,25 @@ export interface PlayerDetail {
 	seasons: PlayerSeasonSummary[];
 }
 
+export interface FplTeamPick {
+	element: number;
+	web_name: string | null;
+	position: string | null;
+	team_name: string | null;
+	squad_position: number;
+	multiplier: number;
+	is_captain: boolean;
+	is_vice_captain: boolean;
+	is_starting: boolean;
+}
+
+export interface FplTeam {
+	entry_id: number;
+	as_of_gw: number;
+	owned_elements: number[];
+	picks: FplTeamPick[];
+}
+
 interface BaseParams {
 	window: number;
 	position: Position | "";
@@ -326,4 +345,16 @@ export function fetchPlayerDetail(
 		params.set("season", season);
 	}
 	return getJson<PlayerDetail>(`/players/${element}?${params}`);
+}
+
+export function fetchFplTeam(
+	entryId: number,
+	event: number | null,
+): Promise<FplTeam> {
+	const params = new URLSearchParams();
+	if (event !== null) {
+		params.set("event", String(event));
+	}
+	const query = params.toString();
+	return getJson<FplTeam>(`/fpl-team/${entryId}${query ? `?${query}` : ""}`);
 }

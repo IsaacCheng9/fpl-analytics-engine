@@ -342,6 +342,35 @@ const clubValidationRows = [
 		rmse_improvement_pct: 0.004,
 	},
 ];
+const importedTeam = {
+	entry_id: 123,
+	as_of_gw: 38,
+	owned_elements: [1, 2],
+	picks: [
+		{
+			element: 1,
+			web_name: "Mbeumo",
+			position: "MID",
+			team_name: "Man Utd",
+			squad_position: 1,
+			multiplier: 1,
+			is_captain: false,
+			is_vice_captain: true,
+			is_starting: true,
+		},
+		{
+			element: 2,
+			web_name: "Saka",
+			position: "MID",
+			team_name: "Arsenal",
+			squad_position: 2,
+			multiplier: 2,
+			is_captain: true,
+			is_vice_captain: false,
+			is_starting: true,
+		},
+	],
+};
 
 const playerDetail = {
 	element: 1,
@@ -552,6 +581,8 @@ beforeEach(() => {
 			if (input.includes("/players/form")) {
 				const params = new URL(input, "http://test").searchParams;
 				body = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+			} else if (input.includes("/fpl-team/")) {
+				body = importedTeam;
 			} else if (input.includes("/clubs/form-validation")) {
 				body = clubValidationRows;
 			} else if (input.includes("/clubs/form")) {
@@ -867,6 +898,61 @@ test("shortlists players and filters the interactive table", async () => {
 	expect(params.get("shortlist_only")).toBeNull();
 });
 
+test("imports an FPL team and filters owned players", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "123" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+
+	await waitFor(() => {
+		expect(screen.getByText("Owned As Of GW 38 (2)")).toBeInTheDocument();
+	});
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("fpl_team")).toBe("123");
+	});
+	const mbeumoRow = screen.getByText("Mbeumo").closest("tr");
+	expect(mbeumoRow).not.toBeNull();
+	const mbeumoElement = mbeumoRow as HTMLElement;
+	expect(mbeumoElement).toHaveClass("bg-sky-50/50");
+	const mbeumoCells = within(mbeumoElement).getAllByRole("cell");
+	for (const cell of mbeumoCells.slice(0, 5)) {
+		expect(cell).toHaveClass("bg-sky-50");
+	}
+	expect(mbeumoCells[5]).not.toHaveClass("bg-sky-50");
+
+	fireEvent.click(screen.getByRole("button", { name: "Owned (2)" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("fpl_team")).toBe("123");
+		expect(params.get("squad")).toBe("owned");
+	});
+	expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	expect(screen.getByText("Saka")).toBeInTheDocument();
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+
+	fireEvent.click(screen.getByRole("button", { name: "Not Owned" }));
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("squad")).toBe(
+			"not-owned",
+		);
+	});
+	expect(screen.getByText("Haaland")).toBeInTheDocument();
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+
+	fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("fpl_team")).toBeNull();
+		expect(params.get("squad")).toBeNull();
+	});
+});
+
 test("opens the compare panel without arbitrary default players", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
@@ -883,6 +969,33 @@ test("opens the compare panel without arbitrary default players", async () => {
 	expect(
 		within(dialog).getByText("Select two players to compare."),
 	).toBeInTheDocument();
+});
+
+test("defaults player comparison to imported owned players", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "123" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+	await waitFor(() => {
+		expect(screen.getByText("Owned As Of GW 38 (2)")).toBeInTheDocument();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Compare Players" }));
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(
+			within(dialog).getByDisplayValue("Mbeumo - Man Utd - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(dialog).getByDisplayValue("Saka - Arsenal - MID"),
+		).toBeInTheDocument();
+	});
 });
 
 test("compares two shortlisted players in a side-by-side panel", async () => {
