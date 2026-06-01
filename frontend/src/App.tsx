@@ -6,6 +6,7 @@ import {
 	type DefconPlayer,
 	type DefconProbabilityPlayer,
 	type FormPlayer,
+	type FplTeamPick,
 	fetchClubForm,
 	fetchClubFormValidation,
 	fetchDefcon,
@@ -22,6 +23,7 @@ import { InfoTooltip } from "./components/InfoTooltip";
 import { ModelEvidence } from "./components/ModelEvidence";
 import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
+import { SquadInspection } from "./components/SquadInspection";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 
 type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
@@ -92,6 +94,7 @@ const DEFAULT_PLAYER_WINDOW = 5;
 const DEFAULT_PLAYER_SEASON: string | null = null;
 const DEFAULT_FPL_TEAM_ID: number | null = null;
 const DEFAULT_OWNERSHIP_FILTER: OwnershipFilter = "all";
+const DEFAULT_SHOW_SQUAD_VIEW = false;
 const DEFAULT_COMPARE_OPEN = false;
 const DEFAULT_COMPARE_ELEMENT: number | null = null;
 const DEFAULT_COMPARE_WINDOW = DEFAULT_WINDOW_SIZE;
@@ -252,6 +255,7 @@ type UrlState = {
 	playerSeason: string | null;
 	fplTeamId: number | null;
 	ownershipFilter: OwnershipFilter;
+	showSquadView: boolean;
 	compareOpen: boolean;
 	compareLeftElement: number | null;
 	compareRightElement: number | null;
@@ -280,6 +284,7 @@ const DEFAULT_URL_STATE: UrlState = {
 	playerSeason: DEFAULT_PLAYER_SEASON,
 	fplTeamId: DEFAULT_FPL_TEAM_ID,
 	ownershipFilter: DEFAULT_OWNERSHIP_FILTER,
+	showSquadView: DEFAULT_SHOW_SQUAD_VIEW,
 	compareOpen: DEFAULT_COMPARE_OPEN,
 	compareLeftElement: DEFAULT_COMPARE_ELEMENT,
 	compareRightElement: DEFAULT_COMPARE_ELEMENT,
@@ -421,6 +426,7 @@ function readUrlState(): UrlState {
 	}
 	const params = new URLSearchParams(window.location.search);
 	const shortlist = parseShortlist(params.get("shortlist"));
+	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), { min: 1 });
 	return {
 		tab: parseTab(params.get("tab")),
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
@@ -441,8 +447,12 @@ function readUrlState(): UrlState {
 		}),
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
-		fplTeamId: parseOptionalNumber(params.get("fpl_team"), { min: 1 }),
+		fplTeamId,
 		ownershipFilter: parseOwnershipFilter(params.get("squad")),
+		showSquadView:
+			fplTeamId !== null &&
+			isPlayerTab(parseTab(params.get("tab"))) &&
+			params.get("squad_view") === "1",
 		compareOpen:
 			params.get("compare") === "1" ||
 			params.has("compare_a") ||
@@ -659,6 +669,9 @@ function writeUrlState(state: UrlState) {
 		params.set("fpl_team", String(state.fplTeamId));
 		if (isPlayerTab(state.tab) && state.ownershipFilter !== "all") {
 			params.set("squad", state.ownershipFilter);
+		}
+		if (isPlayerTab(state.tab) && state.showSquadView) {
+			params.set("squad_view", "1");
 		}
 	}
 	if (state.compareOpen) {
@@ -1588,6 +1601,9 @@ export default function App() {
 	const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>(
 		initialUrlState.ownershipFilter,
 	);
+	const [showSquadView, setShowSquadView] = useState(
+		initialUrlState.showSquadView,
+	);
 	const [compareOpen, setCompareOpen] = useState(initialUrlState.compareOpen);
 	const [compareLeftElement, setCompareLeftElement] = useState<number | null>(
 		initialUrlState.compareLeftElement,
@@ -1635,6 +1651,7 @@ export default function App() {
 			setFplTeamId(next.fplTeamId);
 			setFplTeamInput(next.fplTeamId?.toString() ?? "");
 			setOwnershipFilter(next.ownershipFilter);
+			setShowSquadView(next.showSquadView);
 			setCompareOpen(next.compareOpen);
 			setCompareLeftElement(next.compareLeftElement);
 			setCompareRightElement(next.compareRightElement);
@@ -1668,6 +1685,7 @@ export default function App() {
 			playerSeason,
 			fplTeamId,
 			ownershipFilter,
+			showSquadView,
 			compareOpen,
 			compareLeftElement,
 			compareRightElement,
@@ -1695,6 +1713,7 @@ export default function App() {
 		playerSeason,
 		fplTeamId,
 		ownershipFilter,
+		showSquadView,
 		compareOpen,
 		compareLeftElement,
 		compareRightElement,
@@ -1718,7 +1737,10 @@ export default function App() {
 		if (fplTeamId === null && ownershipFilter !== "all") {
 			setOwnershipFilter("all");
 		}
-	}, [fplTeamId, ownershipFilter]);
+		if (fplTeamId === null && showSquadView) {
+			setShowSquadView(false);
+		}
+	}, [fplTeamId, ownershipFilter, showSquadView]);
 
 	function updateTransferFilter(
 		filter: keyof TransferFilters,
@@ -1761,6 +1783,7 @@ export default function App() {
 		setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS });
 		setTransferFilters(defaultTransferFilters());
 		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
+		setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
 		setShowShortlistedOnly(false);
 	}
 
@@ -1776,6 +1799,7 @@ export default function App() {
 		setFplTeamId(DEFAULT_FPL_TEAM_ID);
 		setFplTeamInput("");
 		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
+		setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
 	}
 
 	function applyFilterPreset(preset: FilterPreset) {
@@ -1887,9 +1911,11 @@ export default function App() {
 	const hasPlayerSearch = playerSearch.trim() !== "";
 	const windowFillPct =
 		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
+	const isSquadViewActive =
+		isPlayerTab(tab) && showSquadView && fplTeamId !== null;
 	const fplTeamQuery = useQuery({
-		queryKey: ["fplTeam", fplTeamId, asOfGw],
-		queryFn: () => fetchFplTeam(fplTeamId as number, asOfGw),
+		queryKey: ["fplTeam", fplTeamId],
+		queryFn: () => fetchFplTeam(fplTeamId as number, null),
 		enabled: fplTeamId !== null,
 		placeholderData: keepPreviousData,
 	});
@@ -1910,8 +1936,15 @@ export default function App() {
 	const ownedCount =
 		fplTeamId === null ? 0 : (fplTeamQuery.data?.owned_elements.length ?? 0);
 	const hasImportedTeam = fplTeamId !== null && fplTeamQuery.data !== undefined;
+	const squadPicks: FplTeamPick[] = fplTeamQuery.data?.picks ?? [];
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
+	const squadBase = {
+		window: windowSize,
+		position: "" as const,
+		minMinutes: 0,
+		asOfGw,
+	};
 	const formQuery = useQuery({
 		queryKey: ["form", windowSize, position, minMinutes, asOfGw],
 		queryFn: () =>
@@ -1964,6 +1997,38 @@ export default function App() {
 		queryKey: ["clubValidation"],
 		queryFn: () => fetchClubFormValidation(),
 		enabled: tab === "evidence",
+		placeholderData: keepPreviousData,
+	});
+	const squadFormQuery = useQuery({
+		queryKey: ["squadForm", windowSize, asOfGw],
+		queryFn: () =>
+			fetchForm({
+				...squadBase,
+				minDelta: FORM_MIN_DELTA_FLOOR,
+			}),
+		enabled: isSquadViewActive,
+		placeholderData: keepPreviousData,
+	});
+	const squadCurrentFormQuery = useQuery({
+		queryKey: ["squadCurrentForm", windowSize],
+		queryFn: () =>
+			fetchForm({
+				...squadBase,
+				asOfGw: null,
+				minDelta: FORM_MIN_DELTA_FLOOR,
+			}),
+		enabled: isSquadViewActive,
+		placeholderData: keepPreviousData,
+	});
+	const squadDefconProbabilityQuery = useQuery({
+		queryKey: ["squadDefconProbability", asOfGw],
+		queryFn: () =>
+			fetchDefconProbability({
+				position: "",
+				minGames: 0,
+				asOfGw,
+			}),
+		enabled: isSquadViewActive,
 		placeholderData: keepPreviousData,
 	});
 
@@ -2234,7 +2299,12 @@ export default function App() {
 		Object.values(attackingMetrics).filter(Boolean).length;
 	const showTransferFilters = isPlayerTab(tab);
 	const isShortlistViewActive =
-		isPlayerTab(tab) && showShortlistedOnly && shortlist.length > 0;
+		isPlayerTab(tab) &&
+		!isSquadViewActive &&
+		showShortlistedOnly &&
+		shortlist.length > 0;
+	const isAllPlayersViewActive =
+		isPlayerTab(tab) && !isSquadViewActive && !isShortlistViewActive;
 	const hasActiveTransferFilters =
 		isPlayerTab(tab) &&
 		(minMinutes !== DEFAULT_MIN_MINUTES ||
@@ -2463,6 +2533,13 @@ export default function App() {
 			id: "shortlisted-only",
 			label: "Shortlisted Only",
 			onClear: () => setShowShortlistedOnly(false),
+		});
+	}
+	if (isSquadViewActive) {
+		activeFilterChips.push({
+			id: "squad-view",
+			label: "Squad View",
+			onClear: () => setShowSquadView(false),
 		});
 	}
 	if (isPlayerTab(tab) && ownershipFilter !== "all") {
@@ -3085,15 +3162,35 @@ export default function App() {
 								<legend className="sr-only">Player View</legend>
 								<button
 									type="button"
-									aria-pressed={!isShortlistViewActive}
+									aria-pressed={isAllPlayersViewActive}
 									className={`rounded px-3 py-1.5 font-medium text-sm ${
-										isShortlistViewActive
-											? "text-zinc-600 hover:bg-zinc-50"
-											: "bg-zinc-900 text-white"
+										isAllPlayersViewActive
+											? "bg-zinc-900 text-white"
+											: "text-zinc-600 hover:bg-zinc-50"
 									}`}
-									onClick={() => setShowShortlistedOnly(false)}
+									onClick={() => {
+										setShowSquadView(false);
+										setShowShortlistedOnly(false);
+									}}
 								>
 									All Players
+								</button>
+								<button
+									type="button"
+									aria-pressed={isSquadViewActive}
+									disabled={!hasImportedTeam}
+									className={`rounded px-3 py-1.5 font-medium text-sm ${
+										isSquadViewActive
+											? "bg-zinc-900 text-white"
+											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+									}`}
+									onClick={() => {
+										setShowSquadView(true);
+										setShowShortlistedOnly(false);
+										setOwnershipFilter("all");
+									}}
+								>
+									Squad View ({ownedCount})
 								</button>
 								<button
 									type="button"
@@ -3104,7 +3201,10 @@ export default function App() {
 											? "bg-zinc-900 text-white"
 											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
 									}`}
-									onClick={() => setShowShortlistedOnly(true)}
+									onClick={() => {
+										setShowSquadView(false);
+										setShowShortlistedOnly(true);
+									}}
 								>
 									Shortlisted ({shortlist.length})
 								</button>
@@ -3153,6 +3253,29 @@ export default function App() {
 							clubValidation={clubValidationQuery.data ?? []}
 						/>
 					)
+				) : isSquadViewActive ? (
+					<SquadInspection
+						picks={squadPicks}
+						formPlayers={squadFormQuery.data ?? []}
+						currentFormPlayers={squadCurrentFormQuery.data ?? []}
+						defconPlayers={squadDefconProbabilityQuery.data ?? []}
+						window={windowSize}
+						asOfGw={asOfGw}
+						latestGw={latestGw}
+						loading={
+							fplTeamQuery.isPending ||
+							squadFormQuery.isPending ||
+							squadCurrentFormQuery.isPending ||
+							squadDefconProbabilityQuery.isPending
+						}
+						error={
+							fplTeamQuery.isError ||
+							squadFormQuery.isError ||
+							squadCurrentFormQuery.isError ||
+							squadDefconProbabilityQuery.isError
+						}
+						onPlayerClick={openPlayerDetail}
+					/>
 				) : active?.isPending ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
 				) : active?.isError ? (

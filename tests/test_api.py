@@ -181,7 +181,7 @@ def test_form_includes_point_in_time_value_efficiency(client: TestClient) -> Non
 def test_form_attaches_upcoming_fixture_difficulty(client: TestClient) -> None:
     # Team 1 maps to the players' team name "T"; two upcoming fixtures past GW4.
     api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
-        {"id": [1], "name": ["T"]}
+        {"id": [1, 9], "name": ["T", "Opp"]}
     )
     api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
         {
@@ -198,6 +198,10 @@ def test_form_attaches_upcoming_fixture_difficulty(client: TestClient) -> None:
     # Home difficulty 2 (GW5) and away difficulty 3 (GW6) average to 2.5.
     assert p1["upcoming_fixtures"] == 2
     assert p1["avg_fdr"] == pytest.approx(2.5)
+    assert p1["next_fixture_gw"] == 5
+    assert p1["next_opponent_name"] == "Opp"
+    assert p1["next_was_home"] is True
+    assert p1["next_fdr"] == 2
 
 
 def test_ownership_is_always_current_regardless_of_gameweek(
@@ -251,7 +255,7 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     client: TestClient,
 ) -> None:
     api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
-        {"id": [1], "name": ["T"]}
+        {"id": [1, 9], "name": ["T", "Opp"]}
     )
     api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
         {
@@ -271,6 +275,10 @@ def test_defcon_probability_carries_fixture_and_overlay_context(
     # Team T plays GW5 (home, 2) and GW6 (away, 3) -> two fixtures averaging 2.5.
     assert p3["upcoming_fixtures"] == 2
     assert p3["avg_fdr"] == pytest.approx(2.5)
+    assert p3["next_fixture_gw"] == 5
+    assert p3["next_opponent_name"] == "Opp"
+    assert p3["next_was_home"] is True
+    assert p3["next_fdr"] == 2
     assert p3["current_ownership"] == pytest.approx(12.0)
 
 

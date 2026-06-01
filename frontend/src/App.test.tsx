@@ -37,6 +37,10 @@ const formRows = [
 		window_mins_per_appearance: 88,
 		upcoming_fixtures: 5,
 		avg_fdr: 2.6,
+		next_fixture_gw: 39,
+		next_opponent_name: "Everton",
+		next_was_home: true,
+		next_fdr: 2,
 		current_ownership: 25.5,
 		as_of_gw: 38,
 	},
@@ -65,6 +69,10 @@ const formRows = [
 		window_mins_per_appearance: 79,
 		upcoming_fixtures: 5,
 		avg_fdr: 3.4,
+		next_fixture_gw: 39,
+		next_opponent_name: "Chelsea",
+		next_was_home: false,
+		next_fdr: 4,
 		current_ownership: 40.1,
 		as_of_gw: 38,
 	},
@@ -96,10 +104,24 @@ const broadFormRows = [
 		window_mins_per_appearance: 90,
 		upcoming_fixtures: 5,
 		avg_fdr: 2.8,
+		next_fixture_gw: 39,
+		next_opponent_name: "Brighton",
+		next_was_home: true,
+		next_fdr: 3,
 		current_ownership: 55.2,
 		as_of_gw: 38,
 	},
 ];
+const withHistoricalFixtureContext = <T extends typeof broadFormRows>(
+	rows: T,
+): T =>
+	rows.map((row) => ({
+		...row,
+		next_fixture_gw: 31,
+		next_opponent_name: "Historical",
+		next_was_home: true,
+		next_fdr: 5,
+	})) as T;
 const clubRows = [
 	{
 		team: 1,
@@ -580,7 +602,12 @@ beforeEach(() => {
 			let body: unknown = meta;
 			if (input.includes("/players/form")) {
 				const params = new URL(input, "http://test").searchParams;
-				body = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+				const rows =
+					params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+				body =
+					params.get("as_of_gw") === "30"
+						? withHistoricalFixtureContext(rows)
+						: rows;
 			} else if (input.includes("/fpl-team/")) {
 				body = importedTeam;
 			} else if (input.includes("/clubs/form-validation")) {
@@ -949,6 +976,46 @@ test("imports an FPL team and filters owned players", async () => {
 	await waitFor(() => {
 		const params = new URLSearchParams(window.location.search);
 		expect(params.get("fpl_team")).toBeNull();
+		expect(params.get("squad")).toBeNull();
+	});
+});
+
+test("opens a current squad inspection view from an imported FPL team", async () => {
+	window.history.replaceState(null, "", "/?as_of_gw=30");
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "123" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+	await waitFor(() => {
+		expect(screen.getByText("Currently Owned (2)")).toBeInTheDocument();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Squad View (2)" }));
+
+	await waitFor(() => {
+		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
+	});
+	await waitFor(() => {
+		expect(screen.getByText("GW39 H Everton")).toBeInTheDocument();
+	});
+	expect(screen.getByText("GW39 A Chelsea")).toBeInTheDocument();
+	expect(screen.queryByText("GW31 H Historical")).not.toBeInTheDocument();
+	expect(screen.queryByText("Starting XI")).not.toBeInTheDocument();
+	expect(screen.queryByText("Bench")).not.toBeInTheDocument();
+	expect(screen.queryByText("Slot")).not.toBeInTheDocument();
+	expect(screen.getByText("Fixture Risk")).toBeInTheDocument();
+	expect(screen.getAllByText("DefCon Upside").length).toBeGreaterThan(0);
+	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("as_of_gw")).toBe("30");
+		expect(params.get("fpl_team")).toBe("123");
+		expect(params.get("squad_view")).toBe("1");
 		expect(params.get("squad")).toBeNull();
 	});
 });

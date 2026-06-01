@@ -13,7 +13,10 @@ earlier is used – so the engine is fully back-testable with no look-ahead.
 The differentiator over public form tables is the combination of a configurable
 recent-form window, expected-stats (xG/xA/xGI) rather than raw points, transfer
 candidate context, and a point-in-time design that lets every recommendation be
-replayed and scored against what actually happened next.
+replayed and scored against what actually happened next. The dashboard can also
+import a public FPL squad, so the same evidence can be read through a transfer
+planning lens: which players you own, which candidates are shortlisted, and
+where the current squad looks weak for the next gameweek.
 
 ## Key Features
 
@@ -38,9 +41,9 @@ replayed and scored against what actually happened next.
 - **One-command data refresh** – archives the latest live season, refreshes the
   cross-season enriched snapshots, validates the Parquet data, and runs the
   real-data smoke check before refreshed snapshots are pushed
-- **REST API** – a FastAPI gateway exposing the form, DefCon, and
-  DefCon-probability views, plus a player-detail endpoint for selected-season
-  gameweek detail and cross-season summaries
+- **REST API** – a FastAPI gateway exposing the form, DefCon,
+  DefCon-probability, FPL team import, model-evidence, club-form, and
+  player-detail views
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
   Form, and Model Evidence views, URL-backed controls, active filter chips,
@@ -50,6 +53,10 @@ replayed and scored against what actually happened next.
   FDR, minutes, starts, ownership, shortlist filtering, and side-by-side player
   comparison so transfer candidates can be narrowed and inspected without
   leaving the table context
+- **Team-aware squad inspection** – imports a public FPL team ID, highlights
+  currently owned players, filters owned/not-owned players, and shows a
+  next-gameweek squad inspection view with next fixture, FDR, minutes, threat,
+  DefCon probability, ownership, and transparent risk/hold flags
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
@@ -96,9 +103,22 @@ ceiling, FDR ceiling, minutes floor, minutes per appearance, start percentage,
 ownership range, and minimum attacking-threat thresholds for the enabled
 expected-stat metrics. Presets provide quick starting points for common
 candidate types, while active filter chips make the current constraints visible
-and removable. Shortlisting is URL-backed, so a focused candidate list can be
-shared or reopened, and the compare panel shows two selected players side by
-side using the same point-in-time window and as-of gameweek assumptions.
+and removable.
+
+Shortlisting is URL-backed, so a focused candidate list can be shared or
+reopened, and the compare panel shows two selected players side by side using
+the same point-in-time window and as-of gameweek assumptions. A public FPL team
+ID can also be imported from the official entry-picks endpoint. Imported
+ownership is labelled as `Currently Owned` because the app does not have
+historical squad state; the analytics around those players still use the chosen
+point-in-time `as_of_gw`.
+
+The player table can switch between all players, the imported squad inspection,
+and shortlisted players. The squad inspection view is diagnostic rather than a
+solver: it shows the current squad as one list, with the current next fixture
+and FDR, recent and season threat, minutes, start rate, DefCon probability,
+ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
+`Low Threat`, `Rising Threat`, `DefCon Upside`, and `Good Hold`.
 
 ### Defensive Contribution (DefCon)
 
@@ -142,9 +162,10 @@ defensive form. Team xG is summed from player xG, while team xGC uses the
 fixture-level concession context carried by players rather than summing every
 player's xGC and multiplying the same chance-concession signal across the XI.
 The view compares recent per-match xG and xGC against each club's season-to-date
-baseline, then joins the next-five-gameweek FDR. Actual goals and goals conceded
-are available as optional context, but expected data stays the default signal
-because finishing and concession outcomes are noisier.
+baseline, then joins exact next-fixture context and the next-five-gameweek FDR.
+Actual goals and goals conceded are available as optional context, but expected
+data stays the default signal because finishing and concession outcomes are
+noisier.
 
 #### Validation Backtest Results (2025-26 Season)
 
@@ -169,6 +190,9 @@ should be treated as contextual rather than recommendation grade.
   2022-23 form comparisons to GW16 onward
 - Cross-season player matching uses stable FPL `code`; historical `element` ids
   are season-local and are not safe for matching the same player across seasons
+- Current ownership and imported squad membership are live/current-state
+  overlays from the official FPL API; they are not point-in-time historical
+  fields and do not change with `as_of_gw`
 - Curated Parquet snapshots under `data/` are committed for reproducible
   deployment and personal/non-commercial use; they are sourced from the public
   FPL API and public community archives
@@ -177,12 +201,13 @@ should be treated as contextual rather than recommendation grade.
 
 ```mermaid
 flowchart TD
-    fpl[FPL API<br/>bootstrap + element-summary] -->|archive.py| snap[data/2025-26<br/>per-GW Parquet]
+    fpl[FPL API<br/>bootstrap + fixtures + element-summary] -->|archive.py| snap[data/2025-26<br/>per-GW Parquet]
+    picks[FPL API<br/>public entry picks] -->|team import| api
     vaastav[vaastav archive<br/>2022-25] -->|backfill.py| hist[data/&lt;season&gt;<br/>enriched.parquet]
     snap -->|data.py enrich| enriched[Enriched per-GW history<br/>xG/xA/xGI + DefCon hit]
     hist --> enriched
     enriched --> formmod[form.py<br/>point-in-time form + backtest]
-    enriched --> defconmod[defcon.py<br/>beta-binomial probability + backtest]
+    enriched --> defconmod[defcon.py<br/>calibrated count probability + backtest]
     enriched --> playermod[player.py<br/>player detail + season history]
     formmod --> api[api.py<br/>FastAPI gateway]
     defconmod --> api
@@ -342,6 +367,7 @@ from one FastAPI deployment.
 | Endpoint | Description | Parameters |
 | --- | --- | --- |
 | `GET /` | Service metadata and the latest gameweek in the data | – |
+| `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by calibrated DefCon hit probability | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
@@ -350,13 +376,14 @@ from one FastAPI deployment.
 | `GET /clubs/form-validation` | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows` |
 | `GET /players/{element}` | Player gameweeks and cross-season season summaries | Path: `element`; query: `window`, `season` |
 
-The four table endpoints accept `as_of_gw` to evaluate the point-in-time view as
-it would have looked after an earlier gameweek; it defaults to the latest
-gameweek in the data. Current ownership is deliberately not point-in-time,
-because the FPL API exposes only the live ownership snapshot. The player-detail
-endpoint is keyed by the current-season `element` id, tracks the player across
-seasons by stable `code`, and uses `season` only to choose which season's
-gameweeks to display.
+The analytical table endpoints accept `as_of_gw` to evaluate the point-in-time
+view as it would have looked after an earlier gameweek; it defaults to the
+latest gameweek in the data. Current ownership and `/fpl-team/{entry_id}` squad
+membership are deliberately not point-in-time, because the FPL API exposes only
+live ownership and visible entry-pick snapshots. The player-detail endpoint is
+keyed by the current-season `element` id, tracks the player across seasons by
+stable `code`, and uses `season` only to choose which season's gameweeks to
+display.
 
 ## Testing
 

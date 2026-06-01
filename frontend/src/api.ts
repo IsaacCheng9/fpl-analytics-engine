@@ -12,6 +12,10 @@ export interface Meta {
 export interface FixtureContext {
 	upcoming_fixtures: number | null;
 	avg_fdr: number | null;
+	next_fixture_gw: number | null;
+	next_opponent_name: string | null;
+	next_was_home: boolean | null;
+	next_fdr: number | null;
 	current_ownership: number | null;
 }
 
@@ -349,7 +353,7 @@ export function fetchPlayerDetail(
 
 export function fetchFplTeam(
 	entryId: number,
-	event: number | null,
+	event: number | null = null,
 ): Promise<FplTeam> {
 	const params = new URLSearchParams();
 	if (event !== null) {

@@ -39,6 +39,10 @@ AS_OF_GW_DESCRIPTION = (
 FIXTURE_CONTEXT_COLUMNS = [
     "upcoming_fixtures",
     "avg_fdr",
+    "next_fixture_gw",
+    "next_opponent_name",
+    "next_was_home",
+    "next_fdr",
     "current_ownership",
 ]
 # Adds point-in-time value efficiency and playing time, for the form-derived

@@ -34,6 +34,10 @@ def test_team_fixture_difficulty_is_forward_looking() -> None:
     assert by_team[10]["n_fixtures"] == 2
     assert by_team[10]["avg_difficulty"] == 3.5
     assert by_team[10]["total_difficulty"] == 7
+    assert by_team[10]["next_fixture_gw"] == 3
+    assert by_team[10]["next_opponent"] == 30
+    assert by_team[10]["next_was_home"] is True
+    assert by_team[10]["next_fdr"] == 3
     # The already-played GW1 fixture does not contribute.
     assert by_team[30]["n_fixtures"] == 1
     assert by_team[30]["avg_difficulty"] == 2.0
@@ -59,9 +63,16 @@ def test_team_fixture_difficulty_handles_empty_feed() -> None:
     table = fixtures.team_fixture_difficulty([], as_of_gw=1, horizon=5)
 
     assert table.height == 0
-    assert {"team", "n_fixtures", "avg_difficulty", "total_difficulty"} <= set(
-        table.columns
-    )
+    assert {
+        "team",
+        "n_fixtures",
+        "avg_difficulty",
+        "total_difficulty",
+        "next_fixture_gw",
+        "next_opponent",
+        "next_was_home",
+        "next_fdr",
+    } <= set(table.columns)
 
 
 def test_team_fixture_difficulty_skips_unscheduled_fixtures() -> None:
@@ -98,8 +109,15 @@ def test_attach_team_fdr_joins_by_team_name() -> None:
     # Arsenal (id 10): home difficulty 2 then away difficulty 3 -> mean 2.5.
     assert by_element[1]["upcoming_fixtures"] == 2
     assert by_element[1]["avg_fdr"] == 2.5
+    assert by_element[1]["next_fixture_gw"] == 2
+    assert by_element[1]["next_opponent_name"] == "Spurs"
+    assert by_element[1]["next_was_home"] is True
+    assert by_element[1]["next_fdr"] == 2
     # Spurs (id 20): away difficulty 5 then home difficulty 4 -> mean 4.5.
     assert by_element[2]["avg_fdr"] == 4.5
+    assert by_element[2]["next_opponent_name"] == "Arsenal"
+    assert by_element[2]["next_was_home"] is False
+    assert by_element[2]["next_fdr"] == 5
 
 
 def test_attach_team_fdr_nulls_when_no_fixtures() -> None:
@@ -119,3 +137,5 @@ def test_attach_team_fdr_nulls_when_no_fixtures() -> None:
 
     assert out["upcoming_fixtures"].to_list() == [None]
     assert out["avg_fdr"].to_list() == [None]
+    assert out["next_opponent_name"].to_list() == [None]
+    assert out["next_fdr"].to_list() == [None]

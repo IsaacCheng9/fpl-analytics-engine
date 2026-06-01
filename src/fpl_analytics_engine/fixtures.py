@@ -20,6 +20,16 @@ _FIXTURE_SCHEMA = {
     "was_home": pl.Boolean,
     "difficulty": pl.Int64,
 }
+_SUMMARY_SCHEMA = {
+    "team": pl.Int64,
+    "n_fixtures": pl.UInt32,
+    "avg_difficulty": pl.Float64,
+    "total_difficulty": pl.Int64,
+    "next_fixture_gw": pl.Int64,
+    "next_opponent": pl.Int64,
+    "next_was_home": pl.Boolean,
+    "next_fdr": pl.Int64,
+}
 
 
 def _explode_to_team_rows(fixtures: pl.DataFrame) -> pl.DataFrame:
@@ -65,32 +75,36 @@ def team_fixture_difficulty(
         horizon: Number of upcoming gameweeks to include.
 
     Returns:
-        One row per team with the count of upcoming fixtures and their mean and
-        total difficulty, sorted easiest run first. Empty when no fixtures fall
-        in the window.
+        One row per team with the count of upcoming fixtures, their mean and
+        total difficulty, and the first upcoming fixture in the window. Empty
+        when no fixtures fall in the window.
     """
     if not fixtures:
-        return pl.DataFrame(schema=_FIXTURE_SCHEMA).select(
-            pl.col("team"),
-            pl.lit(0, dtype=pl.UInt32).alias("n_fixtures"),
-            pl.lit(None, dtype=pl.Float64).alias("avg_difficulty"),
-            pl.lit(None, dtype=pl.Int64).alias("total_difficulty"),
-        )
+        return pl.DataFrame(schema=_SUMMARY_SCHEMA)
 
     scheduled = pl.DataFrame(fixtures).filter(
         pl.col("event").is_not_null(),
         pl.col("event") > as_of_gw,
         pl.col("event") <= as_of_gw + horizon,
     )
-    return (
-        _explode_to_team_rows(scheduled)
-        .group_by("team")
+    upcoming = _explode_to_team_rows(scheduled)
+    summary = upcoming.group_by("team").agg(
+        pl.len().alias("n_fixtures"),
+        pl.col("difficulty").mean().alias("avg_difficulty"),
+        pl.col("difficulty").sum().alias("total_difficulty"),
+    )
+    next_fixture = (
+        upcoming.sort("team", "event", "difficulty", "opponent")
+        .group_by("team", maintain_order=True)
         .agg(
-            pl.len().alias("n_fixtures"),
-            pl.col("difficulty").mean().alias("avg_difficulty"),
-            pl.col("difficulty").sum().alias("total_difficulty"),
+            pl.col("event").first().alias("next_fixture_gw"),
+            pl.col("opponent").first().alias("next_opponent"),
+            pl.col("was_home").first().alias("next_was_home"),
+            pl.col("difficulty").first().alias("next_fdr"),
         )
-        .sort("avg_difficulty", "team")
+    )
+    return summary.join(next_fixture, on="team", how="left").sort(
+        "avg_difficulty", "team"
     )
 
 
@@ -120,13 +134,24 @@ def attach_team_fdr(
         The form table with ``upcoming_fixtures`` and ``avg_fdr`` columns.
     """
     fdr = team_fixture_difficulty(fixtures.to_dicts(), as_of_gw, horizon)
-    named = fdr.join(
-        teams.select(pl.col("id").alias("team"), pl.col("name").alias("team_name")),
-        on="team",
-        how="left",
-    ).select(
-        "team_name",
-        pl.col("n_fixtures").alias("upcoming_fixtures"),
-        pl.col("avg_difficulty").alias("avg_fdr"),
+    team_names = teams.select(
+        pl.col("id").alias("team"), pl.col("name").alias("team_name")
+    )
+    opponent_names = teams.select(
+        pl.col("id").alias("next_opponent"),
+        pl.col("name").alias("next_opponent_name"),
+    )
+    named = (
+        fdr.join(team_names, on="team", how="left")
+        .join(opponent_names, on="next_opponent", how="left")
+        .select(
+            "team_name",
+            pl.col("n_fixtures").alias("upcoming_fixtures"),
+            pl.col("avg_difficulty").alias("avg_fdr"),
+            "next_fixture_gw",
+            "next_opponent_name",
+            "next_was_home",
+            "next_fdr",
+        )
     )
     return form_table.join(named, on="team_name", how="left")
