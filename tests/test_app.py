@@ -70,6 +70,21 @@ def test_get_fixtures_returns_fixture_list(
     assert app.get_fixtures() == payload
 
 
+def test_get_entry_event_picks_returns_public_entry_picks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Return a public entry's picks payload for a gameweek."""
+    payload = {"picks": [{"element": 100, "position": 1}]}
+
+    def fake_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        assert "entry/123/event/4/picks/" in url
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(app.requests, "get", fake_get)
+
+    assert app.get_entry_event_picks(123, 4) == payload
+
+
 def test_get_json_retries_on_transient_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

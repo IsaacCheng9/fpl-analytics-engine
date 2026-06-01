@@ -1,14 +1,17 @@
 """FastAPI gateway exposing point-in-time form and DefCon player views."""
 
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, cast
 
 import polars as pl
+import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
 
+from fpl_analytics_engine import app as fpl_client
 from fpl_analytics_engine import club, data, defcon, fixtures, form, player
-from fpl_analytics_engine.domain import Position
+from fpl_analytics_engine.domain import ELEMENT_TYPE_TO_POSITION, Position
 from fpl_analytics_engine.schemas import (
     ClubForm,
     ClubFormValidation,
@@ -17,6 +20,8 @@ from fpl_analytics_engine.schemas import (
     DefconProbabilityPlayer,
     DefconProbabilityValidation,
     FormPlayer,
+    FplTeam,
+    FplTeamPick,
     PlayerDetail,
     PlayerGameweek,
     PlayerSeasonSummary,
@@ -150,6 +155,7 @@ PROBABILITY_CONTEXT_COLUMNS = [
 ]
 DEFAULT_CALIBRATION_BINS = 10
 DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES = 60
+EntryPicksFetcher = Callable[[int, int], dict]
 
 
 @lru_cache
@@ -216,6 +222,11 @@ def get_players_snapshot() -> pl.DataFrame:
 def get_all_seasons() -> pl.DataFrame:
     """Return the cross-season enriched history (dependency; overridden in tests)."""
     return _load_all_seasons()
+
+
+def get_entry_picks_fetcher() -> EntryPicksFetcher:
+    """Return the FPL entry-picks fetcher (dependency; overridden in tests)."""
+    return fpl_client.get_entry_event_picks
 
 
 def _latest_gw(history: pl.DataFrame) -> int:
@@ -307,6 +318,76 @@ def _calibration_bins(
     return [DefconCalibrationBin(**row) for row in table.to_dicts()], ece
 
 
+def _player_snapshot_metadata(
+    players: pl.DataFrame, teams: pl.DataFrame
+) -> pl.DataFrame:
+    """Return player labels from the current bootstrap snapshot."""
+    schema = {
+        "element": pl.Int64,
+        "web_name": pl.String,
+        "position": pl.String,
+        "team_name": pl.String,
+    }
+    required_player_cols = {"id", "web_name", "element_type", "team"}
+    required_team_cols = {"id", "name"}
+    if (
+        players.is_empty()
+        or not required_player_cols <= set(players.columns)
+        or not required_team_cols <= set(teams.columns)
+    ):
+        return pl.DataFrame(schema=schema)
+
+    team_meta = teams.select(
+        pl.col("id").alias("team"), pl.col("name").alias("team_name")
+    )
+    return (
+        players.select("id", "web_name", "element_type", "team")
+        .rename({"id": "element"})
+        .join(team_meta, on="team", how="left")
+        .with_columns(
+            pl.col("element_type")
+            .replace_strict(ELEMENT_TYPE_TO_POSITION, default=None)
+            .cast(pl.String)
+            .alias("position")
+        )
+        .select("element", "web_name", "position", "team_name")
+    )
+
+
+def _team_pick_frame(payload: dict) -> pl.DataFrame:
+    """Normalise an FPL entry-picks payload into owned player rows."""
+    picks = payload.get("picks")
+    if not isinstance(picks, list):
+        raise HTTPException(status_code=502, detail="FPL picks payload is invalid")
+
+    records = []
+    for pick in picks:
+        if not isinstance(pick, dict) or "element" not in pick:
+            continue
+        squad_position = int(pick.get("position") or 0)
+        records.append(
+            {
+                "element": int(pick["element"]),
+                "squad_position": squad_position,
+                "multiplier": int(pick.get("multiplier") or 0),
+                "is_captain": bool(pick.get("is_captain", False)),
+                "is_vice_captain": bool(pick.get("is_vice_captain", False)),
+                "is_starting": 1 <= squad_position <= 11,
+            }
+        )
+    return pl.DataFrame(
+        records,
+        schema={
+            "element": pl.Int64,
+            "squad_position": pl.Int64,
+            "multiplier": pl.Int64,
+            "is_captain": pl.Boolean,
+            "is_vice_captain": pl.Boolean,
+            "is_starting": pl.Boolean,
+        },
+    )
+
+
 app = FastAPI(title="FPL Analytics Engine")
 
 
@@ -314,6 +395,41 @@ app = FastAPI(title="FPL Analytics Engine")
 def root(history: Annotated[pl.DataFrame, Depends(get_history)]) -> dict:
     """Report basic service metadata."""
     return {"name": "fpl-analytics-engine", "latest_gw": _latest_gw(history)}
+
+
+@app.get("/fpl-team/{entry_id}")
+def fpl_team(
+    entry_id: int,
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    teams: Annotated[pl.DataFrame, Depends(get_teams)],
+    fetch_entry_picks: Annotated[EntryPicksFetcher, Depends(get_entry_picks_fetcher)],
+    event: int | None = Query(None, ge=1),
+) -> FplTeam:
+    """Import the public picks for an FPL entry and visible gameweek."""
+    latest = _latest_gw(history)
+    gw = event if event is not None else latest
+    try:
+        payload = fetch_entry_picks(entry_id, gw)
+    except requests.HTTPError as exc:
+        response = exc.response
+        status_code = response.status_code if response is not None else None
+        if status_code == 404:
+            raise HTTPException(status_code=404, detail="FPL team not found") from exc
+        raise HTTPException(status_code=502, detail="FPL API request failed") from exc
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="FPL API request failed") from exc
+
+    picks = _team_pick_frame(payload)
+    metadata = _player_snapshot_metadata(players, teams)
+    picks = picks.join(metadata, on="element", how="left").sort("squad_position")
+    pick_cols = list(FplTeamPick.model_fields)
+    return FplTeam(
+        entry_id=entry_id,
+        as_of_gw=gw,
+        owned_elements=picks["element"].to_list(),
+        picks=[FplTeamPick(**row) for row in picks.select(pick_cols).to_dicts()],
+    )
 
 
 @app.get("/players/form")
