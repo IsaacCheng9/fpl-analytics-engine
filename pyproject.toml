@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     "fastapi>=0.116.1",
-    "polars>=1.41.0",
+    "polars>=1.43.0",
     "requests>=2.32.4",
     "uvicorn[standard]>=0.48.0",
 ]
@@ -47,8 +47,4 @@ convention = "google"
 "tests/**" = ["D"]
 
 [tool.commitizen]
-version = "0.24.1"
-version_files = [
-    "pyproject.toml:version",
-    "pyproject.toml:tool.commitizen.version",
-]
+version_provider = "uv"
