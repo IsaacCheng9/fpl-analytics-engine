@@ -33,8 +33,8 @@ where the current squad looks weak for the next gameweek.
 - **Model evidence view** – surfaces the DefCon probability backtest and the
   club-form-plus-FDR validation inside the dashboard, so the app shows where its
   signals have actually beaten simpler baselines
-- **Season archival** – snapshots the current season's per-gameweek detail to
-  local Parquet before the mid-July API rollover wipes it
+- **Season archival** – snapshots preseason players and fixtures as soon as the
+  FPL game rolls over, then adds current-season per-gameweek detail after GW1
 - **Historical backfill** – adapts the vaastav community archive (2022-23
   onward) into the same enriched schema, so the form engine runs across seasons
   for cross-season comparison
@@ -201,7 +201,7 @@ should be treated as contextual rather than recommendation grade.
 
 ```mermaid
 flowchart TD
-    fpl[FPL API<br/>bootstrap + fixtures + element-summary] -->|archive.py| snap[data/2025-26<br/>per-GW Parquet]
+    fpl[FPL API<br/>bootstrap + fixtures + element-summary] -->|archive.py| snap[data/&lt;live season&gt;<br/>Parquet snapshots]
     picks[FPL API<br/>public entry picks] -->|team import| api
     vaastav[vaastav archive<br/>2022-25] -->|backfill.py| hist[data/&lt;season&gt;<br/>enriched.parquet]
     snap -->|data.py enrich| enriched[Enriched per-GW history<br/>xG/xA/xGI + DefCon hit]
@@ -241,7 +241,9 @@ The engine reads from committed Parquet snapshots under `data/`:
 
 - **Live archive** – `archive.py` snapshots the current season from the FPL API
   (`bootstrap-static` and per-player `element-summary`) before the API rolls
-  over each July and the per-gameweek history is wiped
+  over each July and the per-gameweek history is wiped. Before GW1, it archives
+  players, teams, events and fixtures without making hundreds of empty
+  `element-summary` requests
 - **Historical backfill** – `backfill.py` pulls the
   [vaastav archive](https://github.com/vaastav/Fantasy-Premier-League) for
   2022-23 to 2024-25 and maps it into the same enriched schema, so the same form
@@ -272,6 +274,12 @@ The refresh command archives the current live FPL season into the detected
 canonicalises the current season's `enriched.parquet`, runs data-health
 validation, and finishes with the real-data smoke check. Use it before pushing
 updated `data/` snapshots during the season.
+
+During preseason, the refresh deliberately writes no `enriched.parquet` because
+there are no current-season performances to analyse. The API reports
+`data_status: "preseason"` and the dashboard shows the next deadline instead of
+serving the previous season as current data. Run the command again after GW1 is
+complete to enable the current-season analytical views.
 
 For a validation-only check of existing local snapshots:
 
@@ -366,7 +374,7 @@ from one FastAPI deployment.
 
 | Endpoint | Description | Parameters |
 | --- | --- | --- |
-| `GET /` | Service metadata and the latest gameweek in the data | – |
+| `GET /` | Live season, analytical readiness, next deadline, and latest completed gameweek | – |
 | `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
@@ -384,6 +392,10 @@ live ownership and visible entry-pick snapshots. The player-detail endpoint is
 keyed by the current-season `element` id, tracks the player across seasons by
 stable `code`, and uses `season` only to choose which season's gameweeks to
 display.
+
+Before GW1, analytical and team-import endpoints return HTTP 409 rather than
+silently serving the previous season. In the deployed app, prefix these routes
+with `/api` (for example, `/api/players/form`).
 
 ## Testing
 

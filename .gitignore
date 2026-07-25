@@ -210,11 +210,5 @@ __marimo__/
 # deployment; keep raw/source dumps and local experiments ignored.
 data/**
 !data/
-!data/2022-23/
-!data/2022-23/enriched.parquet
-!data/2023-24/
-!data/2023-24/enriched.parquet
-!data/2024-25/
-!data/2024-25/enriched.parquet
-!data/2025-26/
-!data/2025-26/*.parquet
+!data/[0-9][0-9][0-9][0-9]-[0-9][0-9]/
+!data/[0-9][0-9][0-9][0-9]-[0-9][0-9]/*.parquet

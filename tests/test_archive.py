@@ -94,7 +94,7 @@ def test_archive_season_respects_limit(
     bootstrap = {
         "elements": [{"id": 1}, {"id": 2}, {"id": 3}],
         "teams": [{"id": 10}],
-        "events": [{"id": 1}],
+        "events": [{"id": 1, "finished": True}],
     }
     fetched: list[int] = []
 
@@ -142,10 +142,19 @@ def test_archive_season_skips_enriched_on_early_season_cold_start(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     bootstrap = _enrichable_bootstrap()
+    bootstrap["events"] = [
+        {**event, "finished": False} for event in bootstrap["events"]
+    ]
+    fetched: list[int] = []
+
+    def fake_history(element_id: int) -> list[dict]:
+        fetched.append(element_id)
+        return []
+
     # Preseason: bootstrap exists but no gameweeks have been played yet.
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
     monkeypatch.setattr(app, "get_fixtures", lambda: [])
-    monkeypatch.setattr(app, "get_player_history", lambda _element_id: [])
+    monkeypatch.setattr(app, "get_player_history", fake_history)
     monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
 
     paths = archive.archive_season(tmp_path)
@@ -154,6 +163,8 @@ def test_archive_season_skips_enriched_on_early_season_cold_start(
     assert paths["players"].exists()
     assert "enriched" not in paths
     assert not (tmp_path / "enriched.parquet").exists()
+    assert fetched == []
+    assert pl.read_parquet(paths["player_gw_history"]).is_empty()
 
 
 def test_ingest_current_season_targets_detected_season_dir(

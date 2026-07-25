@@ -114,7 +114,7 @@ def test_latest_archived_season_uses_raw_live_archive(tmp_path: Path) -> None:
     assert data.latest_archived_season(tmp_path) == "2026-27"
 
 
-def test_latest_archived_season_ignores_empty_preseason_archive(
+def test_latest_archived_season_uses_empty_preseason_archive(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "2025-26").mkdir()
@@ -126,7 +126,7 @@ def test_latest_archived_season_ignores_empty_preseason_archive(
         tmp_path / "2026-27" / "player_gw_history.parquet"
     )
 
-    assert data.latest_archived_season(tmp_path) == "2025-26"
+    assert data.latest_archived_season(tmp_path) == "2026-27"
 
 
 def test_latest_archived_season_falls_back_to_enriched_snapshots(

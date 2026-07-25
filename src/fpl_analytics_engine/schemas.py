@@ -3,6 +3,16 @@
 from pydantic import BaseModel, Field
 
 
+class ApiMeta(BaseModel):
+    """Describe the live season and current analytical readiness."""
+
+    name: str
+    season: str
+    latest_gw: int
+    data_status: str
+    next_deadline: str | None
+
+
 class FixtureContext(BaseModel):
     """Fixture and live-snapshot context shared by every player view."""
 

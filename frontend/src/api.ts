@@ -4,7 +4,10 @@ export type Position = "GK" | "DEF" | "MID" | "FWD" | "MNG";
 
 export interface Meta {
 	name: string;
+	season: string;
 	latest_gw: number;
+	data_status: "preseason" | "ready";
+	next_deadline: string | null;
 }
 
 // Fixture difficulty and the live ownership overlay shared by every player

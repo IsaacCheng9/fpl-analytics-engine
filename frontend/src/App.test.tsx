@@ -10,7 +10,13 @@ import type { ReactNode } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 
-const meta = { name: "fpl-analytics-engine", latest_gw: 38 };
+const meta = {
+	name: "fpl-analytics-engine",
+	season: "2025-26",
+	latest_gw: 38,
+	data_status: "ready",
+	next_deadline: null,
+};
 const formRows = [
 	{
 		element: 1,
@@ -652,6 +658,34 @@ test("renders the attacking form table with flagged players", async () => {
 	});
 });
 
+test("shows the live preseason status without requesting analytics", async () => {
+	const preseason = {
+		name: "fpl-analytics-engine",
+		season: "2026-27",
+		latest_gw: 0,
+		data_status: "preseason",
+		next_deadline: "2026-08-21T17:30:00Z",
+	};
+	const fetchMock = vi.mocked(fetch);
+	fetchMock.mockResolvedValue(
+		new Response(JSON.stringify(preseason), {
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+		}),
+	);
+
+	render(withProviders(<App />));
+
+	expect(
+		await screen.findByRole("heading", { name: "Waiting For GW1 Data" }),
+	).toBeInTheDocument();
+	expect(screen.getByText("2026-27")).toBeInTheDocument();
+	expect(screen.getByText(/Friday 21 August/)).toBeInTheDocument();
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+	expect(fetchMock).toHaveBeenCalledTimes(1);
+	expect(fetchMock).toHaveBeenCalledWith("/api/");
+});
+
 test("collapses the attacking form chart and remembers the preference", async () => {
 	const firstRender = render(withProviders(<App />));
 	await waitFor(() => {
@@ -1255,7 +1289,7 @@ test("toggles attacking form metric columns", async () => {
 
 test("renders the DefCon Probability tab even when context fields are absent", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(screen.getByText("DefCon Probability"));
+	fireEvent.click(await screen.findByText("DefCon Probability"));
 	await waitFor(() => {
 		expect(screen.getByText("Senesi")).toBeInTheDocument();
 	});
@@ -1263,7 +1297,7 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 
 test("renders the model evidence tab with backtest summaries", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(screen.getByText("Model Evidence"));
+	fireEvent.click(await screen.findByText("Model Evidence"));
 
 	await waitFor(() => {
 		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
@@ -1320,7 +1354,7 @@ test("hides point-in-time table filters on the model evidence tab", async () => 
 
 test("renders the Club Form tab with team-level context", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(screen.getByText("Club Form"));
+	fireEvent.click(await screen.findByText("Club Form"));
 
 	await waitFor(() => {
 		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
@@ -1344,7 +1378,7 @@ test("renders the Club Form tab with team-level context", async () => {
 
 test("shows club actual goal columns only when toggled on", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(screen.getByText("Club Form"));
+	fireEvent.click(await screen.findByText("Club Form"));
 
 	await waitFor(() => {
 		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);

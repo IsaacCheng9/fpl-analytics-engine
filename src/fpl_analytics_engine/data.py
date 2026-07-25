@@ -56,23 +56,22 @@ def latest_enriched_season(data_root: Path) -> str:
 
 
 def latest_archived_season(data_root: Path) -> str:
-    """Return the latest season with non-empty raw live-archive snapshots.
+    """Return the latest season with a raw live archive.
 
     Args:
         data_root: Root directory holding per-season folders.
 
     Returns:
-        The latest season label by chronological order. Falls back to the latest
-        enriched snapshot when no playable raw live archive exists.
+        The latest season label by chronological order. Empty preseason history
+        still counts as a live archive because its player, team, event and
+        fixture snapshots define the current season. Falls back to the latest
+        enriched snapshot when no raw live archive exists.
     """
-    paths = sorted(
-        data_root.glob("*/player_gw_history.parquet"),
-        key=lambda path: season_sort_key(path.parent.name),
-        reverse=True,
-    )
-    for path in paths:
-        if pl.read_parquet(path).height:
-            return path.parent.name
+    seasons = [
+        path.parent.name for path in data_root.glob("*/player_gw_history.parquet")
+    ]
+    if seasons:
+        return max(seasons, key=season_sort_key)
     return latest_enriched_season(data_root)
 
 
@@ -110,6 +109,18 @@ def load_teams(data_dir: Path) -> pl.DataFrame:
         The bootstrap team records.
     """
     return pl.read_parquet(data_dir / "teams.parquet")
+
+
+def load_events(data_dir: Path) -> pl.DataFrame:
+    """Read the gameweek metadata snapshot.
+
+    Args:
+        data_dir: Directory holding the archived Parquet files.
+
+    Returns:
+        The bootstrap event records.
+    """
+    return pl.read_parquet(data_dir / "events.parquet")
 
 
 # Minimal fixtures schema, used when no fixtures have been archived yet.
