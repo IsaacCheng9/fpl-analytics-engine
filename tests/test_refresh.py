@@ -24,8 +24,10 @@ def test_run_refresh_executes_steps_in_order(
         calls.append(("backfill", data_root, current_season))
         return {"2026-27": data_root / "2026-27" / "enriched.parquet"}
 
-    def fake_validate(data_root: Path) -> list[data_health.HealthCheck]:
-        calls.append(("validate", data_root))
+    def fake_validate(
+        data_root: Path, current_season: str | None = None
+    ) -> list[data_health.HealthCheck]:
+        calls.append(("validate", data_root, current_season))
         return [data_health.HealthCheck("2026-27/enriched.parquet", True, "ok")]
 
     def fake_smoke(data_root: Path, player_name: str) -> list[str]:
@@ -51,7 +53,7 @@ def test_run_refresh_executes_steps_in_order(
     assert calls == [
         ("archive", tmp_path, 0.25),
         ("backfill", tmp_path, "2026-27"),
-        ("validate", tmp_path),
+        ("validate", tmp_path, "2026-27"),
         ("smoke", tmp_path, "Saka"),
     ]
 
@@ -61,8 +63,11 @@ def test_run_refresh_stops_before_smoke_when_validation_fails(
 ) -> None:
     smoke_called = False
 
-    def fake_validate(data_root: Path) -> list[data_health.HealthCheck]:
+    def fake_validate(
+        data_root: Path, current_season: str | None = None
+    ) -> list[data_health.HealthCheck]:
         assert data_root == tmp_path
+        assert current_season is None
         return [
             data_health.HealthCheck(
                 "2026-27/enriched.parquet", False, "Snapshot is missing."

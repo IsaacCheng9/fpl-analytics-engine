@@ -13,6 +13,7 @@ from fpl_analytics_engine import app as fpl_client
 from fpl_analytics_engine import club, data, defcon, fixtures, form, player
 from fpl_analytics_engine.domain import ELEMENT_TYPE_TO_POSITION, Position
 from fpl_analytics_engine.schemas import (
+    ApiMeta,
     ClubForm,
     ClubFormValidation,
     DefconCalibrationBin,
@@ -175,8 +176,11 @@ def _current_data_dir() -> Path:
 
 @lru_cache
 def _load_history() -> pl.DataFrame:
-    """Load and cache the enriched season history from the archive."""
-    return data.prepare_history(_current_data_dir())
+    """Load and cache current-season history when analytics are available."""
+    path = _current_data_dir() / "enriched.parquet"
+    if not path.exists():
+        return pl.DataFrame()
+    return pl.read_parquet(path)
 
 
 @lru_cache
@@ -189,6 +193,12 @@ def _load_fixtures() -> pl.DataFrame:
 def _load_teams() -> pl.DataFrame:
     """Load and cache the team metadata for the fixture-id-to-name bridge."""
     return data.load_teams(_current_data_dir())
+
+
+@lru_cache
+def _load_events() -> pl.DataFrame:
+    """Load and cache the current gameweek metadata."""
+    return data.load_events(_current_data_dir())
 
 
 @lru_cache
@@ -208,6 +218,11 @@ def get_history() -> pl.DataFrame:
     return _load_history()
 
 
+def get_current_season() -> str:
+    """Return the live archived season (dependency; overridden in tests)."""
+    return _current_season()
+
+
 def get_fixtures_data() -> pl.DataFrame:
     """Return the archived fixtures (dependency; overridden in tests)."""
     return _load_fixtures()
@@ -216,6 +231,11 @@ def get_fixtures_data() -> pl.DataFrame:
 def get_teams() -> pl.DataFrame:
     """Return the team metadata (dependency; overridden in tests)."""
     return _load_teams()
+
+
+def get_events() -> pl.DataFrame:
+    """Return the gameweek metadata (dependency; overridden in tests)."""
+    return _load_events()
 
 
 def get_players_snapshot() -> pl.DataFrame:
@@ -235,7 +255,29 @@ def get_entry_picks_fetcher() -> EntryPicksFetcher:
 
 def _latest_gw(history: pl.DataFrame) -> int:
     """Return the most recent gameweek present in the data."""
+    if history.is_empty() or "round" not in history.columns:
+        return 0
     return cast(int, history["round"].max())
+
+
+def _next_deadline(events: pl.DataFrame) -> str | None:
+    """Return the next gameweek deadline from the current event snapshot."""
+    required = {"deadline_time", "is_next"}
+    if events.is_empty() or not required.issubset(events.columns):
+        return None
+    upcoming = events.filter(pl.col("is_next"))
+    if upcoming.is_empty():
+        return None
+    return cast(str, upcoming["deadline_time"][0])
+
+
+def _require_current_history(history: pl.DataFrame) -> None:
+    """Reject analytical requests until current-season gameweek data exists."""
+    if history.is_empty():
+        raise HTTPException(
+            status_code=409,
+            detail="Current-season analytics are unavailable until GW1 completes.",
+        )
 
 
 def _latest_season_in_history(history: pl.DataFrame) -> str:
@@ -396,9 +438,20 @@ app = FastAPI(title="FPL Analytics Engine")
 
 
 @app.get("/")
-def root(history: Annotated[pl.DataFrame, Depends(get_history)]) -> dict:
+def root(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    events: Annotated[pl.DataFrame, Depends(get_events)],
+    season: Annotated[str, Depends(get_current_season)],
+) -> ApiMeta:
     """Report basic service metadata."""
-    return {"name": "fpl-analytics-engine", "latest_gw": _latest_gw(history)}
+    latest_gw = _latest_gw(history)
+    return ApiMeta(
+        name="fpl-analytics-engine",
+        season=season,
+        latest_gw=latest_gw,
+        data_status="ready" if latest_gw else "preseason",
+        next_deadline=_next_deadline(events),
+    )
 
 
 @app.get("/fpl-team/{entry_id}")
@@ -411,6 +464,7 @@ def fpl_team(
     event: int | None = Query(None, ge=1),
 ) -> FplTeam:
     """Import the public picks for an FPL entry and visible gameweek."""
+    _require_current_history(history)
     latest = _latest_gw(history)
     gw = event if event is not None else latest
     try:
@@ -455,6 +509,7 @@ def players_form(
     Defaults to the latest gameweek in the data; pass ``as_of_gw`` to evaluate
     the point-in-time view as it would have looked after an earlier gameweek.
     """
+    _require_current_history(history)
     latest = _latest_gw(history)
     gw = as_of_gw if as_of_gw is not None else latest
     table = form.compute_form_table(history, gw, window)
@@ -488,6 +543,7 @@ def players_defcon(
     Defaults to the latest gameweek in the data; pass ``as_of_gw`` to evaluate
     the point-in-time view as it would have looked after an earlier gameweek.
     """
+    _require_current_history(history)
     latest = _latest_gw(history)
     gw = as_of_gw if as_of_gw is not None else latest
     table = form.compute_form_table(history, gw, window)
@@ -520,6 +576,7 @@ def players_defcon_probability(
     Uses a recalibrated contribution-count model over all eligible appearances
     up to ``as_of_gw`` (defaults to the latest gameweek).
     """
+    _require_current_history(history)
     latest = _latest_gw(history)
     gw = as_of_gw if as_of_gw is not None else latest
     probabilities = defcon.calibrated_defcon_count_probabilities(
@@ -556,6 +613,7 @@ def players_defcon_probability_validation(
     gameweek, then Brier score and calibration are computed from the realised
     DefCon threshold hit.
     """
+    _require_current_history(history)
     scored = defcon.backtest_defcon_count_probabilities(
         history,
         min_minutes=min_minutes,
@@ -631,6 +689,7 @@ def clubs_form(
     The table compares each club's recent per-match xG and xGC against its
     season-to-date baseline, then attaches upcoming fixture difficulty.
     """
+    _require_current_history(history)
     latest = _latest_gw(history)
     gw = as_of_gw if as_of_gw is not None else latest
     table = club.compute_club_form_table(history, gw, window)
@@ -658,6 +717,7 @@ def clubs_form_validation(
     club/GW rows only, then scores the next horizon's realised xG and xGC per
     match. Positive improvement means the club-form signal reduced error.
     """
+    _require_current_history(history)
     scored = club.backtest_club_form_signals(
         history,
         fixtures_data,
@@ -676,6 +736,7 @@ def clubs_form_validation(
 def player_detail(
     element: int,
     all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    history: Annotated[pl.DataFrame, Depends(get_history)],
     window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
     season: str | None = None,
 ) -> PlayerDetail:
@@ -684,6 +745,7 @@ def player_detail(
     ``element`` is the current-season FPL id; the player is tracked across
     seasons by their stable ``code``. Rolling figures use a trailing ``window``.
     """
+    _require_current_history(history)
     current_season = _latest_season_in_history(all_seasons)
     current = all_seasons.filter(
         pl.col("season") == current_season, pl.col("element") == element

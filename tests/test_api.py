@@ -65,6 +65,10 @@ def _empty_teams() -> pl.DataFrame:
     return pl.DataFrame(schema={"id": pl.Int64, "name": pl.String})
 
 
+def _empty_events() -> pl.DataFrame:
+    return pl.DataFrame(schema={"deadline_time": pl.String, "is_next": pl.Boolean})
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     # Default to empty fixture/overlay context so endpoints never touch disk;
@@ -72,6 +76,8 @@ def client() -> Iterator[TestClient]:
     api.app.dependency_overrides[api.get_history] = _history
     api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame()
     api.app.dependency_overrides[api.get_teams] = _empty_teams
+    api.app.dependency_overrides[api.get_events] = _empty_events
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2025-26"
     api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame()
     yield TestClient(api.app)
     api.app.dependency_overrides.clear()
@@ -79,7 +85,41 @@ def client() -> Iterator[TestClient]:
 
 def test_root_reports_latest_gameweek(client: TestClient) -> None:
     body = client.get("/").json()
+    assert body["season"] == "2025-26"
     assert body["latest_gw"] == 4
+    assert body["data_status"] == "ready"
+
+
+def test_root_reports_preseason_status(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_history] = pl.DataFrame
+    api.app.dependency_overrides[api.get_events] = lambda: pl.DataFrame(
+        {
+            "deadline_time": ["2026-08-21T17:30:00Z"],
+            "is_next": [True],
+        }
+    )
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+
+    body = client.get("/").json()
+
+    assert body == {
+        "name": "fpl-analytics-engine",
+        "season": "2026-27",
+        "latest_gw": 0,
+        "data_status": "preseason",
+        "next_deadline": "2026-08-21T17:30:00Z",
+    }
+
+
+def test_analytics_return_conflict_before_gw1(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_history] = pl.DataFrame
+
+    response = client.get("/players/form")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Current-season analytics are unavailable until GW1 completes."
+    )
 
 
 def test_fpl_team_endpoint_imports_public_picks(client: TestClient) -> None:

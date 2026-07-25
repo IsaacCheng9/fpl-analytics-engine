@@ -19,6 +19,7 @@ from fpl_analytics_engine import app, data
 # Politeness delay between element-summary requests (community norm ~1 req/s).
 REQUEST_DELAY_SECONDS = 1.0
 DEFAULT_DATA_ROOT = Path("data")
+EMPTY_HISTORY_SCHEMA = {"element": pl.Int64}
 
 
 def detect_season(events: list[dict]) -> str:
@@ -68,6 +69,11 @@ def _flatten_nested(records: list[dict]) -> list[dict]:
         }
         for record in records
     ]
+
+
+def _has_completed_gameweek(events: list[dict]) -> bool:
+    """Return whether the live season has completed at least one gameweek."""
+    return any(event.get("finished") is True for event in events)
 
 
 def _build_enriched(output_dir: Path) -> Path | None:
@@ -138,21 +144,29 @@ def archive_season(
         _flatten_nested(app.get_fixtures()), infer_schema_length=None
     )
 
-    element_ids = [element["id"] for element in bootstrap["elements"]]
-    if limit is not None:
-        element_ids = element_ids[:limit]
-
     histories: list[dict] = []
-    total = len(element_ids)
-    for index, element_id in enumerate(element_ids, start=1):
-        for row in app.get_player_history(element_id):
-            # Guarantee the player id is present on every row for joins.
-            row["element"] = element_id
-            histories.append(row)
-        if index % 100 == 0 or index == total:
-            print(f"Fetched per-gameweek history for {index}/{total} players")
-        time.sleep(request_delay)
-    history = pl.DataFrame(_flatten_nested(histories), infer_schema_length=None)
+    if _has_completed_gameweek(bootstrap["events"]):
+        element_ids = [element["id"] for element in bootstrap["elements"]]
+        if limit is not None:
+            element_ids = element_ids[:limit]
+
+        total = len(element_ids)
+        for index, element_id in enumerate(element_ids, start=1):
+            for row in app.get_player_history(element_id):
+                # Guarantee the player id is present on every row for joins.
+                row["element"] = element_id
+                histories.append(row)
+            if index % 100 == 0 or index == total:
+                print(f"Fetched per-gameweek history for {index}/{total} players")
+            time.sleep(request_delay)
+    else:
+        print("No completed gameweeks; skipped per-player history fetches")
+
+    history = (
+        pl.DataFrame(_flatten_nested(histories), infer_schema_length=None)
+        if histories
+        else pl.DataFrame(schema=EMPTY_HISTORY_SCHEMA)
+    )
 
     paths = {
         "players": output_dir / "players.parquet",
