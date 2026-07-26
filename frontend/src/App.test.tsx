@@ -348,24 +348,24 @@ const clubValidationRows = [
 	{
 		target: "future_xg_per_match",
 		n_predictions: 48,
-		fdr_mae: 0.42,
-		fdr_plus_form_mae: 0.39,
+		baseline_mae: 0.42,
+		baseline_plus_form_mae: 0.39,
 		mae_improvement: 0.03,
 		mae_improvement_pct: 0.071,
-		fdr_rmse: 0.55,
-		fdr_plus_form_rmse: 0.52,
+		baseline_rmse: 0.55,
+		baseline_plus_form_rmse: 0.52,
 		rmse_improvement: 0.03,
 		rmse_improvement_pct: 0.055,
 	},
 	{
 		target: "future_xgc_per_match",
 		n_predictions: 48,
-		fdr_mae: 0.44,
-		fdr_plus_form_mae: 0.445,
+		baseline_mae: 0.44,
+		baseline_plus_form_mae: 0.445,
 		mae_improvement: -0.005,
 		mae_improvement_pct: -0.011,
-		fdr_rmse: 0.57,
-		fdr_plus_form_rmse: 0.568,
+		baseline_rmse: 0.57,
+		baseline_plus_form_rmse: 0.568,
 		rmse_improvement: 0.002,
 		rmse_improvement_pct: 0.004,
 	},
@@ -1308,6 +1308,9 @@ test("renders the model evidence tab with backtest summaries", async () => {
 	expect(screen.getByText("+1.4% vs binary")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xG")).toBeInTheDocument();
 	expect(screen.getByText("Future Club xGC")).toBeInTheDocument();
+	expect(screen.getByText("Recent Club Form")).toBeInTheDocument();
+	expect(screen.getByText("Baseline MAE")).toBeInTheDocument();
+	expect(screen.getByText(/Historical FDR is excluded/)).toBeInTheDocument();
 	const bucketHeader = screen.getByRole("columnheader", { name: /Bucket/ });
 	fireEvent.click(
 		within(bucketHeader).getByRole("button", { name: "Show explanation" }),
