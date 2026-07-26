@@ -57,7 +57,7 @@ def test_adapt_vaastav_season_maps_keepers() -> None:
     assert out.to_dicts()[0]["position"] == "GK"
 
 
-def test_backfill_canonicalises_supplied_current_season(
+def test_backfill_preserves_full_current_season_snapshot(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     season_dir = tmp_path / "2026-27"
@@ -66,6 +66,8 @@ def test_backfill_canonicalises_supplied_current_season(
         [
             {
                 "element": 1,
+                "fixture": 1,
+                "was_home": True,
                 "round": 1,
                 "kickoff_time": "2026-08-15T14:00:00Z",
                 "minutes": 90,
@@ -85,6 +87,9 @@ def test_backfill_canonicalises_supplied_current_season(
     pl.DataFrame([{"id": 10, "name": "Arsenal"}]).write_parquet(
         season_dir / "teams.parquet"
     )
+    pl.DataFrame([{"id": 1, "team_h": 10, "team_a": 20}]).write_parquet(
+        season_dir / "fixtures.parquet"
+    )
     monkeypatch.setattr(backfill, "SEASONS", [])
 
     paths = backfill.backfill(tmp_path, current_season="2026-27")
@@ -93,6 +98,7 @@ def test_backfill_canonicalises_supplied_current_season(
     row = pl.read_parquet(paths["2026-27"]).to_dicts()[0]
     assert row["season"] == "2026-27"
     assert row["web_name"] == "Saka"
+    assert row["fixture"] == 1
 
 
 def test_backfill_skips_empty_preseason_current_archive(

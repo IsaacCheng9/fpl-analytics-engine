@@ -134,12 +134,12 @@ def fetch_vaastav_players(season: str) -> pl.DataFrame:
     return _fetch_csv(VAASTAV_PLAYERS_URL.format(season=season))
 
 
-def _to_canonical(enriched: pl.DataFrame, season: str) -> pl.DataFrame:
-    """Reduce a current-season enriched frame to the cross-season schema."""
+def _stamp_current_season(enriched: pl.DataFrame, season: str) -> pl.DataFrame:
+    """Stamp the full current-season enriched frame for cross-season loading."""
     return enriched.with_columns(
         pl.col("position").cast(POSITION_DTYPE),
         pl.lit(season).alias("season"),
-    ).select(CANONICAL_COLUMNS)
+    )
 
 
 def backfill(
@@ -174,11 +174,12 @@ def backfill(
     if history_path.exists():
         raw_history = data.load_player_history(current_dir)
         if raw_history.height:
-            current = _to_canonical(
+            current = _stamp_current_season(
                 data.enrich_history(
                     raw_history,
                     data.load_players(current_dir),
                     data.load_teams(current_dir),
+                    data.load_fixtures(current_dir),
                 ),
                 live_season,
             )
