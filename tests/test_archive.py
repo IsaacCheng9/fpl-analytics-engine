@@ -26,6 +26,8 @@ def _enrichable_bootstrap() -> dict:
 def _history_row(round_: int, defcon: int) -> dict:
     """Build one per-gameweek history row carrying the enrichment inputs."""
     return {
+        "fixture": round_,
+        "was_home": True,
         "round": round_,
         "minutes": 90,
         "total_points": 6,
@@ -37,6 +39,11 @@ def _history_row(round_: int, defcon: int) -> dict:
         "expected_goals_conceded": "0.90",
         "defensive_contribution": defcon,
     }
+
+
+def _fixtures() -> list[dict]:
+    """Build the fixture metadata needed for historical club attribution."""
+    return [{"id": 1, "team_h": 10, "team_a": 20}]
 
 
 def test_detect_season_uses_earliest_deadline_year() -> None:
@@ -66,7 +73,7 @@ def test_archive_season_writes_parquet_files(
     }
 
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )
@@ -94,7 +101,7 @@ def test_archive_season_respects_limit(
     bootstrap = {
         "elements": [{"id": 1}, {"id": 2}, {"id": 3}],
         "teams": [{"id": 10}],
-        "events": [{"id": 1}],
+        "events": [{"id": 1, "finished": True}],
     }
     fetched: list[int] = []
 
@@ -103,7 +110,7 @@ def test_archive_season_respects_limit(
         return [{"round": 1, "total_points": 1}]
 
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(app, "get_player_history", fake_history)
     monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
 
@@ -121,7 +128,7 @@ def test_archive_season_builds_enriched_snapshot(
         2: [_history_row(1, defcon=5)],
     }
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )
@@ -142,10 +149,19 @@ def test_archive_season_skips_enriched_on_early_season_cold_start(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     bootstrap = _enrichable_bootstrap()
+    bootstrap["events"] = [
+        {**event, "finished": False} for event in bootstrap["events"]
+    ]
+    fetched: list[int] = []
+
+    def fake_history(element_id: int) -> list[dict]:
+        fetched.append(element_id)
+        return []
+
     # Preseason: bootstrap exists but no gameweeks have been played yet.
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
-    monkeypatch.setattr(app, "get_player_history", lambda _element_id: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+    monkeypatch.setattr(app, "get_player_history", fake_history)
     monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
 
     paths = archive.archive_season(tmp_path)
@@ -154,6 +170,8 @@ def test_archive_season_skips_enriched_on_early_season_cold_start(
     assert paths["players"].exists()
     assert "enriched" not in paths
     assert not (tmp_path / "enriched.parquet").exists()
+    assert fetched == []
+    assert pl.read_parquet(paths["player_gw_history"]).is_empty()
 
 
 def test_ingest_current_season_targets_detected_season_dir(
@@ -171,7 +189,7 @@ def test_ingest_current_season_targets_detected_season_dir(
         return bootstrap
 
     monkeypatch.setattr(app, "get_fpl_data", fake_bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )

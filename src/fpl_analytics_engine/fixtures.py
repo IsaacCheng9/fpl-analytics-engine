@@ -17,6 +17,8 @@ _FIXTURE_SCHEMA = {
     "team": pl.Int64,
     "opponent": pl.Int64,
     "event": pl.Int64,
+    "kickoff_time": pl.String,
+    "fixture_order": pl.Int64,
     "was_home": pl.Boolean,
     "difficulty": pl.Int64,
 }
@@ -42,17 +44,32 @@ def _explode_to_team_rows(fixtures: pl.DataFrame) -> pl.DataFrame:
         A long frame keyed by team, carrying the opponent, gameweek, home
         flag, and that team's difficulty rating for the fixture.
     """
-    home = fixtures.select(
+    fixture_order = (
+        pl.col("id").cast(pl.Int64)
+        if "id" in fixtures.columns
+        else pl.col("_row_order").cast(pl.Int64)
+    )
+    kickoff_time = (
+        pl.col("kickoff_time").cast(pl.String)
+        if "kickoff_time" in fixtures.columns
+        else pl.lit(None, dtype=pl.String)
+    )
+    ordered = fixtures.with_row_index("_row_order")
+    home = ordered.select(
         pl.col("team_h").alias("team"),
         pl.col("team_a").alias("opponent"),
         pl.col("event"),
+        kickoff_time.alias("kickoff_time"),
+        fixture_order.alias("fixture_order"),
         pl.lit(True).alias("was_home"),
         pl.col("team_h_difficulty").alias("difficulty"),
     )
-    away = fixtures.select(
+    away = ordered.select(
         pl.col("team_a").alias("team"),
         pl.col("team_h").alias("opponent"),
         pl.col("event"),
+        kickoff_time.alias("kickoff_time"),
+        fixture_order.alias("fixture_order"),
         pl.lit(False).alias("was_home"),
         pl.col("team_a_difficulty").alias("difficulty"),
     )
@@ -94,7 +111,14 @@ def team_fixture_difficulty(
         pl.col("difficulty").sum().alias("total_difficulty"),
     )
     next_fixture = (
-        upcoming.sort("team", "event", "difficulty", "opponent")
+        upcoming.sort(
+            "team",
+            "event",
+            "kickoff_time",
+            "fixture_order",
+            "opponent",
+            nulls_last=True,
+        )
         .group_by("team", maintain_order=True)
         .agg(
             pl.col("event").first().alias("next_fixture_gw"),

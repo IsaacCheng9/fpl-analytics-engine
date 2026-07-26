@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { Cell, CellContext, ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -15,6 +15,7 @@ import {
 	fetchForm,
 	fetchFplTeam,
 	fetchMeta,
+	type Meta,
 	type Position,
 } from "./api";
 import { DataTable } from "./components/DataTable";
@@ -75,6 +76,88 @@ const TAB_LABELS: Record<Tab, string> = {
 	clubs: "Club Form",
 	evidence: "Model Evidence",
 };
+
+function formatDeadline(deadline: string | null): string {
+	if (deadline === null) {
+		return "To Be Confirmed";
+	}
+	return new Intl.DateTimeFormat("en-GB", {
+		weekday: "long",
+		day: "numeric",
+		month: "long",
+		hour: "2-digit",
+		minute: "2-digit",
+		timeZone: "Europe/London",
+		timeZoneName: "short",
+	}).format(new Date(deadline));
+}
+
+function SeasonStatus({
+	meta,
+	state,
+}: {
+	meta?: Meta;
+	state: "loading" | "error" | "preseason";
+}) {
+	const title =
+		state === "loading"
+			? "Checking The Live Season"
+			: state === "error"
+				? "Season Status Unavailable"
+				: "Waiting For GW1 Data";
+	const description =
+		state === "loading"
+			? "Loading the current FPL season metadata."
+			: state === "error"
+				? "The API could not report the current season. Try again after the service is available."
+				: "The new FPL season is live and its players and fixtures are archived. Current-season form and DefCon analytics will appear after GW1 is complete and the next data refresh has run.";
+
+	return (
+		<div className="min-h-screen bg-zinc-50 text-zinc-900">
+			<div className="app-shell mx-auto px-6 py-8">
+				<header className="mb-8">
+					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
+					<p className="mt-1 text-sm text-zinc-500">
+						Point-in-time transfer research for the {meta?.season ?? "live"}{" "}
+						season.
+					</p>
+				</header>
+				<section
+					aria-labelledby="season-status-title"
+					className="border-zinc-200 border-y bg-white py-8"
+				>
+					<div className="grid gap-6 px-1 md:grid-cols-[minmax(0,1fr)_18rem] md:items-end">
+						<div>
+							<p className="mb-2 font-medium text-emerald-700 text-sm">
+								{meta?.season ?? "Live Season"}
+							</p>
+							<h2
+								id="season-status-title"
+								className="font-semibold text-2xl text-zinc-900"
+							>
+								{title}
+							</h2>
+							<p className="mt-3 max-w-2xl text-sm text-zinc-600 leading-6">
+								{description}
+							</p>
+						</div>
+						{state === "preseason" ? (
+							<div className="border-zinc-200 border-t pt-5 md:border-t-0 md:border-l md:pt-0 md:pl-6">
+								<p className="font-medium text-xs text-zinc-500 uppercase">
+									Next Deadline
+								</p>
+								<p className="mt-2 font-medium text-zinc-900">
+									{formatDeadline(meta?.next_deadline ?? null)}
+								</p>
+								<p className="mt-1 text-sm text-zinc-500">Gameweek 1</p>
+							</div>
+						) : null}
+					</div>
+				</section>
+			</div>
+		</div>
+	);
+}
 const TABS: Tab[] = ["form", "defcon", "defconProb", "clubs", "evidence"];
 const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
 const WINDOW_MIN = 2;
@@ -427,8 +510,11 @@ function readUrlState(): UrlState {
 	const params = new URLSearchParams(window.location.search);
 	const shortlist = parseShortlist(params.get("shortlist"));
 	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), { min: 1 });
+	const tab = parseTab(params.get("tab"));
+	const showSquadView =
+		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
 	return {
-		tab: parseTab(params.get("tab")),
+		tab,
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
 		teamFilter: params.get("team") ?? DEFAULT_TEAM_FILTER,
 		windowSize: clampWindowSize(
@@ -448,11 +534,10 @@ function readUrlState(): UrlState {
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
 		fplTeamId,
-		ownershipFilter: parseOwnershipFilter(params.get("squad")),
-		showSquadView:
-			fplTeamId !== null &&
-			isPlayerTab(parseTab(params.get("tab"))) &&
-			params.get("squad_view") === "1",
+		ownershipFilter: showSquadView
+			? DEFAULT_OWNERSHIP_FILTER
+			: parseOwnershipFilter(params.get("squad")),
+		showSquadView,
 		compareOpen:
 			params.get("compare") === "1" ||
 			params.has("compare_a") ||
@@ -493,7 +578,9 @@ function readUrlState(): UrlState {
 		clubActualMetrics: parseClubActualMetrics(params.get("club_actuals")),
 		shortlist,
 		showShortlistedOnly:
-			shortlist.length > 0 && params.get("shortlist_only") === "1",
+			!showSquadView &&
+			shortlist.length > 0 &&
+			params.get("shortlist_only") === "1",
 	};
 }
 
@@ -1284,12 +1371,12 @@ function buildDefconProbColumns(
 		},
 		{
 			accessorKey: "prob",
-			header: "P(Hit Next GW)",
+			header: "P(Hit | 60+ Mins)",
 			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{
 					tooltip:
-						"Modelled probability of clearing the DefCon threshold next gameweek",
+						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
 				},
 				ranges.prob,
 			),
@@ -1792,6 +1879,10 @@ export default function App() {
 		if (!Number.isInteger(parsed) || parsed <= 0) {
 			return;
 		}
+		if (parsed !== fplTeamId) {
+			setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
+			setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
+		}
 		setFplTeamId(parsed);
 	}
 
@@ -1907,7 +1998,8 @@ export default function App() {
 	}
 
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
-	const latestGw = meta.data?.latest_gw ?? 38;
+	const analyticsReady = meta.data?.data_status === "ready";
+	const latestGw = meta.data?.latest_gw ?? 0;
 	const hasPlayerSearch = playerSearch.trim() !== "";
 	const windowFillPct =
 		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
@@ -1916,27 +2008,26 @@ export default function App() {
 	const fplTeamQuery = useQuery({
 		queryKey: ["fplTeam", fplTeamId],
 		queryFn: () => fetchFplTeam(fplTeamId as number, null),
-		enabled: fplTeamId !== null,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && fplTeamId !== null,
 	});
+	const importedTeam =
+		fplTeamQuery.data?.entry_id === fplTeamId ? fplTeamQuery.data : undefined;
+	const teamImportIdentityError =
+		fplTeamQuery.data !== undefined && importedTeam === undefined;
 	const parsedFplTeamInput = Number(fplTeamInput);
 	const canImportFplTeam =
 		Number.isInteger(parsedFplTeamInput) && parsedFplTeamInput > 0;
 	const ownedElements = useMemo(
-		() =>
-			new Set(
-				fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? []),
-			),
-		[fplTeamId, fplTeamQuery.data],
+		() => new Set(importedTeam?.owned_elements ?? []),
+		[importedTeam],
 	);
 	const ownedElementList = useMemo(
-		() => (fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? [])),
-		[fplTeamId, fplTeamQuery.data],
+		() => importedTeam?.owned_elements ?? [],
+		[importedTeam],
 	);
-	const ownedCount =
-		fplTeamId === null ? 0 : (fplTeamQuery.data?.owned_elements.length ?? 0);
-	const hasImportedTeam = fplTeamId !== null && fplTeamQuery.data !== undefined;
-	const squadPicks: FplTeamPick[] = fplTeamQuery.data?.picks ?? [];
+	const ownedCount = importedTeam?.owned_elements.length ?? 0;
+	const hasImportedTeam = importedTeam !== undefined;
+	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const squadBase = {
@@ -1952,8 +2043,7 @@ export default function App() {
 				...base,
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
-		enabled: tab === "form",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "form",
 	});
 	const defconQuery = useQuery({
 		queryKey: [
@@ -1967,8 +2057,7 @@ export default function App() {
 		],
 		queryFn: () =>
 			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
-		enabled: tab === "defcon",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "defcon",
 	});
 	const defconProbQuery = useQuery({
 		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
@@ -1978,26 +2067,22 @@ export default function App() {
 				minGames: hasPlayerSearch ? 0 : minGames,
 				asOfGw,
 			}),
-		enabled: tab === "defconProb",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "defconProb",
 	});
 	const clubQuery = useQuery({
 		queryKey: ["clubs", windowSize, asOfGw],
 		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
-		enabled: tab === "clubs",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "clubs",
 	});
 	const defconValidationQuery = useQuery({
 		queryKey: ["defconValidation"],
 		queryFn: () => fetchDefconProbabilityValidation(),
-		enabled: tab === "evidence",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "evidence",
 	});
 	const clubValidationQuery = useQuery({
 		queryKey: ["clubValidation"],
 		queryFn: () => fetchClubFormValidation(),
-		enabled: tab === "evidence",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "evidence",
 	});
 	const squadFormQuery = useQuery({
 		queryKey: ["squadForm", windowSize, asOfGw],
@@ -2006,8 +2091,7 @@ export default function App() {
 				...squadBase,
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
-		enabled: isSquadViewActive,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadCurrentFormQuery = useQuery({
 		queryKey: ["squadCurrentForm", windowSize],
@@ -2017,8 +2101,7 @@ export default function App() {
 				asOfGw: null,
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
-		enabled: isSquadViewActive,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadDefconProbabilityQuery = useQuery({
 		queryKey: ["squadDefconProbability", asOfGw],
@@ -2028,8 +2111,7 @@ export default function App() {
 				minGames: 0,
 				asOfGw,
 			}),
-		enabled: isSquadViewActive,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && isSquadViewActive,
 	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
@@ -2044,8 +2126,7 @@ export default function App() {
 				minDelta: FORM_MIN_DELTA_FLOOR,
 				asOfGw,
 			}),
-		enabled: tab === "form",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "form",
 	});
 	const defconBaseline = useQuery({
 		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
@@ -2057,21 +2138,18 @@ export default function App() {
 				minHitRate: 0,
 				asOfGw,
 			}),
-		enabled: tab === "defcon",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "defcon",
 	});
 	const defconProbBaseline = useQuery({
 		queryKey: ["defconProbBaseline", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
-		enabled: tab === "defconProb",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "defconProb",
 	});
 	const clubBaseline = useQuery({
 		queryKey: ["clubBaseline", windowSize, asOfGw],
 		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
-		enabled: tab === "clubs",
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && tab === "clubs",
 	});
 	const compareFormQuery = useQuery({
 		queryKey: ["compareForm", compareWindow, compareAsOfGw],
@@ -2083,8 +2161,7 @@ export default function App() {
 				minDelta: FORM_MIN_DELTA_FLOOR,
 				asOfGw: compareAsOfGw,
 			}),
-		enabled: compareOpen,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && compareOpen,
 	});
 	const compareDefconQuery = useQuery({
 		queryKey: ["compareDefcon", compareWindow, compareAsOfGw],
@@ -2096,8 +2173,7 @@ export default function App() {
 				minHitRate: 0,
 				asOfGw: compareAsOfGw,
 			}),
-		enabled: compareOpen,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && compareOpen,
 	});
 	const compareDefconProbabilityQuery = useQuery({
 		queryKey: ["compareDefconProbability", compareAsOfGw],
@@ -2107,15 +2183,13 @@ export default function App() {
 				minGames: 0,
 				asOfGw: compareAsOfGw,
 			}),
-		enabled: compareOpen,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && compareOpen,
 	});
 	const compareClubQuery = useQuery({
 		queryKey: ["compareClub", compareWindow, compareAsOfGw],
 		queryFn: () =>
 			fetchClubForm({ window: compareWindow, asOfGw: compareAsOfGw }),
-		enabled: compareOpen,
-		placeholderData: keepPreviousData,
+		enabled: analyticsReady && compareOpen,
 	});
 
 	const comparePlayerOptions = useMemo(
@@ -2230,6 +2304,18 @@ export default function App() {
 					: tab === "clubs"
 						? clubQuery
 						: null;
+	const activeBaseline =
+		tab === "form"
+			? formBaseline
+			: tab === "defcon"
+				? defconBaseline
+				: tab === "defconProb"
+					? defconProbBaseline
+					: tab === "clubs"
+						? clubBaseline
+						: null;
+	const activeLoading = active?.isPending || activeBaseline?.isPending;
+	const activeError = active?.isError || activeBaseline?.isError;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
@@ -2569,6 +2655,16 @@ export default function App() {
 	const clubEmptyTitle = hasActiveFilters
 		? "No Clubs Match These Filters"
 		: "No Clubs Available";
+
+	if (meta.isPending) {
+		return <SeasonStatus state="loading" />;
+	}
+	if (meta.isError || meta.data === undefined) {
+		return <SeasonStatus state="error" />;
+	}
+	if (!analyticsReady) {
+		return <SeasonStatus meta={meta.data} state="preseason" />;
+	}
 
 	return (
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -3117,7 +3213,7 @@ export default function App() {
 											: "border-sky-200 bg-sky-50 text-sky-800"
 									}`}
 								>
-									{fplTeamQuery.isError
+									{fplTeamQuery.isError || teamImportIdentityError
 										? "Team Import Failed"
 										: fplTeamQuery.isPending
 											? "Loading Team..."
@@ -3144,7 +3240,11 @@ export default function App() {
 													? "bg-zinc-900 text-white"
 													: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
 											}`}
-											onClick={() => setOwnershipFilter(value)}
+											onClick={() => {
+												setOwnershipFilter(value);
+												setShowSquadView(false);
+												setShowShortlistedOnly(false);
+											}}
 										>
 											{label}
 										</button>
@@ -3270,15 +3370,16 @@ export default function App() {
 						}
 						error={
 							fplTeamQuery.isError ||
+							teamImportIdentityError ||
 							squadFormQuery.isError ||
 							squadCurrentFormQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
 						onPlayerClick={openPlayerDetail}
 					/>
-				) : active?.isPending ? (
+				) : activeLoading ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
-				) : active?.isError ? (
+				) : activeError ? (
 					<p className="text-red-600 text-sm">
 						Failed to load - is the API running on port 8000?
 					</p>
@@ -3361,6 +3462,7 @@ export default function App() {
 					element={selectedElement}
 					window={playerWindow}
 					season={playerSeason}
+					asOfGw={asOfGw}
 					onWindowChange={setPlayerWindow}
 					onSeasonChange={setPlayerSeason}
 					onClose={() => {

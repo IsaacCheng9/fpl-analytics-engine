@@ -31,6 +31,13 @@ REQUIRED_COLUMNS = (
     "defensive_contribution",
     *data.EXPECTED_STAT_COLUMNS,
 )
+RAW_SNAPSHOT_FILES = (
+    "players.parquet",
+    "teams.parquet",
+    "events.parquet",
+    "fixtures.parquet",
+    "player_gw_history.parquet",
+)
 REMEDIATION = (
     "Run `uv run python -m fpl_analytics_engine.refresh` to refresh and "
     "validate the local snapshots."
@@ -83,6 +90,66 @@ def expected_seasons(data_root: Path) -> tuple[str, ...]:
             path.parent.name for path in data_root.glob("*/enriched.parquet")
         )
     return tuple(sorted(seasons, key=data.season_sort_key))
+
+
+def _season_from_events(events: pl.DataFrame) -> str | None:
+    """Return the season label implied by the earliest event deadline."""
+    if events.is_empty() or "deadline_time" not in events.columns:
+        return None
+    deadlines = events["deadline_time"].drop_nulls()
+    if deadlines.is_empty():
+        return None
+    start = min(int(str(deadline)[:4]) for deadline in deadlines)
+    return f"{start}-{(start + 1) % 100:02d}"
+
+
+def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
+    """Validate the raw snapshots that define the current live season."""
+    data_dir = data_root / season
+    subject = f"{season}/live archive"
+    missing = [name for name in RAW_SNAPSHOT_FILES if not (data_dir / name).exists()]
+    if missing:
+        return [_fail(subject, f"Missing raw snapshots: {', '.join(missing)}.")]
+
+    try:
+        players = data.load_players(data_dir)
+        teams = data.load_teams(data_dir)
+        events = data.load_events(data_dir)
+        fixtures = data.load_fixtures(data_dir)
+        history = data.load_player_history(data_dir)
+    except Exception as exc:
+        return [_fail(subject, f"Raw snapshots could not be read: {exc}.")]
+
+    checks = []
+    if players.is_empty():
+        checks.append(_fail(subject, "Player snapshot is empty."))
+    if teams.is_empty():
+        checks.append(_fail(subject, "Team snapshot is empty."))
+    if events.is_empty():
+        checks.append(_fail(subject, "Event snapshot is empty."))
+    if fixtures.is_empty():
+        checks.append(_fail(subject, "Fixture snapshot is empty."))
+
+    event_season = _season_from_events(events)
+    if event_season is None:
+        checks.append(_fail(subject, "Event deadlines do not identify a season."))
+    elif event_season != season:
+        checks.append(
+            _fail(
+                subject,
+                f"Event deadlines identify {event_season}, not directory {season}.",
+            )
+        )
+
+    if checks:
+        return checks
+    state = "preseason" if history.is_empty() else f"{history.height} history rows"
+    return [
+        _ok(
+            subject,
+            f"{players.height} players, {fixtures.height} fixtures, {state} validated.",
+        )
+    ]
 
 
 def _check_frame(frame: pl.DataFrame, season: str) -> list[HealthCheck]:
@@ -144,19 +211,34 @@ def _check_frame(frame: pl.DataFrame, season: str) -> list[HealthCheck]:
 
 
 def validate_data_root(
-    data_root: Path, seasons: Sequence[str] | None = None
+    data_root: Path,
+    seasons: Sequence[str] | None = None,
+    current_season: str | None = None,
 ) -> list[HealthCheck]:
     """Validate every expected season under ``data_root``.
 
     Args:
         data_root: Root directory containing one folder per season.
         seasons: Season labels expected to carry ``enriched.parquet`` snapshots.
+        current_season: Live season that must carry valid raw snapshots. Inferred
+            from the latest raw archive when omitted.
 
     Returns:
         Health-check results for each season.
     """
     checks: list[HealthCheck] = []
-    seasons_to_check = seasons or expected_seasons(data_root)
+    seasons_to_check = list(seasons or expected_seasons(data_root))
+    live_history_paths = list(data_root.glob("*/player_gw_history.parquet"))
+    if seasons is None and live_history_paths:
+        live_season = current_season or data.latest_archived_season(data_root)
+        checks.extend(_check_live_archive(data_root, live_season))
+        history = data.load_player_history(data_root / live_season)
+        if not history.is_empty() and live_season not in seasons_to_check:
+            seasons_to_check.append(live_season)
+    elif current_season is not None:
+        checks.extend(_check_live_archive(data_root, current_season))
+
+    seasons_to_check.sort(key=data.season_sort_key)
     for season in seasons_to_check:
         path = data_root / season / "enriched.parquet"
         subject = f"{season}/enriched.parquet"

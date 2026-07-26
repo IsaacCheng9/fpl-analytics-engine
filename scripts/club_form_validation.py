@@ -1,4 +1,4 @@
-"""Run club-form plus FDR validation against local archived data."""
+"""Run point-in-time club-form validation against local archived data."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the club-form validation script."""
     parser = argparse.ArgumentParser(
         description=(
-            "Backtest whether club form improves an FDR-only baseline against "
-            "future club xG and xGC."
+            "Backtest whether recent club form improves a season-to-date "
+            "baseline against future club xG and xGC."
         ),
     )
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=Path("data") / "2025-26",
-        help="Season directory containing enriched player history and fixtures.",
+        help="Season directory containing raw player and fixture history.",
     )
     parser.add_argument(
         "--window",
@@ -40,10 +40,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Recent club-match window used for form.",
     )
     parser.add_argument(
-        "--fdr-horizon",
+        "--horizon",
         type=int,
         default=5,
-        help="Future gameweek horizon used for FDR and realised outcomes.",
+        help="Future gameweek horizon used for realised outcomes.",
     )
     parser.add_argument(
         "--min-train-rows",
@@ -54,12 +54,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     history = data.prepare_history(args.data_dir)
-    fixtures_data = data.load_fixtures(args.data_dir)
     scored = club.backtest_club_form_signals(
         history,
-        fixtures_data,
         window=args.window,
-        fdr_horizon=args.fdr_horizon,
+        horizon=args.horizon,
         min_train_rows=args.min_train_rows,
     )
     summary = club.summarise_club_form_validation(scored)
@@ -72,12 +70,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "[OK] "
             f"{row['target']}: "
             f"n={row['n_predictions']}, "
-            f"FDR MAE={_format_num(row['fdr_mae'])}, "
-            f"FDR+form MAE={_format_num(row['fdr_plus_form_mae'])}, "
+            f"baseline MAE={_format_num(row['baseline_mae'])}, "
+            "baseline+form MAE="
+            f"{_format_num(row['baseline_plus_form_mae'])}, "
             f"MAE improvement={_format_num(row['mae_improvement'])} "
             f"({_format_pct(row['mae_improvement_pct'])}), "
-            f"FDR RMSE={_format_num(row['fdr_rmse'])}, "
-            f"FDR+form RMSE={_format_num(row['fdr_plus_form_rmse'])}, "
+            f"baseline RMSE={_format_num(row['baseline_rmse'])}, "
+            "baseline+form RMSE="
+            f"{_format_num(row['baseline_plus_form_rmse'])}, "
             f"RMSE improvement={_format_num(row['rmse_improvement'])} "
             f"({_format_pct(row['rmse_improvement_pct'])})"
         )

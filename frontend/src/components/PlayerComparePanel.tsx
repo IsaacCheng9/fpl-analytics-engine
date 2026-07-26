@@ -539,7 +539,7 @@ function buildCompareRows(
 	);
 	addNumber(
 		"DefCon",
-		"P(Hit Next GW)",
+		"P(Hit | 60+ Mins)",
 		left.defconProb?.prob,
 		right.defconProb?.prob,
 		{ format: fmtPct },
@@ -803,13 +803,15 @@ export function PlayerComparePanel({
 	onClose: () => void;
 }) {
 	const leftQuery = useQuery({
-		queryKey: ["comparePlayer", leftElement, window],
-		queryFn: () => fetchPlayerDetail(leftElement as number, window),
+		queryKey: ["comparePlayer", leftElement, window, asOfGw],
+		queryFn: () =>
+			fetchPlayerDetail(leftElement as number, window, null, asOfGw),
 		enabled: leftElement !== null,
 	});
 	const rightQuery = useQuery({
-		queryKey: ["comparePlayer", rightElement, window],
-		queryFn: () => fetchPlayerDetail(rightElement as number, window),
+		queryKey: ["comparePlayer", rightElement, window, asOfGw],
+		queryFn: () =>
+			fetchPlayerDetail(rightElement as number, window, null, asOfGw),
 		enabled: rightElement !== null,
 	});
 

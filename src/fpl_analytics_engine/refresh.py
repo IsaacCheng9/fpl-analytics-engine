@@ -86,11 +86,15 @@ def _backfill_historical(
     return _ok(name, f"Wrote {_path_summary(paths)}.")
 
 
-def _validate_data(options: RefreshOptions) -> StepResult:
+def _validate_data(
+    options: RefreshOptions, current_season: str | None = None
+) -> StepResult:
     """Run the local data-health validation step."""
     name = "Validate Data"
     try:
-        checks = data_health.validate_data_root(options.data_root)
+        checks = data_health.validate_data_root(
+            options.data_root, current_season=current_season
+        )
     except Exception as exc:
         return _fail(name, exc)
     return StepResult(
@@ -134,7 +138,7 @@ def run_refresh(options: RefreshOptions) -> list[StepResult]:
     if not backfill_result.ok:
         return results
 
-    validation_result = _validate_data(options)
+    validation_result = _validate_data(options, current_season)
     results.append(validation_result)
     if not validation_result.ok:
         return results

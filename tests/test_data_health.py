@@ -78,6 +78,31 @@ def _write_valid_data_root(data_root: Path) -> None:
     )
 
 
+def _write_preseason_archive(
+    data_root: Path,
+    season: str = "2026-27",
+    deadline: str = "2026-08-21T17:30:00Z",
+) -> None:
+    """Write a valid raw archive with no completed gameweek history."""
+    season_dir = data_root / season
+    season_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"id": [1], "web_name": ["Player"]}).write_parquet(
+        season_dir / "players.parquet"
+    )
+    pl.DataFrame({"id": [1], "name": ["Team"]}).write_parquet(
+        season_dir / "teams.parquet"
+    )
+    pl.DataFrame({"id": [1], "deadline_time": [deadline]}).write_parquet(
+        season_dir / "events.parquet"
+    )
+    pl.DataFrame({"event": [1], "team_h": [1], "team_a": [2]}).write_parquet(
+        season_dir / "fixtures.parquet"
+    )
+    pl.DataFrame(schema={"element": pl.Int64}).write_parquet(
+        season_dir / "player_gw_history.parquet"
+    )
+
+
 def test_validate_data_root_accepts_canonical_snapshots(tmp_path: Path) -> None:
     _write_valid_data_root(tmp_path)
 
@@ -155,3 +180,42 @@ def test_validate_data_root_discovers_newer_enriched_seasons(
 
     assert all(check.ok for check in checks)
     assert any(check.subject == "2026-27/enriched.parquet" for check in checks)
+
+
+def test_validate_data_root_accepts_preseason_live_archive(tmp_path: Path) -> None:
+    _write_valid_data_root(tmp_path)
+    _write_preseason_archive(tmp_path)
+
+    checks = data_health.validate_data_root(tmp_path, current_season="2026-27")
+
+    assert all(check.ok for check in checks)
+    live = next(check for check in checks if check.subject == "2026-27/live archive")
+    assert "preseason validated" in live.message
+
+
+def test_validate_data_root_rejects_wrong_live_season_directory(
+    tmp_path: Path,
+) -> None:
+    _write_valid_data_root(tmp_path)
+    _write_preseason_archive(
+        tmp_path,
+        season="2025-26",
+        deadline="2026-08-21T17:30:00Z",
+    )
+
+    checks = data_health.validate_data_root(tmp_path, current_season="2025-26")
+
+    assert any(
+        "Event deadlines identify 2026-27, not directory 2025-26" in check.message
+        for check in checks
+    )
+
+
+def test_validate_data_root_requires_current_raw_archive(tmp_path: Path) -> None:
+    _write_valid_data_root(tmp_path)
+
+    checks = data_health.validate_data_root(tmp_path, current_season="2026-27")
+
+    assert any(
+        check.subject == "2026-27/live archive" and not check.ok for check in checks
+    )

@@ -62,6 +62,7 @@ export function PlayerPanel({
 	element,
 	window: rollingWindow,
 	season,
+	asOfGw,
 	onWindowChange,
 	onSeasonChange,
 	onClose,
@@ -69,13 +70,14 @@ export function PlayerPanel({
 	element: number;
 	window: number;
 	season: string | null;
+	asOfGw: number | null;
 	onWindowChange: (window: number) => void;
 	onSeasonChange: (season: string) => void;
 	onClose: () => void;
 }) {
 	const query = useQuery({
-		queryKey: ["player", element, rollingWindow, season],
-		queryFn: () => fetchPlayerDetail(element, rollingWindow, season),
+		queryKey: ["player", element, rollingWindow, season, asOfGw],
+		queryFn: () => fetchPlayerDetail(element, rollingWindow, season, asOfGw),
 	});
 	const detail = query.data;
 
@@ -95,7 +97,8 @@ export function PlayerPanel({
 						</h2>
 						{detail ? (
 							<p className="text-sm text-zinc-500">
-								{detail.position} - {detail.team_name}
+								{detail.position} - {detail.team_name} - As Of GW{" "}
+								{detail.as_of_gw}
 							</p>
 						) : null}
 					</div>
@@ -122,9 +125,9 @@ export function PlayerPanel({
 									value={detail.selected_season}
 									onChange={(e) => onSeasonChange(e.target.value)}
 								>
-									{[...detail.seasons].reverse().map((s) => (
-										<option key={s.season} value={s.season}>
-											{s.season}
+									{[...detail.available_seasons].reverse().map((season) => (
+										<option key={season} value={season}>
+											{season}
 										</option>
 									))}
 								</select>

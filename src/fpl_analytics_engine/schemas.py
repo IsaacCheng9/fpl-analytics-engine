@@ -3,6 +3,16 @@
 from pydantic import BaseModel, Field
 
 
+class ApiMeta(BaseModel):
+    """Describe the live season and current analytical readiness."""
+
+    name: str
+    season: str
+    latest_gw: int
+    data_status: str
+    next_deadline: str | None
+
+
 class FixtureContext(BaseModel):
     """Fixture and live-snapshot context shared by every player view."""
 
@@ -83,16 +93,16 @@ class ClubForm(BaseModel):
 
 
 class ClubFormValidation(BaseModel):
-    """Validation metrics for FDR-only versus FDR-plus-club-form models."""
+    """Validation metrics for season-baseline versus baseline-plus-form models."""
 
     target: str
     n_predictions: int
-    fdr_mae: float | None
-    fdr_plus_form_mae: float | None
+    baseline_mae: float | None
+    baseline_plus_form_mae: float | None
     mae_improvement: float | None
     mae_improvement_pct: float | None
-    fdr_rmse: float | None
-    fdr_plus_form_rmse: float | None
+    baseline_rmse: float | None
+    baseline_plus_form_rmse: float | None
     rmse_improvement: float | None
     rmse_improvement_pct: float | None
 
@@ -187,11 +197,13 @@ class PlayerDetail(BaseModel):
 
     element: int
     code: int | None
+    as_of_gw: int
     web_name: str
     position: str | None
     team_name: str | None
     rolling_window: int
     selected_season: str
+    available_seasons: list[str]
     gameweeks: list[PlayerGameweek]
     seasons: list[PlayerSeasonSummary]
 
@@ -220,10 +232,11 @@ class FplTeam(BaseModel):
 
 
 class DefconProbabilityPlayer(PlayerContext):
-    """A player's modelled probability of hitting the DefCon threshold.
+    """A player's DefCon hit probability conditional on the minutes threshold.
 
     Carries the same value and playing-time context as the DefCon form view, so
-    the two tables present a consistent set of columns.
+    the two tables present a consistent set of columns. The endpoint defaults
+    to appearances of at least 60 minutes.
     """
 
     element: int
@@ -236,6 +249,11 @@ class DefconProbabilityPlayer(PlayerContext):
     games: int
     hits: int
     raw_rate: float | None
-    prob: float | None
+    prob: float | None = Field(
+        description=(
+            "DefCon hit probability conditional on meeting the endpoint's "
+            "minimum-minutes threshold (60 by default)."
+        )
+    )
     prob_std: float | None
     as_of_gw: int

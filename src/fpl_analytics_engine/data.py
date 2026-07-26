@@ -56,23 +56,22 @@ def latest_enriched_season(data_root: Path) -> str:
 
 
 def latest_archived_season(data_root: Path) -> str:
-    """Return the latest season with non-empty raw live-archive snapshots.
+    """Return the latest season with a raw live archive.
 
     Args:
         data_root: Root directory holding per-season folders.
 
     Returns:
-        The latest season label by chronological order. Falls back to the latest
-        enriched snapshot when no playable raw live archive exists.
+        The latest season label by chronological order. Empty preseason history
+        still counts as a live archive because its player, team, event and
+        fixture snapshots define the current season. Falls back to the latest
+        enriched snapshot when no raw live archive exists.
     """
-    paths = sorted(
-        data_root.glob("*/player_gw_history.parquet"),
-        key=lambda path: season_sort_key(path.parent.name),
-        reverse=True,
-    )
-    for path in paths:
-        if pl.read_parquet(path).height:
-            return path.parent.name
+    seasons = [
+        path.parent.name for path in data_root.glob("*/player_gw_history.parquet")
+    ]
+    if seasons:
+        return max(seasons, key=season_sort_key)
     return latest_enriched_season(data_root)
 
 
@@ -112,6 +111,18 @@ def load_teams(data_dir: Path) -> pl.DataFrame:
     return pl.read_parquet(data_dir / "teams.parquet")
 
 
+def load_events(data_dir: Path) -> pl.DataFrame:
+    """Read the gameweek metadata snapshot.
+
+    Args:
+        data_dir: Directory holding the archived Parquet files.
+
+    Returns:
+        The bootstrap event records.
+    """
+    return pl.read_parquet(data_dir / "events.parquet")
+
+
 # Minimal fixtures schema, used when no fixtures have been archived yet.
 _FIXTURES_SCHEMA = {
     "event": pl.Int64,
@@ -142,27 +153,42 @@ def load_fixtures(data_dir: Path) -> pl.DataFrame:
 
 
 def enrich_history(
-    history: pl.DataFrame, players: pl.DataFrame, teams: pl.DataFrame
+    history: pl.DataFrame,
+    players: pl.DataFrame,
+    teams: pl.DataFrame,
+    fixtures: pl.DataFrame,
 ) -> pl.DataFrame:
     """Cast expected stats and attach player, position and DefCon metadata.
 
     Args:
         history: Raw per-gameweek history from the snapshot.
-        players: Bootstrap player records (id, code, web_name, element_type,
-            team).
+        players: Bootstrap player records (id, code, web_name, element_type).
         teams: Bootstrap team records (id, name).
+        fixtures: Fixture records (id, team_h, team_a).
 
     Returns:
         The history with float expected stats, web_name, position, team_name
         and a per-gameweek ``defcon_hit`` flag (null for ineligible positions).
     """
-    player_meta = players.select("id", "code", "web_name", "element_type", "team")
+    player_meta = players.select("id", "code", "web_name", "element_type")
     team_meta = teams.select(
         pl.col("id").alias("team"), pl.col("name").alias("team_name")
     )
-    return (
+    fixture_meta = fixtures.select(
+        pl.col("id").alias("fixture"),
+        "team_h",
+        "team_a",
+    )
+    enriched = (
         history.with_columns(
             [pl.col(c).cast(pl.Float64) for c in EXPECTED_STAT_COLUMNS]
+        )
+        .join(fixture_meta, on="fixture", how="left", validate="m:1")
+        .with_columns(
+            pl.when(pl.col("was_home"))
+            .then(pl.col("team_h"))
+            .otherwise(pl.col("team_a"))
+            .alias("team")
         )
         .join(player_meta, left_on="element", right_on="id", how="left")
         .join(team_meta, on="team", how="left")
@@ -182,6 +208,14 @@ def enrich_history(
             )
         )
     )
+    missing_teams = enriched.filter(
+        pl.col("team").is_null() | pl.col("team_name").is_null()
+    ).height
+    if missing_teams:
+        raise ValueError(
+            f"Could not derive fixture-time team for {missing_teams} history rows"
+        )
+    return enriched
 
 
 def prepare_history(data_dir: Path) -> pl.DataFrame:
@@ -197,6 +231,7 @@ def prepare_history(data_dir: Path) -> pl.DataFrame:
         load_player_history(data_dir),
         load_players(data_dir),
         load_teams(data_dir),
+        load_fixtures(data_dir),
     )
 
 
@@ -217,9 +252,9 @@ def load_all_seasons(data_root: Path) -> pl.DataFrame:
     """Load every archived season's enriched snapshot into one frame.
 
     Each season folder under ``data_root`` is expected to hold an
-    ``enriched.parquet`` sharing the canonical cross-season schema (carrying a
-    ``season`` label and the stable player ``code``), so players can be tracked
-    across seasons by code.
+    ``enriched.parquet`` carrying a ``season`` label and stable player ``code``.
+    Current-season snapshots may retain additional fixture context used by
+    live analytics, so frames are concatenated by their shared column names.
 
     Args:
         data_root: Root directory holding per-season folders.
@@ -236,4 +271,4 @@ def load_all_seasons(data_root: Path) -> pl.DataFrame:
         frames.append(frame)
     if not frames:
         return pl.DataFrame()
-    return pl.concat(frames, how="vertical_relaxed")
+    return pl.concat(frames, how="diagonal_relaxed")

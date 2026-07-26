@@ -4,7 +4,10 @@ export type Position = "GK" | "DEF" | "MID" | "FWD" | "MNG";
 
 export interface Meta {
 	name: string;
+	season: string;
 	latest_gw: number;
+	data_status: "preseason" | "ready";
+	next_deadline: string | null;
 }
 
 // Fixture difficulty and the live ownership overlay shared by every player
@@ -78,12 +81,12 @@ export interface ClubForm {
 export interface ClubFormValidation {
 	target: string;
 	n_predictions: number;
-	fdr_mae: number | null;
-	fdr_plus_form_mae: number | null;
+	baseline_mae: number | null;
+	baseline_plus_form_mae: number | null;
 	mae_improvement: number | null;
 	mae_improvement_pct: number | null;
-	fdr_rmse: number | null;
-	fdr_plus_form_rmse: number | null;
+	baseline_rmse: number | null;
+	baseline_plus_form_rmse: number | null;
 	rmse_improvement: number | null;
 	rmse_improvement_pct: number | null;
 }
@@ -177,11 +180,13 @@ export interface PlayerSeasonSummary {
 export interface PlayerDetail {
 	element: number;
 	code: number | null;
+	as_of_gw: number;
 	web_name: string;
 	position: string | null;
 	team_name: string | null;
 	rolling_window: number;
 	selected_season: string;
+	available_seasons: string[];
 	gameweeks: PlayerGameweek[];
 	seasons: PlayerSeasonSummary[];
 }
@@ -233,7 +238,7 @@ export interface ClubFormParams {
 
 export interface ClubFormValidationParams {
 	window?: number;
-	fdrHorizon?: number;
+	horizon?: number;
 	minTrainRows?: number;
 }
 
@@ -311,8 +316,8 @@ export function fetchClubFormValidation(
 	if (params.window !== undefined) {
 		search.set("window", String(params.window));
 	}
-	if (params.fdrHorizon !== undefined) {
-		search.set("fdr_horizon", String(params.fdrHorizon));
+	if (params.horizon !== undefined) {
+		search.set("horizon", String(params.horizon));
 	}
 	if (params.minTrainRows !== undefined) {
 		search.set("min_train_rows", String(params.minTrainRows));
@@ -343,10 +348,14 @@ export function fetchPlayerDetail(
 	element: number,
 	window: number,
 	season?: string | null,
+	asOfGw?: number | null,
 ): Promise<PlayerDetail> {
 	const params = new URLSearchParams({ window: String(window) });
 	if (season) {
 		params.set("season", season);
+	}
+	if (asOfGw !== null && asOfGw !== undefined) {
+		params.set("as_of_gw", String(asOfGw));
 	}
 	return getJson<PlayerDetail>(`/players/${element}?${params}`);
 }
