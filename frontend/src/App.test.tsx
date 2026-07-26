@@ -403,11 +403,13 @@ const importedTeam = {
 const playerDetail = {
 	element: 1,
 	code: 9999,
+	as_of_gw: 38,
 	web_name: "Mbeumo",
 	position: "MID",
 	team_name: "Man Utd",
 	rolling_window: 5,
 	selected_season: "2025-26",
+	available_seasons: ["2022-23", "2023-24", "2024-25", "2025-26"],
 	gameweeks: [
 		{
 			round: 1,
@@ -598,49 +600,47 @@ function mockLocalStorage() {
 	});
 }
 
+function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
+	const url = String(input);
+	let body: unknown = meta;
+	if (url.includes("/players/form")) {
+		const params = new URL(url, "http://test").searchParams;
+		const rows = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+		body =
+			params.get("as_of_gw") === "30"
+				? withHistoricalFixtureContext(rows)
+				: rows;
+	} else if (url.includes("/fpl-team/")) {
+		body = importedTeam;
+	} else if (url.includes("/clubs/form-validation")) {
+		body = clubValidationRows;
+	} else if (url.includes("/clubs/form")) {
+		body = clubRows;
+	} else if (url.includes("/players/defcon-probability-validation")) {
+		body = defconValidation;
+	} else if (url.includes("/players/defcon-probability")) {
+		body = probRows;
+	} else if (url.includes("/players/defcon?")) {
+		body = defconRows;
+	} else if (/\/players\/\d+/.test(url)) {
+		const element = Number(url.match(/\/players\/(\d+)/)?.[1]);
+		body = playerDetails[element as keyof typeof playerDetails] ?? playerDetail;
+	} else if (url.includes("/players/")) {
+		body = [];
+	}
+	return Promise.resolve(
+		new Response(JSON.stringify(body), {
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+		}),
+	);
+}
+
 beforeEach(() => {
 	mockLocalStorage();
 	window.history.replaceState(null, "", "/");
 	window.localStorage.clear();
-	vi.stubGlobal(
-		"fetch",
-		vi.fn((input: string) => {
-			let body: unknown = meta;
-			if (input.includes("/players/form")) {
-				const params = new URL(input, "http://test").searchParams;
-				const rows =
-					params.get("min_delta") === "-1000" ? broadFormRows : formRows;
-				body =
-					params.get("as_of_gw") === "30"
-						? withHistoricalFixtureContext(rows)
-						: rows;
-			} else if (input.includes("/fpl-team/")) {
-				body = importedTeam;
-			} else if (input.includes("/clubs/form-validation")) {
-				body = clubValidationRows;
-			} else if (input.includes("/clubs/form")) {
-				body = clubRows;
-			} else if (input.includes("/players/defcon-probability-validation")) {
-				body = defconValidation;
-			} else if (input.includes("/players/defcon-probability")) {
-				body = probRows;
-			} else if (input.includes("/players/defcon?")) {
-				body = defconRows;
-			} else if (/\/players\/\d+/.test(input)) {
-				const element = Number(input.match(/\/players\/(\d+)/)?.[1]);
-				body =
-					playerDetails[element as keyof typeof playerDetails] ?? playerDetail;
-			} else if (input.includes("/players/")) {
-				body = [];
-			}
-			return Promise.resolve(
-				new Response(JSON.stringify(body), {
-					status: 200,
-					headers: { "Content-Type": "application/json" },
-				}),
-			);
-		}),
-	);
+	vi.stubGlobal("fetch", vi.fn(mockApiFetch));
 });
 
 function withProviders(children: ReactNode) {
@@ -1014,6 +1014,67 @@ test("imports an FPL team and filters owned players", async () => {
 	});
 });
 
+test("does not render previous rows while a new gameweek is loading", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/form") && url.includes("as_of_gw=30")) {
+			return new Promise<Response>(() => {});
+		}
+		return mockApiFetch(input);
+	});
+
+	fireEvent.change(screen.getByLabelText(/As Of GW/), {
+		target: { value: "30" },
+	});
+
+	await waitFor(() => {
+		expect(screen.getByText("Loading...")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+});
+
+test("rejects imported-team data whose returned entry ID does not match", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "123" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+	await waitFor(() => {
+		expect(screen.getByText("Currently Owned (2)")).toBeInTheDocument();
+	});
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("/fpl-team/456")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(importedTeam), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "456" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+
+	await waitFor(() => {
+		expect(screen.getByText("Team Import Failed")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Currently Owned (2)")).not.toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Owned (0)" })).toBeDisabled();
+});
+
 test("opens a current squad inspection view from an imported FPL team", async () => {
 	window.history.replaceState(null, "", "/?as_of_gw=30");
 	render(withProviders(<App />));
@@ -1044,6 +1105,9 @@ test("opens a current squad inspection view from an imported FPL team", async ()
 	expect(screen.queryByText("Slot")).not.toBeInTheDocument();
 	expect(screen.getByText("Fixture Risk")).toBeInTheDocument();
 	expect(screen.getAllByText("DefCon Upside").length).toBeGreaterThan(0);
+	expect(
+		screen.getByRole("columnheader", { name: "P(Hit | 60+ Mins)" }),
+	).toBeInTheDocument();
 	expect(screen.queryByText("Haaland")).not.toBeInTheDocument();
 	await waitFor(() => {
 		const params = new URLSearchParams(window.location.search);
@@ -1052,6 +1116,118 @@ test("opens a current squad inspection view from an imported FPL team", async ()
 		expect(params.get("squad_view")).toBe("1");
 		expect(params.get("squad")).toBeNull();
 	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Not Owned" }));
+	await waitFor(() => {
+		expect(
+			screen.queryByText("Next-GW Squad Inspection"),
+		).not.toBeInTheDocument();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("squad_view")).toBeNull();
+	expect(params.get("squad")).toBe("not-owned");
+});
+
+test("shows no-form state instead of low threat for missing historical data", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/form") && url.includes("as_of_gw=30")) {
+			const params = new URL(url, "http://test").searchParams;
+			const source =
+				params.get("min_delta") === "-1000" ? broadFormRows : formRows;
+			const body = withHistoricalFixtureContext(
+				source.filter((row) => row.element !== 2),
+			);
+			return Promise.resolve(
+				new Response(JSON.stringify(body), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(
+		null,
+		"",
+		"/?as_of_gw=30&fpl_team=123&squad_view=1",
+	);
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
+	});
+	const noFormFlag = await screen.findByText("No Form Data");
+	const sakaRow = noFormFlag.closest("tr");
+	expect(sakaRow).not.toBeNull();
+	expect(within(sakaRow as HTMLElement).getByText("Saka")).toBeInTheDocument();
+	expect(
+		within(sakaRow as HTMLElement).getByText("No Form Data"),
+	).toBeInTheDocument();
+	expect(
+		within(sakaRow as HTMLElement).queryByText("Low Threat"),
+	).not.toBeInTheDocument();
+});
+
+test("hides stale squad rows while historical context is loading", async () => {
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (
+			url.includes("as_of_gw=30") &&
+			(url.includes("/players/form") ||
+				url.includes("/players/defcon-probability"))
+		) {
+			return new Promise<Response>(() => {});
+		}
+		return mockApiFetch(input);
+	});
+	fireEvent.change(screen.getByLabelText(/As Of GW/), {
+		target: { value: "30" },
+	});
+
+	await waitFor(() => {
+		expect(screen.getByText("Loading squad context...")).toBeInTheDocument();
+	});
+	expect(screen.queryByText("Mbeumo")).not.toBeInTheDocument();
+});
+
+test("normalises contradictory squad, ownership and shortlist URL state", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?fpl_team=123&squad_view=1&squad=not-owned&shortlist=1&shortlist_only=1",
+	);
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
+	});
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("squad")).toBeNull();
+		expect(params.get("shortlist_only")).toBeNull();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Shortlisted (1)" }));
+	await waitFor(() => {
+		expect(
+			screen.queryByText("Next-GW Squad Inspection"),
+		).not.toBeInTheDocument();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("squad_view")).toBeNull();
+	expect(params.get("shortlist_only")).toBe("1");
 });
 
 test("opens the compare panel without arbitrary default players", async () => {
@@ -1165,6 +1341,7 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	expectCompareRow("Season Range", "GW1-GW2", "GW1-GW2");
 	expectCompareRow("Season Points", "10", "13");
 	expectCompareRow("Season xGI", "1.20", "1.60");
+	expectCompareRow("P(Hit | 60+ Mins)", "52%", "45%");
 	const attackFormRow = expectCompareRow("Attack Form", "+0.30", "+0.40");
 	expect(attackFormRow.cells[0]).not.toHaveClass("bg-emerald-50");
 	expect(attackFormRow.cells[1]).toHaveClass("bg-emerald-50");
@@ -1194,6 +1371,41 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	});
 });
 
+test("hides stale comparison rows while a new as-of context is loading", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Haaland")).toBeInTheDocument();
+	});
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Mbeumo to shortlist" }),
+	);
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Saka to shortlist" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Compare Players" }));
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(within(dialog).getByText("Window xGI")).toBeInTheDocument();
+	});
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("as_of_gw=20")) {
+			return new Promise<Response>(() => {});
+		}
+		return mockApiFetch(input);
+	});
+	fireEvent.change(within(dialog).getByLabelText("As Of GW"), {
+		target: { value: "20" },
+	});
+
+	await waitFor(() => {
+		expect(
+			within(dialog).getByText("Loading comparison..."),
+		).toBeInTheDocument();
+	});
+	expect(within(dialog).queryByText("Window xGI")).not.toBeInTheDocument();
+});
+
 test("initialises the player compare panel from the URL", async () => {
 	window.history.replaceState(
 		null,
@@ -1217,10 +1429,14 @@ test("initialises the player compare panel from the URL", async () => {
 	await waitFor(() => {
 		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
 		expect(
-			calls.some((input) => input.includes("/api/players/2?window=3")),
+			calls.some((input) =>
+				input.includes("/api/players/2?window=3&as_of_gw=20"),
+			),
 		).toBe(true);
 		expect(
-			calls.some((input) => input.includes("/api/players/3?window=3")),
+			calls.some((input) =>
+				input.includes("/api/players/3?window=3&as_of_gw=20"),
+			),
 		).toBe(true);
 		expect(
 			calls.some((input) =>
@@ -1293,6 +1509,7 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	await waitFor(() => {
 		expect(screen.getByText("Senesi")).toBeInTheDocument();
 	});
+	expect(screen.getByText("P(Hit | 60+ Mins)")).toBeInTheDocument();
 });
 
 test("renders the model evidence tab with backtest summaries", async () => {
@@ -1445,7 +1662,7 @@ test("initialises filters and player panel state from the URL", async () => {
 	const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
 	expect(
 		calls.some((input) =>
-			input.includes("/api/players/1?window=6&season=2024-25"),
+			input.includes("/api/players/1?window=6&season=2024-25&as_of_gw=20"),
 		),
 	).toBe(true);
 });
@@ -1480,6 +1697,11 @@ test("persists filter changes and player panel state to the URL", async () => {
 	fireEvent.change(screen.getByLabelText("Max Owned %"), {
 		target: { value: "45" },
 	});
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Add Saka to shortlist" }),
+		).toBeInTheDocument();
+	});
 	fireEvent.click(
 		screen.getByRole("button", { name: "Add Saka to shortlist" }),
 	);
@@ -1507,6 +1729,9 @@ test("persists filter changes and player panel state to the URL", async () => {
 		expect(params.get("min_owned")).toBe("10");
 		expect(params.get("max_owned")).toBe("45");
 		expect(params.get("shortlist")).toBe("2");
+	});
+	await waitFor(() => {
+		expect(screen.getByText("Saka")).toBeInTheDocument();
 	});
 
 	fireEvent.click(screen.getByText("Attacking Form"));

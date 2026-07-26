@@ -121,10 +121,17 @@ function squadFlags(row: SquadInspectionRow): SquadFlag[] {
 
 	if (
 		position !== "GK" &&
-		(typeof windowXgi === "number" ? windowXgi : 0) < 0.2 &&
-		(typeof seasonXgi === "number" ? seasonXgi : 0) < 0.2
+		typeof windowXgi === "number" &&
+		typeof seasonXgi === "number" &&
+		windowXgi < 0.2 &&
+		seasonXgi < 0.2
 	) {
 		flags.push({ label: "Low Threat", tone: "watch" });
+	} else if (
+		position !== "GK" &&
+		(typeof windowXgi !== "number" || typeof seasonXgi !== "number")
+	) {
+		flags.push({ label: "No Form Data", tone: "neutral" });
 	}
 
 	if (typeof deltaXgi === "number" && deltaXgi >= 0.15) {
@@ -178,7 +185,7 @@ function SquadRows({
 							<th className="px-3 py-2 font-medium">Window xA/90</th>
 							<th className="px-3 py-2 font-medium">Mins/App</th>
 							<th className="px-3 py-2 font-medium">Start %</th>
-							<th className="px-3 py-2 font-medium">DefCon</th>
+							<th className="px-3 py-2 font-medium">P(Hit | 60+ Mins)</th>
 							<th className="px-3 py-2 font-medium">Owned %</th>
 							<th className="px-3 py-2 font-medium">Flags</th>
 						</tr>
