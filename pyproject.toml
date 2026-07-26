@@ -1,6 +1,6 @@
 [project]
 name = "fpl-analytics-engine"
-version = "0.24.2"
+version = "0.24.3"
 description = "A football analytics engine processing Premier League data to identify team and player form trends and performance insights."
 readme = "README.md"
 requires-python = ">=3.14"
