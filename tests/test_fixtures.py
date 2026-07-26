@@ -1,6 +1,7 @@
 """Tests for the upcoming-fixture difficulty (FDR) transform."""
 
 import polars as pl
+import pytest
 
 from fpl_analytics_engine import fixtures
 
@@ -57,6 +58,31 @@ def test_team_fixture_difficulty_ranks_easiest_first() -> None:
     assert table["team"].to_list()[0] == 20
     difficulties = table["avg_difficulty"].to_list()
     assert difficulties == sorted(difficulties)
+
+
+def test_next_fixture_uses_earliest_kickoff_without_losing_dgw_aggregate() -> None:
+    later_easy = {
+        **_fixture(2, home=10, away=20, h_diff=2, a_diff=4),
+        "id": 102,
+        "kickoff_time": "2025-08-20T19:00:00Z",
+    }
+    earlier_hard = {
+        **_fixture(2, home=30, away=10, h_diff=3, a_diff=5),
+        "id": 101,
+        "kickoff_time": "2025-08-20T12:00:00Z",
+    }
+
+    table = fixtures.team_fixture_difficulty(
+        [later_easy, earlier_hard], as_of_gw=1, horizon=1
+    )
+    team = table.filter(pl.col("team") == 10).row(0, named=True)
+
+    assert team["n_fixtures"] == 2
+    assert team["avg_difficulty"] == pytest.approx(3.5)
+    assert team["total_difficulty"] == 7
+    assert team["next_opponent"] == 30
+    assert team["next_was_home"] is False
+    assert team["next_fdr"] == 5
 
 
 def test_team_fixture_difficulty_handles_empty_feed() -> None:

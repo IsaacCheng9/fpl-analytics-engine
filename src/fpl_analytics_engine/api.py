@@ -280,6 +280,20 @@ def _require_current_history(history: pl.DataFrame) -> None:
         )
 
 
+def _resolve_as_of_gw(history: pl.DataFrame, as_of_gw: int | None) -> int:
+    """Resolve and validate a point-in-time gameweek."""
+    latest = _latest_gw(history)
+    if as_of_gw is not None and as_of_gw > latest:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"as_of_gw {as_of_gw} is beyond the latest available "
+                f"gameweek ({latest})."
+            ),
+        )
+    return as_of_gw if as_of_gw is not None else latest
+
+
 def _latest_season_in_history(history: pl.DataFrame) -> str:
     """Return the latest season label present in a history frame."""
     seasons = [str(season) for season in history["season"].drop_nulls().unique()]
@@ -510,8 +524,7 @@ def players_form(
     the point-in-time view as it would have looked after an earlier gameweek.
     """
     _require_current_history(history)
-    latest = _latest_gw(history)
-    gw = as_of_gw if as_of_gw is not None else latest
+    gw = _resolve_as_of_gw(history, as_of_gw)
     table = form.compute_form_table(history, gw, window)
     flagged = form.flag_players(
         table,
@@ -544,8 +557,7 @@ def players_defcon(
     the point-in-time view as it would have looked after an earlier gameweek.
     """
     _require_current_history(history)
-    latest = _latest_gw(history)
-    gw = as_of_gw if as_of_gw is not None else latest
+    gw = _resolve_as_of_gw(history, as_of_gw)
     table = form.compute_form_table(history, gw, window)
     flagged = form.flag_defcon(
         table,
@@ -566,19 +578,26 @@ def players_defcon_probability(
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
     position: Position | None = None,
     min_games: int = Query(0, ge=0),
-    min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
+    min_minutes: int = Query(
+        DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES,
+        ge=0,
+        description=(
+            "Minimum minutes for eligible appearances; probabilities are "
+            "conditional on meeting this threshold."
+        ),
+    ),
     top_k: int | None = Query(None, ge=1),
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[DefconProbabilityPlayer]:
-    """Rank players by their calibrated probability of hitting DefCon next GW.
+    """Rank players by their calibrated DefCon probability given 60+ minutes.
 
     Uses a recalibrated contribution-count model over all eligible appearances
-    up to ``as_of_gw`` (defaults to the latest gameweek).
+    up to ``as_of_gw`` (defaults to the latest gameweek). The probability is
+    conditional on playing at least ``min_minutes`` (60 by default).
     """
     _require_current_history(history)
-    latest = _latest_gw(history)
-    gw = as_of_gw if as_of_gw is not None else latest
+    gw = _resolve_as_of_gw(history, as_of_gw)
     probabilities = defcon.calibrated_defcon_count_probabilities(
         history, gw, min_minutes=min_minutes
     )
@@ -690,8 +709,7 @@ def clubs_form(
     season-to-date baseline, then attaches upcoming fixture difficulty.
     """
     _require_current_history(history)
-    latest = _latest_gw(history)
-    gw = as_of_gw if as_of_gw is not None else latest
+    gw = _resolve_as_of_gw(history, as_of_gw)
     table = club.compute_club_form_table(history, gw, window)
     if top_k is not None:
         table = table.head(top_k)
@@ -739,6 +757,7 @@ def player_detail(
     history: Annotated[pl.DataFrame, Depends(get_history)],
     window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
     season: str | None = None,
+    as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
 ) -> PlayerDetail:
     """Return a player's selected-season per-gameweek form and season history.
 
@@ -746,6 +765,7 @@ def player_detail(
     seasons by their stable ``code``. Rolling figures use a trailing ``window``.
     """
     _require_current_history(history)
+    gw = _resolve_as_of_gw(history, as_of_gw)
     current_season = _latest_season_in_history(all_seasons)
     current = all_seasons.filter(
         pl.col("season") == current_season, pl.col("element") == element
@@ -753,30 +773,42 @@ def player_detail(
     if current.is_empty():
         raise HTTPException(status_code=404, detail="Player not found")
 
-    latest = current.sort("round").row(-1, named=True)
-    code = latest["code"]
+    current_latest = current.sort("round").row(-1, named=True)
+    code = current_latest["code"]
     # Track the player across seasons by code; fall back to the current season
     # when the code is missing.
     history = (
         all_seasons.filter(pl.col("code") == code) if code is not None else current
     )
-    seasons = player.season_summaries(history)
+    available_seasons = sorted(
+        (str(value) for value in history["season"].drop_nulls().unique()),
+        key=data.season_sort_key,
+    )
     selected_season = season or current_season
-    season_history = history.filter(pl.col("season") == selected_season)
+    selected_history = history.filter(pl.col("season") == selected_season)
+    season_history = selected_history.filter(pl.col("round") <= gw)
     if season_history.is_empty():
         raise HTTPException(status_code=404, detail="Season not found for player")
 
+    summary_history = history.filter(
+        (pl.col("season") < selected_season)
+        | ((pl.col("season") == selected_season) & (pl.col("round") <= gw))
+    )
+    seasons = player.season_summaries(summary_history)
+    latest = season_history.sort("round", "kickoff_time").row(-1, named=True)
     gameweeks = player.player_gameweeks(season_history, window)
     gw_cols = list(PlayerGameweek.model_fields)
     season_cols = list(PlayerSeasonSummary.model_fields)
     return PlayerDetail(
         element=element,
         code=code,
+        as_of_gw=gw,
         web_name=latest["web_name"],
         position=latest["position"],
         team_name=latest["team_name"],
         rolling_window=window,
         selected_season=selected_season,
+        available_seasons=available_seasons,
         gameweeks=[
             PlayerGameweek(**row) for row in gameweeks.select(gw_cols).to_dicts()
         ],

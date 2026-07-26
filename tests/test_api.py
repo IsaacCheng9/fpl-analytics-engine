@@ -209,6 +209,26 @@ def test_form_endpoint_validates_window(client: TestClient) -> None:
     assert client.get("/players/form", params={"window": 0}).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/players/form",
+        "/players/defcon",
+        "/players/defcon-probability",
+        "/clubs/form",
+    ],
+)
+def test_analytical_endpoints_reject_future_gameweeks(
+    client: TestClient, path: str
+) -> None:
+    response = client.get(path, params={"as_of_gw": 5})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "as_of_gw 5 is beyond the latest available gameweek (4)."
+    )
+
+
 def test_form_includes_point_in_time_value_efficiency(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2}).json()
     p1 = next(row for row in body if row["web_name"] == "P1")
@@ -573,14 +593,53 @@ def test_player_detail_returns_gameweeks_and_cross_season(client: TestClient) ->
     body = client.get("/players/7", params={"window": 3}).json()
     assert body["web_name"] == "Saka"
     assert body["code"] == 500
+    assert body["as_of_gw"] == 4
     assert body["rolling_window"] == 3
     assert body["selected_season"] == "2025-26"
+    assert body["available_seasons"] == ["2024-25", "2025-26"]
     # Current-season gameweeks only (element 7), with rolling fields present.
     assert len(body["gameweeks"]) == 2
     assert body["gameweeks"][-1]["rolling_xgi90"] is not None
     assert body["gameweeks"][0]["defensive_contribution"] == 12
     # Cross-season summary tracks the player by code across both seasons.
     assert {s["season"] for s in body["seasons"]} == {"2024-25", "2025-26"}
+
+
+def test_player_detail_scopes_rows_metadata_and_summary_to_gameweek(
+    client: TestClient,
+) -> None:
+    def rows() -> pl.DataFrame:
+        records = _detail_rows().to_dicts()
+        records[0]["web_name"] = "Early Saka"
+        records[0]["team_name"] = "Arsenal"
+        records[1]["web_name"] = "Late Saka"
+        records[1]["team_name"] = "Chelsea"
+        return pl.DataFrame(records, schema_overrides={"defcon_hit": pl.Boolean})
+
+    api.app.dependency_overrides[api.get_all_seasons] = rows
+
+    body = client.get("/players/7", params={"as_of_gw": 1}).json()
+
+    assert body["as_of_gw"] == 1
+    assert body["web_name"] == "Early Saka"
+    assert body["team_name"] == "Arsenal"
+    assert [row["round"] for row in body["gameweeks"]] == [1]
+    current_summary = next(
+        summary for summary in body["seasons"] if summary["season"] == "2025-26"
+    )
+    assert current_summary["games"] == 1
+    assert current_summary["points"] == 5
+
+
+def test_player_detail_rejects_future_gameweek(client: TestClient) -> None:
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+
+    response = client.get("/players/7", params={"as_of_gw": 5})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "as_of_gw 5 is beyond the latest available gameweek (4)."
+    )
 
 
 def test_player_detail_can_return_prior_season_gameweeks(client: TestClient) -> None:
@@ -591,6 +650,8 @@ def test_player_detail_can_return_prior_season_gameweeks(client: TestClient) -> 
     assert body["selected_season"] == "2024-25"
     assert len(body["gameweeks"]) == 1
     assert body["gameweeks"][0]["round"] == 1
+    assert body["available_seasons"] == ["2024-25", "2025-26"]
+    assert [summary["season"] for summary in body["seasons"]] == ["2024-25"]
 
 
 def test_player_detail_404_for_unknown_season(client: TestClient) -> None:
