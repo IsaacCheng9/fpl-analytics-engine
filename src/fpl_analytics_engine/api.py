@@ -137,12 +137,12 @@ CLUB_FORM_COLUMNS = [
 CLUB_FORM_VALIDATION_COLUMNS = [
     "target",
     "n_predictions",
-    "fdr_mae",
-    "fdr_plus_form_mae",
+    "baseline_mae",
+    "baseline_plus_form_mae",
     "mae_improvement",
     "mae_improvement_pct",
-    "fdr_rmse",
-    "fdr_plus_form_rmse",
+    "baseline_rmse",
+    "baseline_plus_form_rmse",
     "rmse_improvement",
     "rmse_improvement_pct",
 ]
@@ -702,27 +702,26 @@ def clubs_form(
 @app.get("/clubs/form-validation")
 def clubs_form_validation(
     history: Annotated[pl.DataFrame, Depends(get_history)],
-    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
     window: int = Query(club.DEFAULT_WINDOW, ge=1, le=20),
-    fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
+    horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
     min_train_rows: int = Query(
         club.DEFAULT_VALIDATION_MIN_TRAIN_ROWS,
         ge=1,
         description="Minimum prior club/GW rows before an as-of GW is scored.",
     ),
 ) -> list[ClubFormValidation]:
-    """Validate whether club form improves an FDR-only baseline.
+    """Validate whether club form improves a season-to-date baseline.
 
-    The backtest trains FDR-only and FDR-plus-form linear baselines on earlier
-    club/GW rows only, then scores the next horizon's realised xG and xGC per
-    match. Positive improvement means the club-form signal reduced error.
+    The backtest compares season-baseline and baseline-plus-form linear models.
+    Training includes only rows whose complete future target horizon was known
+    by the scored as-of gameweek. Historical FDR is excluded because the
+    archive does not contain point-in-time FDR revisions.
     """
     _require_current_history(history)
     scored = club.backtest_club_form_signals(
         history,
-        fixtures_data,
         window=window,
-        fdr_horizon=fdr_horizon,
+        horizon=horizon,
         min_train_rows=min_train_rows,
     )
     summary = club.summarise_club_form_validation(scored)
