@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { Cell, CellContext, ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -510,8 +510,11 @@ function readUrlState(): UrlState {
 	const params = new URLSearchParams(window.location.search);
 	const shortlist = parseShortlist(params.get("shortlist"));
 	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), { min: 1 });
+	const tab = parseTab(params.get("tab"));
+	const showSquadView =
+		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
 	return {
-		tab: parseTab(params.get("tab")),
+		tab,
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
 		teamFilter: params.get("team") ?? DEFAULT_TEAM_FILTER,
 		windowSize: clampWindowSize(
@@ -531,11 +534,10 @@ function readUrlState(): UrlState {
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
 		fplTeamId,
-		ownershipFilter: parseOwnershipFilter(params.get("squad")),
-		showSquadView:
-			fplTeamId !== null &&
-			isPlayerTab(parseTab(params.get("tab"))) &&
-			params.get("squad_view") === "1",
+		ownershipFilter: showSquadView
+			? DEFAULT_OWNERSHIP_FILTER
+			: parseOwnershipFilter(params.get("squad")),
+		showSquadView,
 		compareOpen:
 			params.get("compare") === "1" ||
 			params.has("compare_a") ||
@@ -576,7 +578,9 @@ function readUrlState(): UrlState {
 		clubActualMetrics: parseClubActualMetrics(params.get("club_actuals")),
 		shortlist,
 		showShortlistedOnly:
-			shortlist.length > 0 && params.get("shortlist_only") === "1",
+			!showSquadView &&
+			shortlist.length > 0 &&
+			params.get("shortlist_only") === "1",
 	};
 }
 
@@ -1367,12 +1371,12 @@ function buildDefconProbColumns(
 		},
 		{
 			accessorKey: "prob",
-			header: "P(Hit Next GW)",
+			header: "P(Hit | 60+ Mins)",
 			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{
 					tooltip:
-						"Modelled probability of clearing the DefCon threshold next gameweek",
+						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
 				},
 				ranges.prob,
 			),
@@ -1875,6 +1879,10 @@ export default function App() {
 		if (!Number.isInteger(parsed) || parsed <= 0) {
 			return;
 		}
+		if (parsed !== fplTeamId) {
+			setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
+			setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
+		}
 		setFplTeamId(parsed);
 	}
 
@@ -2001,26 +2009,25 @@ export default function App() {
 		queryKey: ["fplTeam", fplTeamId],
 		queryFn: () => fetchFplTeam(fplTeamId as number, null),
 		enabled: analyticsReady && fplTeamId !== null,
-		placeholderData: keepPreviousData,
 	});
+	const importedTeam =
+		fplTeamQuery.data?.entry_id === fplTeamId ? fplTeamQuery.data : undefined;
+	const teamImportIdentityError =
+		fplTeamQuery.data !== undefined && importedTeam === undefined;
 	const parsedFplTeamInput = Number(fplTeamInput);
 	const canImportFplTeam =
 		Number.isInteger(parsedFplTeamInput) && parsedFplTeamInput > 0;
 	const ownedElements = useMemo(
-		() =>
-			new Set(
-				fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? []),
-			),
-		[fplTeamId, fplTeamQuery.data],
+		() => new Set(importedTeam?.owned_elements ?? []),
+		[importedTeam],
 	);
 	const ownedElementList = useMemo(
-		() => (fplTeamId === null ? [] : (fplTeamQuery.data?.owned_elements ?? [])),
-		[fplTeamId, fplTeamQuery.data],
+		() => importedTeam?.owned_elements ?? [],
+		[importedTeam],
 	);
-	const ownedCount =
-		fplTeamId === null ? 0 : (fplTeamQuery.data?.owned_elements.length ?? 0);
-	const hasImportedTeam = fplTeamId !== null && fplTeamQuery.data !== undefined;
-	const squadPicks: FplTeamPick[] = fplTeamQuery.data?.picks ?? [];
+	const ownedCount = importedTeam?.owned_elements.length ?? 0;
+	const hasImportedTeam = importedTeam !== undefined;
+	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
 
 	const base = { window: windowSize, position, minMinutes, asOfGw };
 	const squadBase = {
@@ -2037,7 +2044,6 @@ export default function App() {
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
 		enabled: analyticsReady && tab === "form",
-		placeholderData: keepPreviousData,
 	});
 	const defconQuery = useQuery({
 		queryKey: [
@@ -2052,7 +2058,6 @@ export default function App() {
 		queryFn: () =>
 			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
 		enabled: analyticsReady && tab === "defcon",
-		placeholderData: keepPreviousData,
 	});
 	const defconProbQuery = useQuery({
 		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
@@ -2063,25 +2068,21 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: analyticsReady && tab === "defconProb",
-		placeholderData: keepPreviousData,
 	});
 	const clubQuery = useQuery({
 		queryKey: ["clubs", windowSize, asOfGw],
 		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
 		enabled: analyticsReady && tab === "clubs",
-		placeholderData: keepPreviousData,
 	});
 	const defconValidationQuery = useQuery({
 		queryKey: ["defconValidation"],
 		queryFn: () => fetchDefconProbabilityValidation(),
 		enabled: analyticsReady && tab === "evidence",
-		placeholderData: keepPreviousData,
 	});
 	const clubValidationQuery = useQuery({
 		queryKey: ["clubValidation"],
 		queryFn: () => fetchClubFormValidation(),
 		enabled: analyticsReady && tab === "evidence",
-		placeholderData: keepPreviousData,
 	});
 	const squadFormQuery = useQuery({
 		queryKey: ["squadForm", windowSize, asOfGw],
@@ -2091,7 +2092,6 @@ export default function App() {
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
 		enabled: analyticsReady && isSquadViewActive,
-		placeholderData: keepPreviousData,
 	});
 	const squadCurrentFormQuery = useQuery({
 		queryKey: ["squadCurrentForm", windowSize],
@@ -2102,7 +2102,6 @@ export default function App() {
 				minDelta: FORM_MIN_DELTA_FLOOR,
 			}),
 		enabled: analyticsReady && isSquadViewActive,
-		placeholderData: keepPreviousData,
 	});
 	const squadDefconProbabilityQuery = useQuery({
 		queryKey: ["squadDefconProbability", asOfGw],
@@ -2113,7 +2112,6 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: analyticsReady && isSquadViewActive,
-		placeholderData: keepPreviousData,
 	});
 
 	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
@@ -2129,7 +2127,6 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: analyticsReady && tab === "form",
-		placeholderData: keepPreviousData,
 	});
 	const defconBaseline = useQuery({
 		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
@@ -2142,20 +2139,17 @@ export default function App() {
 				asOfGw,
 			}),
 		enabled: analyticsReady && tab === "defcon",
-		placeholderData: keepPreviousData,
 	});
 	const defconProbBaseline = useQuery({
 		queryKey: ["defconProbBaseline", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
 		enabled: analyticsReady && tab === "defconProb",
-		placeholderData: keepPreviousData,
 	});
 	const clubBaseline = useQuery({
 		queryKey: ["clubBaseline", windowSize, asOfGw],
 		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
 		enabled: analyticsReady && tab === "clubs",
-		placeholderData: keepPreviousData,
 	});
 	const compareFormQuery = useQuery({
 		queryKey: ["compareForm", compareWindow, compareAsOfGw],
@@ -2168,7 +2162,6 @@ export default function App() {
 				asOfGw: compareAsOfGw,
 			}),
 		enabled: analyticsReady && compareOpen,
-		placeholderData: keepPreviousData,
 	});
 	const compareDefconQuery = useQuery({
 		queryKey: ["compareDefcon", compareWindow, compareAsOfGw],
@@ -2181,7 +2174,6 @@ export default function App() {
 				asOfGw: compareAsOfGw,
 			}),
 		enabled: analyticsReady && compareOpen,
-		placeholderData: keepPreviousData,
 	});
 	const compareDefconProbabilityQuery = useQuery({
 		queryKey: ["compareDefconProbability", compareAsOfGw],
@@ -2192,14 +2184,12 @@ export default function App() {
 				asOfGw: compareAsOfGw,
 			}),
 		enabled: analyticsReady && compareOpen,
-		placeholderData: keepPreviousData,
 	});
 	const compareClubQuery = useQuery({
 		queryKey: ["compareClub", compareWindow, compareAsOfGw],
 		queryFn: () =>
 			fetchClubForm({ window: compareWindow, asOfGw: compareAsOfGw }),
 		enabled: analyticsReady && compareOpen,
-		placeholderData: keepPreviousData,
 	});
 
 	const comparePlayerOptions = useMemo(
@@ -2314,6 +2304,18 @@ export default function App() {
 					: tab === "clubs"
 						? clubQuery
 						: null;
+	const activeBaseline =
+		tab === "form"
+			? formBaseline
+			: tab === "defcon"
+				? defconBaseline
+				: tab === "defconProb"
+					? defconProbBaseline
+					: tab === "clubs"
+						? clubBaseline
+						: null;
+	const activeLoading = active?.isPending || activeBaseline?.isPending;
+	const activeError = active?.isError || activeBaseline?.isError;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
@@ -3211,7 +3213,7 @@ export default function App() {
 											: "border-sky-200 bg-sky-50 text-sky-800"
 									}`}
 								>
-									{fplTeamQuery.isError
+									{fplTeamQuery.isError || teamImportIdentityError
 										? "Team Import Failed"
 										: fplTeamQuery.isPending
 											? "Loading Team..."
@@ -3238,7 +3240,11 @@ export default function App() {
 													? "bg-zinc-900 text-white"
 													: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
 											}`}
-											onClick={() => setOwnershipFilter(value)}
+											onClick={() => {
+												setOwnershipFilter(value);
+												setShowSquadView(false);
+												setShowShortlistedOnly(false);
+											}}
 										>
 											{label}
 										</button>
@@ -3364,15 +3370,16 @@ export default function App() {
 						}
 						error={
 							fplTeamQuery.isError ||
+							teamImportIdentityError ||
 							squadFormQuery.isError ||
 							squadCurrentFormQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
 						onPlayerClick={openPlayerDetail}
 					/>
-				) : active?.isPending ? (
+				) : activeLoading ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
-				) : active?.isError ? (
+				) : activeError ? (
 					<p className="text-red-600 text-sm">
 						Failed to load - is the API running on port 8000?
 					</p>
@@ -3455,6 +3462,7 @@ export default function App() {
 					element={selectedElement}
 					window={playerWindow}
 					season={playerSeason}
+					asOfGw={asOfGw}
 					onWindowChange={setPlayerWindow}
 					onSeasonChange={setPlayerSeason}
 					onClose={() => {

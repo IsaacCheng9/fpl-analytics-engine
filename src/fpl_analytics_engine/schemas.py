@@ -197,11 +197,13 @@ class PlayerDetail(BaseModel):
 
     element: int
     code: int | None
+    as_of_gw: int
     web_name: str
     position: str | None
     team_name: str | None
     rolling_window: int
     selected_season: str
+    available_seasons: list[str]
     gameweeks: list[PlayerGameweek]
     seasons: list[PlayerSeasonSummary]
 
@@ -230,10 +232,11 @@ class FplTeam(BaseModel):
 
 
 class DefconProbabilityPlayer(PlayerContext):
-    """A player's modelled probability of hitting the DefCon threshold.
+    """A player's DefCon hit probability conditional on the minutes threshold.
 
     Carries the same value and playing-time context as the DefCon form view, so
-    the two tables present a consistent set of columns.
+    the two tables present a consistent set of columns. The endpoint defaults
+    to appearances of at least 60 minutes.
     """
 
     element: int
@@ -246,6 +249,11 @@ class DefconProbabilityPlayer(PlayerContext):
     games: int
     hits: int
     raw_rate: float | None
-    prob: float | None
+    prob: float | None = Field(
+        description=(
+            "DefCon hit probability conditional on meeting the endpoint's "
+            "minimum-minutes threshold (60 by default)."
+        )
+    )
     prob_std: float | None
     as_of_gw: int

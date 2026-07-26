@@ -102,7 +102,7 @@ export function ModelEvidence({
 					<h3 className="font-semibold text-base">DefCon Probability Model</h3>
 					<p className="mt-1 text-sm text-zinc-500">
 						Calibrated contribution-count predictions, scored against the
-						following gameweek.
+						following gameweek among appearances of at least 60 minutes.
 					</p>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

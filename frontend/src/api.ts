@@ -180,11 +180,13 @@ export interface PlayerSeasonSummary {
 export interface PlayerDetail {
 	element: number;
 	code: number | null;
+	as_of_gw: number;
 	web_name: string;
 	position: string | null;
 	team_name: string | null;
 	rolling_window: number;
 	selected_season: string;
+	available_seasons: string[];
 	gameweeks: PlayerGameweek[];
 	seasons: PlayerSeasonSummary[];
 }
@@ -346,10 +348,14 @@ export function fetchPlayerDetail(
 	element: number,
 	window: number,
 	season?: string | null,
+	asOfGw?: number | null,
 ): Promise<PlayerDetail> {
 	const params = new URLSearchParams({ window: String(window) });
 	if (season) {
 		params.set("season", season);
+	}
+	if (asOfGw !== null && asOfGw !== undefined) {
+		params.set("as_of_gw", String(asOfGw));
 	}
 	return getJson<PlayerDetail>(`/players/${element}?${params}`);
 }
