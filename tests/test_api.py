@@ -405,107 +405,64 @@ def test_defcon_probability_validation_defaults_to_display_minutes_threshold(
 
 def _club_history() -> pl.DataFrame:
     rows = []
-    for team, name, fixture, round_, xg, xgc, home_score, away_score in [
-        (1, "Arsenal", 1, 1, 1.0, 1.2, 2, 1),
-        (1, "Arsenal", 2, 2, 2.0, 0.5, 3, 0),
-        (2, "Chelsea", 3, 1, 0.8, 1.8, 1, 2),
-        (2, "Chelsea", 4, 2, 0.6, 2.2, 0, 2),
+    for round_, arsenal_xg, chelsea_xg, home_score, away_score in [
+        (1, 1.0, 1.2, 2, 1),
+        (2, 2.0, 0.5, 3, 0),
     ]:
-        rows.extend(
-            [
-                {
-                    "element": fixture * 10 + 1,
-                    "fixture": fixture,
-                    "team": team,
-                    "team_name": name,
-                    "round": round_,
-                    "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
-                    "was_home": True,
-                    "team_h_score": home_score,
-                    "team_a_score": away_score,
-                    "minutes": 90,
-                    "expected_goals": xg / 2,
-                    "expected_goals_conceded": xgc,
-                },
-                {
-                    "element": fixture * 10 + 2,
-                    "fixture": fixture,
-                    "team": team,
-                    "team_name": name,
-                    "round": round_,
-                    "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
-                    "was_home": True,
-                    "team_h_score": home_score,
-                    "team_a_score": away_score,
-                    "minutes": 90,
-                    "expected_goals": xg / 2,
-                    "expected_goals_conceded": xgc,
-                },
-            ]
-        )
+        for team, name, xg, was_home in [
+            (1, "Arsenal", arsenal_xg, True),
+            (2, "Chelsea", chelsea_xg, False),
+        ]:
+            for player in [1, 2]:
+                rows.append(
+                    {
+                        "element": round_ * 100 + team * 10 + player,
+                        "fixture": round_,
+                        "team": team,
+                        "team_name": name,
+                        "round": round_,
+                        "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+                        "was_home": was_home,
+                        "team_h_score": home_score,
+                        "team_a_score": away_score,
+                        "minutes": 90,
+                        "expected_goals": xg / 2,
+                    }
+                )
     return pl.DataFrame(rows)
 
 
 def _club_validation_history() -> pl.DataFrame:
     rows = []
-    for round_, team_1_xg, team_1_xgc, team_2_xg, team_2_xgc in [
-        (1, 1.0, 1.4, 1.8, 0.7),
-        (2, 1.5, 1.1, 1.4, 0.9),
-        (3, 2.0, 0.9, 1.1, 1.1),
-        (4, 2.4, 0.7, 0.9, 1.3),
-        (5, 2.8, 0.6, 0.8, 1.6),
-        (6, 3.0, 0.5, 0.7, 1.8),
+    for round_, arsenal_xg, chelsea_xg in [
+        (1, 1.0, 1.8),
+        (2, 1.5, 1.4),
+        (3, 2.0, 1.1),
+        (4, 2.4, 0.9),
+        (5, 2.8, 0.8),
+        (6, 3.0, 0.7),
     ]:
-        for team, name, xg, xgc in [
-            (1, "Arsenal", team_1_xg, team_1_xgc),
-            (2, "Chelsea", team_2_xg, team_2_xgc),
+        for team, name, xg, was_home in [
+            (1, "Arsenal", arsenal_xg, True),
+            (2, "Chelsea", chelsea_xg, False),
         ]:
-            fixture = round_ * 10 + team
-            rows.extend(
-                [
+            for player in [1, 2]:
+                rows.append(
                     {
-                        "element": fixture * 10 + 1,
-                        "fixture": fixture,
+                        "element": round_ * 100 + team * 10 + player,
+                        "fixture": round_,
                         "team": team,
                         "team_name": name,
                         "round": round_,
                         "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
-                        "was_home": True,
+                        "was_home": was_home,
                         "team_h_score": 2,
                         "team_a_score": 1,
                         "minutes": 90,
                         "expected_goals": xg / 2,
-                        "expected_goals_conceded": xgc,
-                    },
-                    {
-                        "element": fixture * 10 + 2,
-                        "fixture": fixture,
-                        "team": team,
-                        "team_name": name,
-                        "round": round_,
-                        "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
-                        "was_home": True,
-                        "team_h_score": 2,
-                        "team_a_score": 1,
-                        "minutes": 90,
-                        "expected_goals": xg / 2,
-                        "expected_goals_conceded": xgc,
-                    },
-                ]
-            )
+                    }
+                )
     return pl.DataFrame(rows)
-
-
-def _club_validation_fixtures() -> pl.DataFrame:
-    return pl.DataFrame(
-        {
-            "event": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6],
-            "team_h": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
-            "team_a": [91, 92, 91, 92, 91, 92, 91, 92, 91, 92, 91, 92],
-            "team_h_difficulty": [2, 4, 2, 4, 2, 4, 3, 3, 3, 3, 4, 2],
-            "team_a_difficulty": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-        }
-    )
 
 
 def test_clubs_form_endpoint_returns_club_context(client: TestClient) -> None:
@@ -538,11 +495,10 @@ def test_clubs_form_validation_endpoint_returns_backtest_summary(
     client: TestClient,
 ) -> None:
     api.app.dependency_overrides[api.get_history] = _club_validation_history
-    api.app.dependency_overrides[api.get_fixtures_data] = _club_validation_fixtures
 
     body = client.get(
         "/clubs/form-validation",
-        params={"window": 1, "fdr_horizon": 1, "min_train_rows": 4},
+        params={"window": 1, "horizon": 1, "min_train_rows": 4},
     ).json()
 
     assert {row["target"] for row in body} == {
@@ -551,8 +507,8 @@ def test_clubs_form_validation_endpoint_returns_backtest_summary(
     }
     attack = next(row for row in body if row["target"] == "future_xg_per_match")
     assert attack["n_predictions"] == 6
-    assert attack["fdr_mae"] is not None
-    assert attack["fdr_plus_form_mae"] is not None
+    assert attack["baseline_mae"] is not None
+    assert attack["baseline_plus_form_mae"] is not None
 
 
 def _detail_rows() -> pl.DataFrame:

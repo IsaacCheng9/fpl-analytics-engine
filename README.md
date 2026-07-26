@@ -32,8 +32,8 @@ where the current squad looks weak for the next gameweek.
   flags players, then scores the flags against the following gameweeks, with
   Brier score and a calibration table for the probability model
 - **Model evidence view** – surfaces the DefCon probability backtest and the
-  club-form-plus-FDR validation inside the dashboard, so the app shows where its
-  signals have actually beaten simpler baselines
+  corrected club-form validation inside the dashboard, including negative
+  results where recent form did not beat a season-to-date baseline
 - **Season archival** – snapshots preseason players and fixtures as soon as the
   FPL game rolls over, then adds current-season per-gameweek detail after GW1
 - **Historical backfill** – adapts the vaastav community archive (2022-23
@@ -160,26 +160,31 @@ probability more trustworthy.
 ### Club Form
 
 The club form view aggregates player histories into team-level attacking and
-defensive form. Team xG is summed from player xG, while team xGC uses the
-fixture-level concession context carried by players rather than summing every
-player's xGC and multiplying the same chance-concession signal across the XI.
-The view compares recent per-match xG and xGC against each club's season-to-date
-baseline, then joins exact next-fixture context and the next-five-gameweek FDR.
-Actual goals and goals conceded are available as optional context, but expected
-data stays the default signal because finishing and concession outcomes are
-noisier.
+defensive form. Team xG is summed from player xG, while each club's xGC is the
+opposing club's summed xG in the same fixture. Historical club identity comes
+from the fixture rather than the player's final bootstrap metadata, so players
+who transfer mid-season remain attributed to the club they represented in each
+match. The view compares recent per-match xG and xGC against each club's
+season-to-date baseline, then joins exact next-fixture context and the
+next-five-gameweek FDR. Actual goals and goals conceded are available as
+optional context, but expected data stays the default signal because finishing
+and concession outcomes are noisier.
 
 #### Validation Backtest Results (2025-26 Season)
 
-The validation path backtests that club-form context before it is used as a
-projection input. For each historical as-of gameweek, it trains simple FDR-only
-and FDR-plus-form baselines on earlier club/GW rows, then scores them against
-future club xG and xGC over the same horizon. Positive improvement means the
-club-form signal reduced error versus raw FDR alone. On the 2025-26 archive, FDR
-plus recent attacking club form improved future club xG prediction by 6.3% MAE
-and 3.2% RMSE versus FDR alone. Defensive club form was much weaker, improving
-future xGC prediction by only 0.9% MAE and 0.7% RMSE, so the defensive signal
-should be treated as contextual rather than recommendation grade.
+The corrected validation compares a point-in-time season-to-date baseline with
+that baseline plus recent club form. Every expanding training fold is purged so
+that a row is eligible only when its complete future target horizon has ended by
+the test as-of gameweek. Historical FDR is excluded: the archive contains only
+the end-of-season fixture snapshot, so earlier FDR revisions cannot be
+reproduced honestly.
+
+On 460 corrected 2025-26 predictions per target, adding recent attacking form
+made future xG prediction worse by 2.8% MAE and 5.5% RMSE. Adding recent
+defensive form made future xGC prediction worse by 0.1% MAE and 1.2% RMSE.
+These are negative results: club form remains useful descriptive context, but
+this backtest does not support treating it as a predictive uplift. FDR remains
+available in the live scouting view only as current fixture context.
 
 ### Data Availability Caveats
 
@@ -383,7 +388,7 @@ from one FastAPI deployment.
 | `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes` |
 | `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /clubs/form-validation` | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows` |
+| `GET /clubs/form-validation` | Backtest a season baseline versus baseline plus recent club form | `window`, `horizon`, `min_train_rows` |
 | `GET /players/{element}` | Point-in-time player gameweeks and cross-season summaries | Path: `element`; query: `window`, `season`, `as_of_gw` |
 
 The analytical table endpoints accept `as_of_gw` to evaluate the point-in-time

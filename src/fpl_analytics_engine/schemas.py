@@ -93,16 +93,16 @@ class ClubForm(BaseModel):
 
 
 class ClubFormValidation(BaseModel):
-    """Validation metrics for FDR-only versus FDR-plus-club-form models."""
+    """Validation metrics for season-baseline versus baseline-plus-form models."""
 
     target: str
     n_predictions: int
-    fdr_mae: float | None
-    fdr_plus_form_mae: float | None
+    baseline_mae: float | None
+    baseline_plus_form_mae: float | None
     mae_improvement: float | None
     mae_improvement_pct: float | None
-    fdr_rmse: float | None
-    fdr_plus_form_rmse: float | None
+    baseline_rmse: float | None
+    baseline_plus_form_rmse: float | None
     rmse_improvement: float | None
     rmse_improvement_pct: float | None
 

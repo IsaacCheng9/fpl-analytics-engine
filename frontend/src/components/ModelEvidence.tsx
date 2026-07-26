@@ -165,9 +165,11 @@ export function ModelEvidence({
 
 			<section className="rounded-lg border border-zinc-200 bg-white p-4">
 				<div className="mb-3">
-					<h3 className="font-semibold text-base">Club Form Plus FDR</h3>
+					<h3 className="font-semibold text-base">Recent Club Form</h3>
 					<p className="mt-1 text-sm text-zinc-500">
-						FDR-only baselines compared with FDR plus recent club-form context.
+						Season-to-date baselines compared with those baselines plus recent
+						club-form context. Historical FDR is excluded because point-in-time
+						rating snapshots are unavailable.
 					</p>
 				</div>
 				<div className="overflow-x-auto rounded-md border border-zinc-200">
@@ -176,8 +178,10 @@ export function ModelEvidence({
 							<tr>
 								<th className="px-3 py-2 font-medium">Target</th>
 								<th className="px-3 py-2 font-medium">Predictions</th>
-								<th className="px-3 py-2 font-medium">FDR MAE</th>
-								<th className="px-3 py-2 font-medium">FDR Plus Form MAE</th>
+								<th className="px-3 py-2 font-medium">Baseline MAE</th>
+								<th className="px-3 py-2 font-medium">
+									Baseline Plus Form MAE
+								</th>
 								<th className="px-3 py-2 font-medium">MAE Improvement</th>
 								<th className="px-3 py-2 font-medium">RMSE Improvement</th>
 							</tr>
@@ -189,9 +193,9 @@ export function ModelEvidence({
 										{targetLabel(row.target)}
 									</th>
 									<td className="px-3 py-2">{fmtNum(row.n_predictions, 0)}</td>
-									<td className="px-3 py-2">{fmtNum(row.fdr_mae, 3)}</td>
+									<td className="px-3 py-2">{fmtNum(row.baseline_mae, 3)}</td>
 									<td className="px-3 py-2">
-										{fmtNum(row.fdr_plus_form_mae, 3)}
+										{fmtNum(row.baseline_plus_form_mae, 3)}
 									</td>
 									<td
 										className={`px-3 py-2 font-semibold ${toneClass(
