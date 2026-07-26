@@ -25,8 +25,9 @@ where the current squad looks weak for the next gameweek.
   baseline, so a player heating up shows a positive `delta_xgi90` before the raw
   points catch up
 - **DefCon hit-probability model** – a calibrated contribution-count model that
-  uses the size of each defensive-contribution performance, then recalibrates
-  those probabilities against prior point-in-time prediction buckets
+  estimates `P(Hit | 60+ Mins)`, uses the size of each
+  defensive-contribution performance, then recalibrates those probabilities
+  against prior point-in-time prediction buckets
 - **Backtesting harness** – replays each gameweek on the point-in-time view,
   flags players, then scores the flags against the following gameweeks, with
   Brier score and a calibration table for the probability model
@@ -56,7 +57,7 @@ where the current squad looks weak for the next gameweek.
 - **Team-aware squad inspection** – imports a public FPL team ID, highlights
   currently owned players, filters owned/not-owned players, and shows a
   next-gameweek squad inspection view with next fixture, FDR, minutes, threat,
-  DefCon probability, ownership, and transparent risk/hold flags
+  `P(Hit | 60+ Mins)`, ownership, and transparent risk/hold flags
 - **Player detail view** – click any table row to inspect a player's
   selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
   and cross-season history keyed by stable FPL `code`
@@ -116,7 +117,7 @@ point-in-time `as_of_gw`.
 The player table can switch between all players, the imported squad inspection,
 and shortlisted players. The squad inspection view is diagnostic rather than a
 solver: it shows the current squad as one list, with the current next fixture
-and FDR, recent and season threat, minutes, start rate, DefCon probability,
+and FDR, recent and season threat, minutes, start rate, `P(Hit | 60+ Mins)`,
 ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
 `Low Threat`, `Rising Threat`, `DefCon Upside`, and `Good Hold`.
 
@@ -126,7 +127,8 @@ DefCon awards 2 FPL points when a player clears a positional threshold of
 defensive actions in a match – defenders need 10+ CBIT (clearances, blocks,
 interceptions, tackles); midfielders and forwards need 12+ CBIRT (CBIT plus
 recoveries). Rather than report a raw hit-rate, the engine models each player's
-probability of hitting next match from their defensive-contribution counts: a
+probability of hitting from their defensive-contribution counts, conditional on
+playing at least 60 minutes: a
 Gamma-Poisson count model estimates the chance of clearing the positional
 threshold, then a point-in-time calibration layer shrinks that probability
 toward the observed hit-rate of similar prior predictions. The model is
@@ -378,11 +380,11 @@ from one FastAPI deployment.
 | `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by calibrated DefCon hit probability | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes` |
 | `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /clubs/form-validation` | Backtest FDR-only versus FDR-plus-club-form baselines | `window`, `fdr_horizon`, `min_train_rows` |
-| `GET /players/{element}` | Player gameweeks and cross-season season summaries | Path: `element`; query: `window`, `season` |
+| `GET /players/{element}` | Point-in-time player gameweeks and cross-season summaries | Path: `element`; query: `window`, `season`, `as_of_gw` |
 
 The analytical table endpoints accept `as_of_gw` to evaluate the point-in-time
 view as it would have looked after an earlier gameweek; it defaults to the
