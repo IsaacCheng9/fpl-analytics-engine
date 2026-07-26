@@ -12,10 +12,11 @@ RIDGE = 1e-9
 
 VALIDATION_ROW_SCHEMA = {
     "as_of_gw": pl.Int64,
+    "target_end_gw": pl.Int64,
     "team": pl.Int64,
     "team_name": pl.String,
-    "avg_fdr": pl.Float64,
-    "upcoming_fixtures": pl.UInt32,
+    "season_xg_per_match": pl.Float64,
+    "season_xgc_per_match": pl.Float64,
     "attack_form": pl.Float64,
     "defence_form": pl.Float64,
     "future_matches": pl.UInt32,
@@ -28,22 +29,22 @@ VALIDATION_PREDICTION_SCHEMA = {
     "as_of_gw": pl.Int64,
     "team": pl.Int64,
     "team_name": pl.String,
-    "avg_fdr": pl.Float64,
+    "baseline_value": pl.Float64,
     "form_signal": pl.Float64,
     "actual": pl.Float64,
-    "fdr_prediction": pl.Float64,
-    "fdr_plus_form_prediction": pl.Float64,
+    "baseline_prediction": pl.Float64,
+    "baseline_plus_form_prediction": pl.Float64,
 }
 
 VALIDATION_SUMMARY_SCHEMA = {
     "target": pl.String,
     "n_predictions": pl.UInt32,
-    "fdr_mae": pl.Float64,
-    "fdr_plus_form_mae": pl.Float64,
+    "baseline_mae": pl.Float64,
+    "baseline_plus_form_mae": pl.Float64,
     "mae_improvement": pl.Float64,
     "mae_improvement_pct": pl.Float64,
-    "fdr_rmse": pl.Float64,
-    "fdr_plus_form_rmse": pl.Float64,
+    "baseline_rmse": pl.Float64,
+    "baseline_plus_form_rmse": pl.Float64,
     "rmse_improvement": pl.Float64,
     "rmse_improvement_pct": pl.Float64,
 }
@@ -71,10 +72,8 @@ def _compute_club_fixtures(history: pl.DataFrame) -> pl.DataFrame:
     """Aggregate player gameweek history to one row per club per fixture.
 
     Team attacking output is summed from player xG. Goals for and against come
-    from the fixture score carried on each player row. Team xGC is taken from
-    the maximum player xGC in the fixture, because FPL stores each player's
-    on-pitch xGC rather than a team row. Summing player xGC would multiply the
-    same team chance-concession context across the XI.
+    from the fixture score carried on each player row. Team xGC is the opposing
+    club's summed xG in the same fixture.
 
     Args:
         history: Enriched current-season per-gameweek player history.
@@ -97,13 +96,12 @@ def _compute_club_fixtures(history: pl.DataFrame) -> pl.DataFrame:
         "team_a_score",
         "minutes",
         "expected_goals",
-        "expected_goals_conceded",
     }
     missing = sorted(required - set(history.columns))
     if missing:
         raise ValueError(f"Missing club-form columns: {', '.join(missing)}")
 
-    return (
+    club_fixtures = (
         history.with_columns(
             pl.when(pl.col("was_home"))
             .then(pl.col("team_h_score"))
@@ -122,11 +120,31 @@ def _compute_club_fixtures(history: pl.DataFrame) -> pl.DataFrame:
             pl.col("_goals_for").max().alias("goals_for"),
             pl.col("_goals_against").max().alias("goals_against"),
             pl.col("expected_goals").sum().alias("xg"),
-            pl.col("expected_goals_conceded")
-            .filter(pl.col("minutes") > 0)
-            .max()
-            .alias("xgc"),
         )
+    )
+    invalid_fixtures = (
+        club_fixtures.group_by("fixture")
+        .len()
+        .filter(pl.col("len") != 2)
+        .sort("fixture")
+    )
+    if invalid_fixtures.height:
+        fixture_counts = ", ".join(
+            f"{row['fixture']} ({row['len']} clubs)"
+            for row in invalid_fixtures.head(10).to_dicts()
+        )
+        raise ValueError(f"Expected exactly two clubs per fixture: {fixture_counts}")
+
+    opposing_xg = club_fixtures.select(
+        "fixture",
+        pl.col("team").alias("_opponent_team"),
+        pl.col("xg").alias("xgc"),
+    )
+    return (
+        club_fixtures.join(opposing_xg, on="fixture", how="inner")
+        .filter(pl.col("team") != pl.col("_opponent_team"))
+        .drop("_opponent_team")
+        .sort("fixture", "team")
     )
 
 
@@ -281,57 +299,57 @@ def _future_club_outcomes(
 
 def club_form_validation_rows(
     history: pl.DataFrame,
-    fixtures_data: pl.DataFrame,
     window: int = DEFAULT_WINDOW,
-    fdr_horizon: int = fixtures.DEFAULT_HORIZON,
+    horizon: int = fixtures.DEFAULT_HORIZON,
     gw_range: range | None = None,
 ) -> pl.DataFrame:
-    """Build point-in-time rows for validating club form plus FDR.
+    """Build point-in-time rows for validating recent club form.
 
     Each row is one club at one ``as_of_gw``. Features come only from matches
     up to that gameweek, while the target is the club's realised xG and xGC per
-    match over the next ``fdr_horizon`` gameweeks.
+    match over the next ``horizon`` gameweeks.
 
     Args:
         history: Enriched current-season per-gameweek player history.
-        fixtures_data: Archived FPL fixtures feed.
         window: Number of recent club matches used for form.
-        fdr_horizon: Number of future gameweeks used for both FDR and outcomes.
+        horizon: Number of future gameweeks used for realised outcomes.
         gw_range: Gameweeks to evaluate; defaults to ``window`` through the
-            second-to-last gameweek.
+            latest gameweek with a complete target horizon.
 
     Returns:
         Validation feature and target rows.
     """
-    if fixtures_data.height == 0:
-        return pl.DataFrame(schema=VALIDATION_ROW_SCHEMA)
-
     max_round = latest_gameweek(history)
     if gw_range is None:
-        gw_range = range(window, max_round)
+        gw_range = range(window, max_round - horizon + 1)
 
     club_fixtures = _compute_club_fixtures(history)
     frames = []
     for as_of_gw in gw_range:
+        if as_of_gw + horizon > max_round:
+            continue
         form_table = compute_club_form_table(history, as_of_gw, window)
-        fdr = fixtures.team_fixture_difficulty(
-            fixtures_data.to_dicts(), as_of_gw, fdr_horizon
-        ).select(
-            "team",
-            pl.col("n_fixtures").alias("upcoming_fixtures"),
-            pl.col("avg_difficulty").alias("avg_fdr"),
-        )
-        future = _future_club_outcomes(club_fixtures, as_of_gw, fdr_horizon)
+        future = _future_club_outcomes(club_fixtures, as_of_gw, horizon)
         frame = (
-            form_table.select("team", "team_name", "attack_form", "defence_form")
-            .join(fdr, on="team", how="inner")
+            form_table.select(
+                "team",
+                "team_name",
+                "season_xg_per_match",
+                "season_xgc_per_match",
+                "attack_form",
+                "defence_form",
+            )
             .join(future, on="team", how="inner")
             .filter(
-                pl.col("avg_fdr").is_not_null(),
+                pl.col("season_xg_per_match").is_not_null(),
+                pl.col("season_xgc_per_match").is_not_null(),
                 pl.col("future_xg_per_match").is_not_null(),
                 pl.col("future_xgc_per_match").is_not_null(),
             )
-            .with_columns(pl.lit(as_of_gw).alias("as_of_gw"))
+            .with_columns(
+                pl.lit(as_of_gw).alias("as_of_gw"),
+                pl.lit(as_of_gw + horizon).alias("target_end_gw"),
+            )
             .select(list(VALIDATION_ROW_SCHEMA))
         )
         if frame.height > 0:
@@ -460,15 +478,17 @@ def _predict_linear(
 def _expanding_predictions(
     rows: pl.DataFrame,
     target: str,
+    baseline_feature: str,
     form_feature: str,
     min_train_rows: int,
 ) -> list[dict[str, object]]:
-    """Fit FDR-only and FDR-plus-form models on prior rows only.
+    """Fit baseline and baseline-plus-form models on fully observed prior rows.
 
     Args:
         rows: Validation feature and target rows.
         target: Target column to predict.
-        form_feature: Club-form signal paired with FDR.
+        baseline_feature: Season-to-date baseline for the target.
+        form_feature: Recent club-form signal paired with the baseline.
         min_train_rows: Minimum historical rows before a gameweek is scored.
 
     Returns:
@@ -476,26 +496,30 @@ def _expanding_predictions(
     """
     predictions = []
     for as_of_gw in sorted(rows["as_of_gw"].unique().to_list()):
-        train = rows.filter(pl.col("as_of_gw") < as_of_gw).drop_nulls(
-            ["avg_fdr", form_feature, target]
+        train = rows.filter(pl.col("target_end_gw") <= as_of_gw).drop_nulls(
+            [baseline_feature, form_feature, target]
         )
         test = rows.filter(pl.col("as_of_gw") == as_of_gw).drop_nulls(
-            ["avg_fdr", form_feature, target]
+            [baseline_feature, form_feature, target]
         )
         if train.height < min_train_rows or test.height == 0:
             continue
 
         train_rows = train.to_dicts()
-        fdr_coefficients = _fit_linear_model(train_rows, target, ["avg_fdr"])
+        baseline_coefficients = _fit_linear_model(
+            train_rows, target, [baseline_feature]
+        )
         combined_coefficients = _fit_linear_model(
-            train_rows, target, ["avg_fdr", form_feature]
+            train_rows, target, [baseline_feature, form_feature]
         )
         for row in test.to_dicts():
-            fdr_prediction = _predict_linear(fdr_coefficients, row, ["avg_fdr"])
-            combined_prediction = _predict_linear(
-                combined_coefficients, row, ["avg_fdr", form_feature]
+            baseline_prediction = _predict_linear(
+                baseline_coefficients, row, [baseline_feature]
             )
-            if fdr_prediction is None or combined_prediction is None:
+            combined_prediction = _predict_linear(
+                combined_coefficients, row, [baseline_feature, form_feature]
+            )
+            if baseline_prediction is None or combined_prediction is None:
                 continue
             predictions.append(
                 {
@@ -503,11 +527,11 @@ def _expanding_predictions(
                     "as_of_gw": row["as_of_gw"],
                     "team": row["team"],
                     "team_name": row["team_name"],
-                    "avg_fdr": row["avg_fdr"],
+                    "baseline_value": row[baseline_feature],
                     "form_signal": row[form_feature],
                     "actual": row[target],
-                    "fdr_prediction": fdr_prediction,
-                    "fdr_plus_form_prediction": combined_prediction,
+                    "baseline_prediction": baseline_prediction,
+                    "baseline_plus_form_prediction": combined_prediction,
                 }
             )
     return predictions
@@ -515,24 +539,22 @@ def _expanding_predictions(
 
 def backtest_club_form_signals(
     history: pl.DataFrame,
-    fixtures_data: pl.DataFrame,
     window: int = DEFAULT_WINDOW,
-    fdr_horizon: int = fixtures.DEFAULT_HORIZON,
+    horizon: int = fixtures.DEFAULT_HORIZON,
     min_train_rows: int = DEFAULT_VALIDATION_MIN_TRAIN_ROWS,
     gw_range: range | None = None,
 ) -> pl.DataFrame:
-    """Backtest whether club form improves an FDR-only baseline.
+    """Backtest whether recent club form improves a season-to-date baseline.
 
-    For each gameweek, the FDR-only model and FDR-plus-form model are trained
-    only on earlier validation rows, then scored against the next horizon's
-    realised xG and xGC per match. This checks whether the club-form signal adds
-    information beyond raw FDR without leaking future outcomes.
+    For each gameweek, the baseline and baseline-plus-form models are trained
+    only on rows whose complete target horizon was observable by that
+    gameweek. They are then scored against the next horizon's realised xG and
+    xGC per match.
 
     Args:
         history: Enriched current-season per-gameweek player history.
-        fixtures_data: Archived FPL fixtures feed.
         window: Number of recent club matches used for form.
-        fdr_horizon: Number of future gameweeks used for FDR and outcomes.
+        horizon: Number of future gameweeks used for outcomes.
         min_train_rows: Minimum historical rows needed before scoring a
             gameweek.
         gw_range: Gameweeks to evaluate.
@@ -541,9 +563,7 @@ def backtest_club_form_signals(
         One row per scored club/gameweek/target with both predictions and the
         realised target.
     """
-    rows = club_form_validation_rows(
-        history, fixtures_data, window, fdr_horizon, gw_range
-    )
+    rows = club_form_validation_rows(history, window, horizon, gw_range)
     if rows.height == 0:
         return pl.DataFrame(schema=VALIDATION_PREDICTION_SCHEMA)
 
@@ -551,12 +571,14 @@ def backtest_club_form_signals(
         *_expanding_predictions(
             rows,
             "future_xg_per_match",
+            "season_xg_per_match",
             "attack_form",
             min_train_rows,
         ),
         *_expanding_predictions(
             rows,
             "future_xgc_per_match",
+            "season_xgc_per_match",
             "defence_form",
             min_train_rows,
         ),
@@ -569,15 +591,15 @@ def backtest_club_form_signals(
 
 
 def summarise_club_form_validation(scored: pl.DataFrame) -> pl.DataFrame:
-    """Summarise FDR-only versus FDR-plus-club-form validation errors.
+    """Summarise baseline versus baseline-plus-club-form validation errors.
 
     Args:
         scored: Output of :func:`backtest_club_form_signals`.
 
     Returns:
         One row per target with MAE/RMSE for each model and the improvement of
-        the FDR-plus-form model over the FDR-only baseline. Positive improvement
-        means club form helped.
+        the baseline-plus-form model over the season-to-date baseline. Positive
+        improvement means club form helped.
     """
     if scored.height == 0:
         return pl.DataFrame(schema=VALIDATION_SUMMARY_SCHEMA)
@@ -586,35 +608,40 @@ def summarise_club_form_validation(scored: pl.DataFrame) -> pl.DataFrame:
         scored.group_by("target")
         .agg(
             pl.len().alias("n_predictions"),
-            (pl.col("fdr_prediction") - pl.col("actual")).abs().mean().alias("fdr_mae"),
-            (pl.col("fdr_plus_form_prediction") - pl.col("actual"))
+            (pl.col("baseline_prediction") - pl.col("actual"))
             .abs()
             .mean()
-            .alias("fdr_plus_form_mae"),
-            (pl.col("fdr_prediction") - pl.col("actual"))
+            .alias("baseline_mae"),
+            (pl.col("baseline_plus_form_prediction") - pl.col("actual"))
+            .abs()
+            .mean()
+            .alias("baseline_plus_form_mae"),
+            (pl.col("baseline_prediction") - pl.col("actual"))
             .pow(2)
             .mean()
             .sqrt()
-            .alias("fdr_rmse"),
-            (pl.col("fdr_plus_form_prediction") - pl.col("actual"))
+            .alias("baseline_rmse"),
+            (pl.col("baseline_plus_form_prediction") - pl.col("actual"))
             .pow(2)
             .mean()
             .sqrt()
-            .alias("fdr_plus_form_rmse"),
+            .alias("baseline_plus_form_rmse"),
         )
         .with_columns(
-            (pl.col("fdr_mae") - pl.col("fdr_plus_form_mae")).alias("mae_improvement"),
-            (pl.col("fdr_rmse") - pl.col("fdr_plus_form_rmse")).alias(
+            (pl.col("baseline_mae") - pl.col("baseline_plus_form_mae")).alias(
+                "mae_improvement"
+            ),
+            (pl.col("baseline_rmse") - pl.col("baseline_plus_form_rmse")).alias(
                 "rmse_improvement"
             ),
         )
         .with_columns(
-            pl.when(pl.col("fdr_mae") > 0)
-            .then(pl.col("mae_improvement") / pl.col("fdr_mae"))
+            pl.when(pl.col("baseline_mae") > 0)
+            .then(pl.col("mae_improvement") / pl.col("baseline_mae"))
             .otherwise(None)
             .alias("mae_improvement_pct"),
-            pl.when(pl.col("fdr_rmse") > 0)
-            .then(pl.col("rmse_improvement") / pl.col("fdr_rmse"))
+            pl.when(pl.col("baseline_rmse") > 0)
+            .then(pl.col("rmse_improvement") / pl.col("baseline_rmse"))
             .otherwise(None)
             .alias("rmse_improvement_pct"),
         )

@@ -24,6 +24,8 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
     history = pl.DataFrame(
         {
             "element": [1, 1, 2, 2, 3],
+            "fixture": [1, 1, 1, 1, 1],
+            "was_home": [True, True, True, True, True],
             "defensive_contribution": [12, 8, 12, 11, 30],
             "expected_goals": ["0.50", "0.00", "0.00", "0.00", "0.00"],
             "expected_assists": ["0.10", "0.00", "0.00", "0.00", "0.00"],
@@ -40,9 +42,10 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
             "team": [10, 10, 10],
         }
     )
-    teams = pl.DataFrame({"id": [10], "name": ["Team"]})
+    teams = pl.DataFrame({"id": [10, 20], "name": ["Team", "Opponent"]})
+    fixtures = pl.DataFrame({"id": [1], "team_h": [10], "team_a": [20]})
 
-    enriched = data.enrich_history(history, players, teams)
+    enriched = data.enrich_history(history, players, teams, fixtures)
 
     # Expected-stat strings are parsed into floats.
     assert enriched.schema["expected_goals"] == pl.Float64
@@ -84,6 +87,53 @@ def test_enrich_history_casts_stats_and_labels_positions() -> None:
             "defensive_contribution": 30,
             "defcon_hit": None,
         },
+    ]
+
+
+def test_enrich_history_uses_fixture_time_team_after_transfer() -> None:
+    history = pl.DataFrame(
+        {
+            "element": [1, 1],
+            "fixture": [1, 2],
+            "was_home": [True, False],
+            "defensive_contribution": [5, 5],
+            "expected_goals": ["0.10", "0.20"],
+            "expected_assists": ["0.00", "0.00"],
+            "expected_goal_involvements": ["0.10", "0.20"],
+            "expected_goals_conceded": ["1.00", "1.00"],
+        }
+    )
+    players = pl.DataFrame(
+        {
+            "id": [1],
+            "code": [101],
+            "web_name": ["Transfer"],
+            "element_type": [3],
+            # The final bootstrap metadata contains only the new club.
+            "team": [20],
+        }
+    )
+    teams = pl.DataFrame(
+        {
+            "id": [10, 20, 30, 40],
+            "name": ["Old Club", "New Club", "Opponent A", "Opponent B"],
+        }
+    )
+    fixtures = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "team_h": [10, 40],
+            "team_a": [30, 20],
+        }
+    )
+
+    enriched = data.enrich_history(history, players, teams, fixtures)
+
+    assert enriched.select("fixture", "team", "team_name").sort(
+        "fixture"
+    ).to_dicts() == [
+        {"fixture": 1, "team": 10, "team_name": "Old Club"},
+        {"fixture": 2, "team": 20, "team_name": "New Club"},
     ]
 
 

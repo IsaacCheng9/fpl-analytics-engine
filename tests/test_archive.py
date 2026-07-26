@@ -26,6 +26,8 @@ def _enrichable_bootstrap() -> dict:
 def _history_row(round_: int, defcon: int) -> dict:
     """Build one per-gameweek history row carrying the enrichment inputs."""
     return {
+        "fixture": round_,
+        "was_home": True,
         "round": round_,
         "minutes": 90,
         "total_points": 6,
@@ -37,6 +39,11 @@ def _history_row(round_: int, defcon: int) -> dict:
         "expected_goals_conceded": "0.90",
         "defensive_contribution": defcon,
     }
+
+
+def _fixtures() -> list[dict]:
+    """Build the fixture metadata needed for historical club attribution."""
+    return [{"id": 1, "team_h": 10, "team_a": 20}]
 
 
 def test_detect_season_uses_earliest_deadline_year() -> None:
@@ -66,7 +73,7 @@ def test_archive_season_writes_parquet_files(
     }
 
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )
@@ -103,7 +110,7 @@ def test_archive_season_respects_limit(
         return [{"round": 1, "total_points": 1}]
 
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(app, "get_player_history", fake_history)
     monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
 
@@ -121,7 +128,7 @@ def test_archive_season_builds_enriched_snapshot(
         2: [_history_row(1, defcon=5)],
     }
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )
@@ -153,7 +160,7 @@ def test_archive_season_skips_enriched_on_early_season_cold_start(
 
     # Preseason: bootstrap exists but no gameweeks have been played yet.
     monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(app, "get_player_history", fake_history)
     monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
 
@@ -182,7 +189,7 @@ def test_ingest_current_season_targets_detected_season_dir(
         return bootstrap
 
     monkeypatch.setattr(app, "get_fpl_data", fake_bootstrap)
-    monkeypatch.setattr(app, "get_fixtures", lambda: [])
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
     monkeypatch.setattr(
         app, "get_player_history", lambda element_id: histories[element_id]
     )
