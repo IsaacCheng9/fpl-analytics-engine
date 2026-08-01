@@ -230,7 +230,7 @@ flowchart TD
 - **Polars**: all data loading, enrichment, and analytics
 - **FastAPI**: REST gateway exposing the analytics views
 - **Pydantic**: response modelling and validation
-- **Ruff** and **Ty**: linting, formatting, and type checking
+- **Ruff** and **Pyrefly**: linting, formatting, and type checking
 
 ### Frontend
 

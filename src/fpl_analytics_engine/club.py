@@ -1,6 +1,6 @@
 """Compute point-in-time club form from player and fixture history."""
 
-from typing import cast
+from typing import SupportsFloat, cast
 
 import polars as pl
 
@@ -408,7 +408,7 @@ def _as_float(value: object) -> float | None:
     """
     if value is None:
         return None
-    return float(cast(float, value))
+    return float(cast(SupportsFloat | str, value))
 
 
 def _fit_linear_model(
