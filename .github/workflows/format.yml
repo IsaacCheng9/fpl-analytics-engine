@@ -26,5 +26,5 @@ jobs:
       - name: Check formatting with Ruff
         run: uv run ruff format --check
 
-      - name: Type check with Ty
-        run: uv run ty check
+      - name: Type check with Pyrefly
+        run: uv run pyrefly check

@@ -27,11 +27,16 @@ entrypoint = "src.fpl_analytics_engine.vercel:app"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pyrefly>=1.2.0",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "ruff>=0.11.0",
-    "ty",
 ]
+
+[tool.pyrefly]
+project-includes = ["api", "scripts", "src", "tests"]
+python-version = "3.14"
+search-path = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP", "D"]
