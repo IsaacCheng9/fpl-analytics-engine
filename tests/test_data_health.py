@@ -40,7 +40,7 @@ def _row(
 
 def _write_enriched(data_root: Path, season: str, rows: list[dict]) -> None:
     season_dir = data_root / season
-    season_dir.mkdir(parents=True)
+    season_dir.mkdir(parents=True, exist_ok=True)
     pl.DataFrame(
         rows,
         schema_overrides={
@@ -191,6 +191,45 @@ def test_validate_data_root_accepts_preseason_live_archive(tmp_path: Path) -> No
     assert all(check.ok for check in checks)
     live = next(check for check in checks if check.subject == "2026-27/live archive")
     assert "preseason validated" in live.message
+
+
+def test_validate_data_root_rejects_unfinished_history(tmp_path: Path) -> None:
+    _write_valid_data_root(tmp_path)
+    _write_preseason_archive(tmp_path)
+    season_dir = tmp_path / "2026-27"
+    pl.DataFrame(
+        {
+            "id": [1, 2],
+            "deadline_time": [
+                "2026-08-21T17:30:00Z",
+                "2026-08-28T17:30:00Z",
+            ],
+            "finished": [True, True],
+            "data_checked": [True, False],
+        }
+    ).write_parquet(season_dir / "events.parquet")
+    pl.DataFrame(
+        {"element": [10, 10], "round": [1, 2], "total_points": [2, 0]}
+    ).write_parquet(season_dir / "player_gw_history.parquet")
+    _write_enriched(
+        tmp_path,
+        "2026-27",
+        [
+            _row(
+                "2026-27",
+                round_=1,
+                defcon_hit=False,
+                defcon_threshold=12,
+                defensive_contribution=4,
+            )
+        ],
+    )
+
+    checks = data_health.validate_data_root(tmp_path, current_season="2026-27")
+
+    assert any(
+        "unfinished or unchecked gameweeks: 2" in check.message for check in checks
+    )
 
 
 def test_validate_data_root_rejects_wrong_live_season_directory(

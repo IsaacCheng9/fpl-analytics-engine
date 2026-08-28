@@ -71,9 +71,13 @@ def _flatten_nested(records: list[dict]) -> list[dict]:
     ]
 
 
-def _has_completed_gameweek(events: list[dict]) -> bool:
-    """Return whether the live season has completed at least one gameweek."""
-    return any(event.get("finished") is True for event in events)
+def _completed_gameweek_ids(events: list[dict]) -> set[int]:
+    """Return gameweeks whose results have been finalised by FPL."""
+    return {
+        int(event["id"])
+        for event in events
+        if event.get("finished") is True and event.get("data_checked") is True
+    }
 
 
 def _build_enriched(output_dir: Path) -> Path | None:
@@ -145,7 +149,8 @@ def archive_season(
     )
 
     histories: list[dict] = []
-    if _has_completed_gameweek(bootstrap["events"]):
+    completed_gameweeks = _completed_gameweek_ids(bootstrap["events"])
+    if completed_gameweeks:
         element_ids = [element["id"] for element in bootstrap["elements"]]
         if limit is not None:
             element_ids = element_ids[:limit]
@@ -153,6 +158,8 @@ def archive_season(
         total = len(element_ids)
         for index, element_id in enumerate(element_ids, start=1):
             for row in app.get_player_history(element_id):
+                if row.get("round") not in completed_gameweeks:
+                    continue
                 # Guarantee the player id is present on every row for joins.
                 row["element"] = element_id
                 histories.append(row)
@@ -160,7 +167,7 @@ def archive_season(
                 print(f"Fetched per-gameweek history for {index}/{total} players")
             time.sleep(request_delay)
     else:
-        print("No completed gameweeks; skipped per-player history fetches")
+        print("No completed and checked gameweeks; skipped per-player history fetches")
 
     history = (
         pl.DataFrame(_flatten_nested(histories), infer_schema_length=None)
