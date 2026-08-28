@@ -17,8 +17,18 @@ def _enrichable_bootstrap() -> dict:
         ],
         "teams": [{"id": 10, "name": "Arsenal"}],
         "events": [
-            {"id": 1, "deadline_time": "2025-08-15T17:30:00Z", "finished": True},
-            {"id": 2, "deadline_time": "2025-08-22T17:30:00Z", "finished": False},
+            {
+                "id": 1,
+                "deadline_time": "2025-08-15T17:30:00Z",
+                "finished": True,
+                "data_checked": True,
+            },
+            {
+                "id": 2,
+                "deadline_time": "2025-08-22T17:30:00Z",
+                "finished": False,
+                "data_checked": False,
+            },
         ],
     }
 
@@ -65,7 +75,7 @@ def test_archive_season_writes_parquet_files(
     bootstrap = {
         "elements": [{"id": 1, "web_name": "A"}, {"id": 2, "web_name": "B"}],
         "teams": [{"id": 10, "name": "Team"}],
-        "events": [{"id": 1, "finished": True}],
+        "events": [{"id": 1, "finished": True, "data_checked": True}],
     }
     histories = {
         1: [{"round": 1, "total_points": 5}],
@@ -89,8 +99,9 @@ def test_archive_season_writes_parquet_files(
     assert players.height == 2
 
     history = pl.read_parquet(paths["player_gw_history"])
-    # One row for player 1 plus two rows for player 2.
-    assert history.height == 3
+    # The unfinished GW2 row is excluded from the served point-in-time history.
+    assert history.height == 2
+    assert set(history["round"].to_list()) == {1}
     # Every row must carry the player id for downstream joins.
     assert set(history["element"].to_list()) == {1, 2}
 
@@ -101,7 +112,7 @@ def test_archive_season_respects_limit(
     bootstrap = {
         "elements": [{"id": 1}, {"id": 2}, {"id": 3}],
         "teams": [{"id": 10}],
-        "events": [{"id": 1, "finished": True}],
+        "events": [{"id": 1, "finished": True, "data_checked": True}],
     }
     fetched: list[int] = []
 
@@ -143,6 +154,29 @@ def test_archive_season_builds_enriched_snapshot(
     assert by_element[1]["position"] == "DEF"
     assert by_element[1]["defcon_hit"] is True
     assert by_element[2]["defcon_hit"] is False
+
+
+def test_archive_season_excludes_current_gameweek_placeholders(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bootstrap = _enrichable_bootstrap()
+    bootstrap["events"][1]["finished"] = True
+    histories = {
+        1: [_history_row(1, defcon=12), _history_row(2, defcon=0)],
+        2: [_history_row(1, defcon=5), _history_row(2, defcon=0)],
+    }
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+    monkeypatch.setattr(
+        app, "get_player_history", lambda element_id: histories[element_id]
+    )
+    monkeypatch.setattr(archive.time, "sleep", lambda _seconds: None)
+
+    paths = archive.archive_season(tmp_path, bootstrap=bootstrap)
+
+    history = pl.read_parquet(paths["player_gw_history"])
+    enriched = pl.read_parquet(paths["enriched"])
+    assert set(history["round"].to_list()) == {1}
+    assert set(enriched["round"].to_list()) == {1}
 
 
 def test_archive_season_skips_enriched_on_early_season_cold_start(

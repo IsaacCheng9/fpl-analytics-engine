@@ -143,6 +143,40 @@ def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
 
     if checks:
         return checks
+
+    if not history.is_empty():
+        required_event_columns = {"id", "finished", "data_checked"}
+        missing_event_columns = sorted(required_event_columns - set(events.columns))
+        if missing_event_columns:
+            checks.append(
+                _fail(
+                    subject,
+                    "Cannot validate history completion without event columns: "
+                    f"{', '.join(missing_event_columns)}.",
+                )
+            )
+        elif "round" not in history.columns:
+            checks.append(_fail(subject, "History snapshot has no round column."))
+        else:
+            completed_rounds = events.filter(
+                pl.col("finished").fill_null(False)
+                & pl.col("data_checked").fill_null(False)
+            )["id"]
+            invalid_rounds = history.filter(
+                ~pl.col("round").is_in(completed_rounds.implode())
+            )["round"].unique()
+            if not invalid_rounds.is_empty():
+                rounds = ", ".join(str(value) for value in sorted(invalid_rounds))
+                checks.append(
+                    _fail(
+                        subject,
+                        "History contains unfinished or unchecked gameweeks: "
+                        f"{rounds}.",
+                    )
+                )
+
+    if checks:
+        return checks
     state = "preseason" if history.is_empty() else f"{history.height} history rows"
     return [
         _ok(

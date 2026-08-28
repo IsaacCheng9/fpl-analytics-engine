@@ -282,6 +282,10 @@ canonicalises the current season's `enriched.parquet`, runs data-health
 validation, and finishes with the real-data smoke check. Use it before pushing
 updated `data/` snapshots during the season.
 
+Only gameweeks marked both finished and data-checked by FPL are added to player
+history. This makes a refresh safe during an active gameweek: zero-minute
+placeholder rows and provisional results from that gameweek are excluded.
+
 During preseason, the refresh deliberately writes no `enriched.parquet` because
 there are no current-season performances to analyse. The API reports
 `data_status: "preseason"` and the dashboard shows the next deadline instead of
