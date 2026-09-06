@@ -236,3 +236,65 @@ def test_ingest_current_season_targets_detected_season_dir(
     assert paths["players"].exists()
     # The bootstrap is fetched once and reused, not re-requested per season dir.
     assert fetched_bootstrap["count"] == 1
+
+
+@pytest.mark.parametrize("failure", ["empty", "partial", "enrichment", "preseason"])
+def test_archive_keeps_previous_snapshot_on_failed_refresh(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
+) -> None:
+    bootstrap = _enrichable_bootstrap()
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+    monkeypatch.setattr(app, "get_player_history", lambda _id: [_history_row(1, 12)])
+    archive.archive_season(tmp_path, request_delay=0, bootstrap=bootstrap)
+    original = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+
+    if failure == "empty":
+        monkeypatch.setattr(app, "get_player_history", lambda _id: [])
+    elif failure == "partial":
+        monkeypatch.setattr(
+            app,
+            "get_player_history",
+            lambda id_: [_history_row(1, 12)] if id_ == 1 else [],
+        )
+    elif failure == "preseason":
+        for event in bootstrap["events"]:
+            event["finished"] = False
+    else:
+        monkeypatch.setattr(
+            archive,
+            "_build_enriched",
+            lambda _dir: (_ for _ in ()).throw(ValueError("Bad enrichment")),
+        )
+
+    with pytest.raises(ValueError):
+        archive.archive_season(tmp_path, request_delay=0, bootstrap=bootstrap)
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == original
+
+
+def test_archive_rejects_empty_history_after_completed_gameweek(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+    monkeypatch.setattr(app, "get_player_history", lambda _id: [])
+    with pytest.raises(ValueError, match="no player history"):
+        archive.archive_season(
+            tmp_path, request_delay=0, bootstrap=_enrichable_bootstrap()
+        )
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("enrich", [True, False])
+def test_preseason_archive_removes_stale_served_history(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, enrich: bool
+) -> None:
+    bootstrap = _enrichable_bootstrap()
+    for event in bootstrap["events"]:
+        event["finished"] = False
+    (tmp_path / "enriched.parquet").write_bytes(b"stale served history")
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+
+    paths = archive.archive_season(tmp_path, bootstrap=bootstrap, enrich=enrich)
+
+    assert "enriched" not in paths
+    assert not (tmp_path / "enriched.parquet").exists()
+    assert pl.read_parquet(paths["player_gw_history"]).is_empty()
