@@ -1658,6 +1658,7 @@ function parseOptionalInputNumber(
 export default function App() {
 	const initialUrlState = useMemo(() => readUrlState(), []);
 	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
+	const [tablePageSize, setTablePageSize] = useState(25);
 	const [playerSearch, setPlayerSearch] = useState(
 		initialUrlState.playerSearch,
 	);
@@ -3424,6 +3425,8 @@ export default function App() {
 						<DataTable
 							data={visibleFormRows}
 							paginate
+							initialPageSize={tablePageSize}
+							onPageSizeChange={setTablePageSize}
 							columns={formColumns}
 							onRowClick={(row) => openPlayerDetail(row.element)}
 							rowClassName={playerRowClassName}
@@ -3442,6 +3445,8 @@ export default function App() {
 					<DataTable
 						data={visibleDefconRows}
 						paginate
+						initialPageSize={tablePageSize}
+						onPageSizeChange={setTablePageSize}
 						columns={defconColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
 						rowClassName={playerRowClassName}
@@ -3459,6 +3464,8 @@ export default function App() {
 					<DataTable
 						data={visibleDefconProbRows}
 						paginate
+						initialPageSize={tablePageSize}
+						onPageSizeChange={setTablePageSize}
 						columns={defconProbColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
 						rowClassName={playerRowClassName}
@@ -3481,6 +3488,8 @@ export default function App() {
 						<DataTable
 							data={filteredClubs}
 							paginate
+							initialPageSize={tablePageSize}
+							onPageSizeChange={setTablePageSize}
 							columns={clubColumns}
 							stickyDataColumns={1}
 							emptyTitle={clubEmptyTitle}

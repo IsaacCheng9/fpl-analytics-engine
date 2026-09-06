@@ -911,6 +911,43 @@ test("keeps the current page when shortlisting and resets it when searching", as
 	expect(screen.getAllByText("Page 1 of 1")).toHaveLength(2);
 });
 
+test("retains the page-size choice across filters and table remounts", async () => {
+	render(withProviders(<App />));
+	await screen.findByText("Mbeumo");
+	fireEvent.change(
+		screen.getAllByRole("combobox", { name: "Rows Per Page" })[0],
+		{
+			target: { value: "10" },
+		},
+	);
+	fireEvent.change(screen.getByRole("combobox", { name: "Position" }), {
+		target: { value: "MID" },
+	});
+	await waitFor(() =>
+		expect(
+			screen.getAllByRole("combobox", { name: "Rows Per Page" })[0],
+		).toHaveValue("10"),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Club Form" }));
+	await waitFor(() =>
+		expect(
+			screen.getAllByRole("combobox", { name: "Rows Per Page" })[0],
+		).toHaveValue("10"),
+	);
+	fireEvent.change(
+		screen.getAllByRole("combobox", { name: "Rows Per Page" })[0],
+		{
+			target: { value: "all" },
+		},
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Attacking Form" }));
+	await waitFor(() =>
+		expect(
+			screen.getAllByRole("combobox", { name: "Rows Per Page" })[0],
+		).toHaveValue("all"),
+	);
+});
+
 test("shortlists players and filters the interactive table", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {

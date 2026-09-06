@@ -16,7 +16,14 @@ import {
 	ChevronsLeft,
 	ChevronsRight,
 } from "lucide-react";
-import { type CSSProperties, type ReactNode, useId, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	type Ref,
+	useId,
+	useRef,
+	useState,
+} from "react";
 import { InfoTooltip } from "./InfoTooltip";
 
 declare module "@tanstack/react-table" {
@@ -30,7 +37,19 @@ declare module "@tanstack/react-table" {
 
 const ALL_ROWS = Number.MAX_SAFE_INTEGER;
 
-function PaginationControls<T>({ table }: { table: Table<T> }) {
+function PaginationControls<T>({
+	table,
+	position,
+	ref,
+	onPageSizeChange,
+	onNavigate,
+}: {
+	table: Table<T>;
+	position: "top" | "bottom";
+	ref?: Ref<HTMLElement>;
+	onPageSizeChange?: (size: number) => void;
+	onNavigate?: () => void;
+}) {
 	const id = useId();
 	const { pageIndex, pageSize } = table.getState().pagination;
 	const total = table.getRowCount();
@@ -64,7 +83,12 @@ function PaginationControls<T>({ table }: { table: Table<T> }) {
 	];
 
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-3 py-3 text-sm text-zinc-600">
+		<nav
+			ref={ref}
+			tabIndex={-1}
+			aria-label={`Table Pagination (${position === "top" ? "Top" : "Bottom"})`}
+			className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-3 py-3 text-sm text-zinc-600 focus:outline-none"
+		>
 			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
 				<div className="flex items-center gap-2">
 					<label htmlFor={id}>Rows Per Page</label>
@@ -73,12 +97,14 @@ function PaginationControls<T>({ table }: { table: Table<T> }) {
 						className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-zinc-900 focus-visible:outline-2 focus-visible:outline-zinc-600"
 						value={pageSize === ALL_ROWS ? "all" : pageSize}
 						onChange={(event) => {
-							table.setPageSize(
+							const size =
 								event.target.value === "all"
 									? ALL_ROWS
-									: Number(event.target.value),
-							);
+									: Number(event.target.value);
+							table.setPageSize(size);
 							table.firstPage();
+							onPageSizeChange?.(size);
+							onNavigate?.();
 						}}
 					>
 						{[10, 25, 50, 100].map((size) => (
@@ -89,7 +115,11 @@ function PaginationControls<T>({ table }: { table: Table<T> }) {
 						<option value="all">All</option>
 					</select>
 				</div>
-				<span className="tabular-nums" aria-live="polite">
+				<span
+					className="tabular-nums"
+					aria-live={position === "top" ? "polite" : undefined}
+					aria-atomic="true"
+				>
 					{start}-{end} of {total} rows
 				</span>
 			</div>
@@ -105,7 +135,10 @@ function PaginationControls<T>({ table }: { table: Table<T> }) {
 							aria-label={label}
 							title={label}
 							disabled={disabled}
-							onClick={onClick}
+							onClick={() => {
+								onClick();
+								onNavigate?.();
+							}}
 							className="flex size-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-zinc-600 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
 						>
 							<Icon size={16} aria-hidden="true" />
@@ -113,7 +146,7 @@ function PaginationControls<T>({ table }: { table: Table<T> }) {
 					))}
 				</div>
 			</div>
-		</div>
+		</nav>
 	);
 }
 
@@ -132,6 +165,8 @@ export function DataTable<T>({
 	emptyDescription,
 	emptyAction,
 	paginate = false,
+	initialPageSize = 25,
+	onPageSizeChange,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
@@ -147,13 +182,16 @@ export function DataTable<T>({
 	emptyDescription?: string;
 	emptyAction?: ReactNode;
 	paginate?: boolean;
+	initialPageSize?: number;
+	onPageSizeChange?: (size: number) => void;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
+	const paginationRef = useRef<HTMLElement>(null);
 	const table = useReactTable({
 		data,
 		columns,
 		state: { sorting },
-		initialState: { pagination: { pageSize: 25 } },
+		initialState: { pagination: { pageSize: initialPageSize } },
 		onSortingChange: setSorting,
 		getCoreRowModel: getCoreRowModel(),
 		getSortedRowModel: getSortedRowModel(),
@@ -200,9 +238,21 @@ export function DataTable<T>({
 			: "";
 	}
 
+	function returnToTable() {
+		paginationRef.current?.scrollIntoView({ block: "start" });
+		paginationRef.current?.focus({ preventScroll: true });
+	}
+
 	return (
 		<div className="min-w-0 rounded-lg border border-zinc-200 bg-white">
-			{paginate ? <PaginationControls table={table} /> : null}
+			{paginate ? (
+				<PaginationControls
+					table={table}
+					position="top"
+					ref={paginationRef}
+					onPageSizeChange={onPageSizeChange}
+				/>
+			) : null}
 			<div className="overflow-x-auto rounded-lg">
 				<table className="w-full min-w-max border-collapse border-spacing-0 text-sm">
 					<thead className="sticky top-0 z-30 bg-zinc-100 text-left text-zinc-600">
@@ -327,7 +377,14 @@ export function DataTable<T>({
 					</tbody>
 				</table>
 			</div>
-			{paginate ? <PaginationControls table={table} /> : null}
+			{paginate ? (
+				<PaginationControls
+					table={table}
+					position="bottom"
+					onPageSizeChange={onPageSizeChange}
+					onNavigate={returnToTable}
+				/>
+			) : null}
 		</div>
 	);
 }

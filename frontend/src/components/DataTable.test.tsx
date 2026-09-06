@@ -6,7 +6,7 @@ import {
 	waitFor,
 	within,
 } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { DataTable } from "./DataTable";
 
 type Player = { name: string; points: number };
@@ -23,6 +23,15 @@ const sizeSelect = () =>
 	screen.getAllByRole("combobox", { name: "Rows Per Page" })[0];
 const bodyRows = () =>
 	within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+
+const scrollIntoView = vi.fn();
+beforeEach(() => {
+	scrollIntoView.mockClear();
+	Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+		configurable: true,
+		value: scrollIntoView,
+	});
+});
 
 test("paginates with synchronised controls and correct boundary states", () => {
 	render(<DataTable data={players} columns={columns} paginate />);
@@ -158,4 +167,36 @@ test("leaves tables unpaginated unless enabled", () => {
 	render(<DataTable data={players} columns={columns} />);
 	expect(bodyRows()).toHaveLength(63);
 	expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+});
+
+test("returns focus to the top controls after footer navigation", () => {
+	const onPageSizeChange = vi.fn();
+	render(
+		<DataTable
+			data={players}
+			columns={columns}
+			paginate
+			onPageSizeChange={onPageSizeChange}
+		/>,
+	);
+	const top = screen.getByRole("navigation", {
+		name: "Table Pagination (Top)",
+	});
+	const bottom = screen.getByRole("navigation", {
+		name: "Table Pagination (Bottom)",
+	});
+	expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+	fireEvent.click(within(top).getByRole("button", { name: "Next Page" }));
+	expect(scrollIntoView).not.toHaveBeenCalled();
+	fireEvent.click(within(bottom).getByRole("button", { name: "Next Page" }));
+	expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+	expect(top).toHaveFocus();
+	expect(screen.getByText("Player 51")).toBeInTheDocument();
+	fireEvent.change(within(bottom).getByRole("combobox"), {
+		target: { value: "50" },
+	});
+	expect(scrollIntoView).toHaveBeenCalledTimes(2);
+	expect(onPageSizeChange).toHaveBeenCalledWith(50);
+	expect(top).toHaveFocus();
+	expect(bodyRows()).toHaveLength(50);
 });
