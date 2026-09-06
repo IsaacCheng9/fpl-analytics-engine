@@ -882,6 +882,35 @@ test("surfaces active filters with reset controls and presets", async () => {
 	expect(screen.queryByText("Active Filters")).not.toBeInTheDocument();
 });
 
+test("keeps the current page when shortlisting and resets it when searching", async () => {
+	const manyPlayers = Array.from({ length: 60 }, (_, index) => ({
+		...formRows[0],
+		element: index + 1,
+		web_name: `Candidate ${index + 1}`,
+	}));
+	vi.mocked(fetch).mockImplementation((input) =>
+		String(input).includes("/players/form")
+			? Promise.resolve(new Response(JSON.stringify(manyPlayers)))
+			: mockApiFetch(input),
+	);
+	render(withProviders(<App />));
+	await screen.findByText("Candidate 1");
+	fireEvent.click(screen.getAllByRole("button", { name: "Next Page" })[0]);
+	fireEvent.click(
+		screen.getByRole("button", { name: "Add Candidate 26 to shortlist" }),
+	);
+	await screen.findByRole("button", {
+		name: "Remove Candidate 26 from shortlist",
+	});
+	expect(screen.getAllByText("Page 2 of 3")).toHaveLength(2);
+	fireEvent.change(screen.getByPlaceholderText("e.g. Saka"), {
+		target: { value: "Candidate 60" },
+	});
+	await screen.findByText("Candidate 60");
+	expect(screen.getAllByText("1-1 of 1 rows")).toHaveLength(2);
+	expect(screen.getAllByText("Page 1 of 1")).toHaveLength(2);
+});
+
 test("shortlists players and filters the interactive table", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
