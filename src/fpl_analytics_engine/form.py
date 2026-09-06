@@ -10,7 +10,35 @@ from typing import cast
 
 import polars as pl
 
+from fpl_analytics_engine.domain import (
+    PARTIAL_EXPECTED_STAT_SEASON,
+    PARTIAL_EXPECTED_STAT_START_GW,
+)
+
 DEFAULT_WINDOW = 5
+EXPECTED_STATS = {
+    "xg": "expected_goals",
+    "xa": "expected_assists",
+    "xgi": "expected_goal_involvements",
+    "xgc": "expected_goals_conceded",
+}
+
+
+def _expected_aggregates(prefix: str, covered: pl.Expr) -> list[pl.Expr]:
+    """Sum each expected stat with only its matching observed minutes."""
+    expressions = []
+    for metric, column in EXPECTED_STATS.items():
+        available = covered & pl.col(column).is_not_null()
+        expressions.extend(
+            (
+                pl.col(column).filter(available).sum().alias(f"{prefix}_{metric}"),
+                pl.col("minutes")
+                .filter(available)
+                .sum()
+                .alias(f"_{prefix}_{metric}_minutes"),
+            )
+        )
+    return expressions
 
 
 def _per_90(total: str, minutes: str) -> pl.Expr:
@@ -38,11 +66,14 @@ def compute_form_table(
     Only games up to and including ``as_of_gw`` are used, so the result is the
     exact view that would have been available at that point in the season. Both
     the window and the season-to-date baseline respect this cut-off, so there
-    is no look-ahead.
+    is no look-ahead. Expected-stat rates exclude minutes outside coverage
+    (GW1-15 in 2022-23) or with a missing stat. Minutes and points totals still
+    cover the full selected period.
 
     Args:
-        history: Enriched per-gameweek history from
-            :func:`fpl_analytics_engine.data.prepare_history`.
+        history: Enriched single-season history. Include the ``season`` label
+            for historical coverage rules; unlabelled live history is treated
+            as fully covered apart from null stats.
         as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
         window: Number of gameweeks ending at ``as_of_gw``. Include every
             fixture in that range; do not backfill blanks with older games.
@@ -65,14 +96,17 @@ def compute_form_table(
 
     point_in_time = history.filter(pl.col("round") <= as_of_gw)
     recent = point_in_time.filter(pl.col("round") > as_of_gw - window)
+    covered = (
+        (pl.col("season") != PARTIAL_EXPECTED_STAT_SEASON)
+        | (pl.col("round") >= PARTIAL_EXPECTED_STAT_START_GW)
+        if "season" in history.columns
+        else pl.lit(True)
+    )
 
     window_agg = recent.group_by("element").agg(
         pl.len().alias("window_games"),
         pl.col("minutes").sum().alias("window_minutes"),
-        pl.col("expected_goals").sum().alias("window_xg"),
-        pl.col("expected_assists").sum().alias("window_xa"),
-        pl.col("expected_goal_involvements").sum().alias("window_xgi"),
-        pl.col("expected_goals_conceded").sum().alias("window_xgc"),
+        *_expected_aggregates("window", covered),
         pl.col("total_points").sum().alias("window_points"),
         pl.col("starts").sum().alias("window_starts"),
         # Appearances exclude 0-minute games, so a cameo counts but an unused
@@ -86,10 +120,7 @@ def compute_form_table(
     )
     season_agg = point_in_time.group_by("element").agg(
         pl.col("minutes").sum().alias("season_minutes"),
-        pl.col("expected_goals").sum().alias("season_xg"),
-        pl.col("expected_assists").sum().alias("season_xa"),
-        pl.col("expected_goal_involvements").sum().alias("season_xgi"),
-        pl.col("expected_goals_conceded").sum().alias("season_xgc"),
+        *_expected_aggregates("season", covered),
         pl.col("total_points").sum().alias("season_points"),
     )
     # Static metadata plus point-in-time price (the value at the latest game).
@@ -111,14 +142,11 @@ def compute_form_table(
             pl.col(window_agg.drop("element", "window_defcon").columns).fill_null(0)
         )
         .with_columns(
-            window_xg90=_per_90("window_xg", "window_minutes"),
-            window_xa90=_per_90("window_xa", "window_minutes"),
-            window_xgi90=_per_90("window_xgi", "window_minutes"),
-            window_xgc90=_per_90("window_xgc", "window_minutes"),
-            season_xg90=_per_90("season_xg", "season_minutes"),
-            season_xa90=_per_90("season_xa", "season_minutes"),
-            season_xgi90=_per_90("season_xgi", "season_minutes"),
-            season_xgc90=_per_90("season_xgc", "season_minutes"),
+            _per_90(f"{period}_{metric}", f"_{period}_{metric}_minutes").alias(
+                f"{period}_{metric}90"
+            )
+            for period in ("window", "season")
+            for metric in EXPECTED_STATS
         )
         .with_columns(
             (pl.col("window_xg90") - pl.col("season_xg90")).alias("delta_xg90"),
@@ -157,6 +185,11 @@ def compute_form_table(
             .otherwise(None)
             .alias("window_mins_per_appearance"),
             pl.lit(as_of_gw).alias("as_of_gw"),
+        )
+        .drop(
+            f"_{period}_{metric}_minutes"
+            for period in ("window", "season")
+            for metric in EXPECTED_STATS
         )
     )
 
