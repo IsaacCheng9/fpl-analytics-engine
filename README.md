@@ -99,6 +99,11 @@ knowable at that point in the season. The dashboard exposes xGI, xG, and xA as
 separate metric groups, with window, season, delta, and per-price views for each
 enabled metric.
 
+A five-gameweek window at GW30 covers GW26–30 across player form, comparison,
+rolling player detail, and club form. Double gameweeks include every fixture;
+blanks never pull older fixtures into the window. Game and match counts remain
+fixture counts, and per-match rates use the number of fixtures actually present.
+
 ### Transfer Workflow
 
 The dashboard is designed around narrowing transfer candidates without hiding
@@ -182,10 +187,11 @@ the test as-of gameweek. Historical FDR is excluded: the archive contains only
 the end-of-season fixture snapshot, so earlier FDR revisions cannot be
 reproduced honestly.
 
-On 460 corrected 2025-26 predictions per target, adding recent attacking form
-made future xG prediction worse by 2.8% MAE and 5.5% RMSE. Adding recent
-defensive form made future xGC prediction worse by 0.1% MAE and 1.2% RMSE.
-These are negative results: club form remains useful descriptive context, but
+With a five-gameweek form window, five-gameweek target horizon, and 40 minimum
+training rows, the rerun scored 460 predictions per target on the 2025-26 archive.
+Adding recent attacking form made future xG prediction worse by 2.8% MAE and
+5.5% RMSE. Adding recent defensive form improved future xGC MAE by just 0.1%
+but worsened RMSE by 1.0%. Club form remains useful descriptive context, but
 this backtest does not support treating it as a predictive uplift. FDR remains
 available in the live scouting view only as current fixture context.
 
