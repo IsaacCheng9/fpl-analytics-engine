@@ -3,12 +3,20 @@ import {
 	type ColumnDef,
 	flexRender,
 	getCoreRowModel,
+	getPaginationRowModel,
 	getSortedRowModel,
 	type RowData,
 	type SortingState,
+	type Table,
 	useReactTable,
 } from "@tanstack/react-table";
-import { type CSSProperties, type ReactNode, useState } from "react";
+import {
+	ChevronLeft,
+	ChevronRight,
+	ChevronsLeft,
+	ChevronsRight,
+} from "lucide-react";
+import { type CSSProperties, type ReactNode, useId, useState } from "react";
 import { InfoTooltip } from "./InfoTooltip";
 
 declare module "@tanstack/react-table" {
@@ -18,6 +26,95 @@ declare module "@tanstack/react-table" {
 		headerClassName?: string;
 		cellStyle?: (cell: Cell<TData, TValue>) => CSSProperties | undefined;
 	}
+}
+
+const ALL_ROWS = Number.MAX_SAFE_INTEGER;
+
+function PaginationControls<T>({ table }: { table: Table<T> }) {
+	const id = useId();
+	const { pageIndex, pageSize } = table.getState().pagination;
+	const total = table.getRowCount();
+	const start = total === 0 ? 0 : pageIndex * pageSize + 1;
+	const end = Math.min((pageIndex + 1) * pageSize, total);
+	const buttons = [
+		{
+			label: "First Page",
+			icon: ChevronsLeft,
+			disabled: !table.getCanPreviousPage(),
+			onClick: () => table.firstPage(),
+		},
+		{
+			label: "Previous Page",
+			icon: ChevronLeft,
+			disabled: !table.getCanPreviousPage(),
+			onClick: () => table.previousPage(),
+		},
+		{
+			label: "Next Page",
+			icon: ChevronRight,
+			disabled: !table.getCanNextPage(),
+			onClick: () => table.nextPage(),
+		},
+		{
+			label: "Last Page",
+			icon: ChevronsRight,
+			disabled: !table.getCanNextPage(),
+			onClick: () => table.lastPage(),
+		},
+	];
+
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-3 py-3 text-sm text-zinc-600">
+			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+				<div className="flex items-center gap-2">
+					<label htmlFor={id}>Rows Per Page</label>
+					<select
+						id={id}
+						className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-zinc-900 focus-visible:outline-2 focus-visible:outline-zinc-600"
+						value={pageSize === ALL_ROWS ? "all" : pageSize}
+						onChange={(event) => {
+							table.setPageSize(
+								event.target.value === "all"
+									? ALL_ROWS
+									: Number(event.target.value),
+							);
+							table.firstPage();
+						}}
+					>
+						{[10, 25, 50, 100].map((size) => (
+							<option key={size} value={size}>
+								{size}
+							</option>
+						))}
+						<option value="all">All</option>
+					</select>
+				</div>
+				<span className="tabular-nums" aria-live="polite">
+					{start}-{end} of {total} rows
+				</span>
+			</div>
+			<div className="flex items-center gap-3">
+				<span className="whitespace-nowrap tabular-nums">
+					Page {total === 0 ? 0 : pageIndex + 1} of {table.getPageCount()}
+				</span>
+				<div className="flex gap-1">
+					{buttons.map(({ label, icon: Icon, disabled, onClick }) => (
+						<button
+							key={label}
+							type="button"
+							aria-label={label}
+							title={label}
+							disabled={disabled}
+							onClick={onClick}
+							className="flex size-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-zinc-600 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
+						>
+							<Icon size={16} aria-hidden="true" />
+						</button>
+					))}
+				</div>
+			</div>
+		</div>
+	);
 }
 
 export function DataTable<T>({
@@ -34,6 +131,7 @@ export function DataTable<T>({
 	emptyTitle = "No rows match.",
 	emptyDescription,
 	emptyAction,
+	paginate = false,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
@@ -48,15 +146,19 @@ export function DataTable<T>({
 	emptyTitle?: string;
 	emptyDescription?: string;
 	emptyAction?: ReactNode;
+	paginate?: boolean;
 }) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const table = useReactTable({
 		data,
 		columns,
 		state: { sorting },
+		initialState: { pagination: { pageSize: 25 } },
 		onSortingChange: setSorting,
 		getCoreRowModel: getCoreRowModel(),
 		getSortedRowModel: getSortedRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		manualPagination: !paginate,
 	});
 
 	const rows = table.getRowModel().rows;
@@ -99,129 +201,133 @@ export function DataTable<T>({
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-			<table className="w-full min-w-max border-collapse border-spacing-0 text-sm">
-				<thead className="sticky top-0 z-30 bg-zinc-100 text-left text-zinc-600">
-					{table.getHeaderGroups().map((group) => (
-						<tr key={group.id}>
-							{renderRowActions ? (
-								<th
-									className={`sticky left-0 z-40 w-12 bg-zinc-100 ${cellPadding} text-center align-bottom font-medium shadow-[1px_0_0_#e4e4e7]`}
-								>
-									<span className="inline-flex items-center justify-center gap-1">
-										<span aria-hidden="true">{rowActionsHeader}</span>
-										{rowActionsHeaderTooltip ? (
-											<InfoTooltip text={rowActionsHeaderTooltip} />
-										) : null}
-									</span>
-									<span className="sr-only">{rowActionsHeaderLabel}</span>
-								</th>
-							) : null}
-							{group.headers.map((header, columnIndex) => {
-								const sorted = header.column.getIsSorted();
-								const meta = header.column.columnDef.meta;
-								const tooltip = meta?.tooltip;
-								return (
-									<th
-										key={header.id}
-										className={`sticky top-0 z-30 ${cellPadding} align-bottom font-medium ${stickyHeaderClass(columnIndex)} ${meta?.headerClassName ?? ""}`}
-										style={stickyStyle(columnIndex)}
-									>
-										<div className={headerContentClass}>
-											<button
-												type="button"
-												className="flex min-w-0 cursor-pointer select-none items-start gap-1 text-left"
-												onClick={header.column.getToggleSortingHandler()}
-											>
-												<span className="min-w-0 break-words whitespace-normal">
-													{flexRender(
-														header.column.columnDef.header,
-														header.getContext(),
-													)}
-												</span>
-												<span className="text-zinc-400">
-													{sorted === "asc"
-														? "^"
-														: sorted === "desc"
-															? "v"
-															: ""}
-												</span>
-											</button>
-											{tooltip ? <InfoTooltip text={tooltip} /> : null}
-										</div>
-									</th>
-								);
-							})}
-						</tr>
-					))}
-				</thead>
-				<tbody>
-					{rows.length === 0 ? (
-						<tr>
-							<td
-								className="px-3 py-8 text-center text-zinc-500"
-								colSpan={columns.length + (renderRowActions ? 1 : 0)}
-							>
-								<div className="flex flex-col items-center gap-2">
-									<p className="font-medium text-zinc-700">{emptyTitle}</p>
-									{emptyDescription ? (
-										<p className="max-w-md text-sm text-zinc-500">
-											{emptyDescription}
-										</p>
-									) : null}
-									{emptyAction}
-								</div>
-							</td>
-						</tr>
-					) : (
-						rows.map((row) => (
-							<tr
-								key={row.id}
-								className={`group border-zinc-100 border-t ${rowClassName?.(row.original) ?? ""} hover:bg-zinc-50${
-									onRowClick ? " cursor-pointer" : ""
-								}`}
-								onClick={
-									onRowClick ? () => onRowClick(row.original) : undefined
-								}
-							>
+		<div className="min-w-0 rounded-lg border border-zinc-200 bg-white">
+			{paginate ? <PaginationControls table={table} /> : null}
+			<div className="overflow-x-auto rounded-lg">
+				<table className="w-full min-w-max border-collapse border-spacing-0 text-sm">
+					<thead className="sticky top-0 z-30 bg-zinc-100 text-left text-zinc-600">
+						{table.getHeaderGroups().map((group) => (
+							<tr key={group.id}>
 								{renderRowActions ? (
-									<td
-										className={`sticky left-0 z-30 w-12 ${cellPadding} whitespace-nowrap ${
-											rowStickyClassName?.(row.original) ??
-											"bg-white group-hover:bg-zinc-50"
-										} shadow-[1px_0_0_#f4f4f5]`}
+									<th
+										className={`sticky left-0 z-40 w-12 bg-zinc-100 ${cellPadding} text-center align-bottom font-medium shadow-[1px_0_0_#e4e4e7]`}
 									>
-										{renderRowActions(row.original)}
-									</td>
+										<span className="inline-flex items-center justify-center gap-1">
+											<span aria-hidden="true">{rowActionsHeader}</span>
+											{rowActionsHeaderTooltip ? (
+												<InfoTooltip text={rowActionsHeaderTooltip} />
+											) : null}
+										</span>
+										<span className="sr-only">{rowActionsHeaderLabel}</span>
+									</th>
 								) : null}
-								{row.getVisibleCells().map((cell, columnIndex) => {
-									const meta = cell.column.columnDef.meta;
+								{group.headers.map((header, columnIndex) => {
+									const sorted = header.column.getIsSorted();
+									const meta = header.column.columnDef.meta;
+									const tooltip = meta?.tooltip;
 									return (
-										<td
-											key={cell.id}
-											className={`${cellPadding} whitespace-nowrap ${stickyBodyClass(columnIndex)} ${
-												columnIndex < stickyDataColumns
-													? (rowStickyClassName?.(row.original) ??
-														"bg-white group-hover:bg-zinc-50")
-													: ""
-											}`}
-											style={{
-												...stickyStyle(columnIndex),
-												...meta?.cellStyle?.(cell),
-											}}
+										<th
+											key={header.id}
+											className={`sticky top-0 z-30 ${cellPadding} align-bottom font-medium ${stickyHeaderClass(columnIndex)} ${meta?.headerClassName ?? ""}`}
+											style={stickyStyle(columnIndex)}
 										>
-											{flexRender(
-												cell.column.columnDef.cell,
-												cell.getContext(),
-											)}
-										</td>
+											<div className={headerContentClass}>
+												<button
+													type="button"
+													className="flex min-w-0 cursor-pointer select-none items-start gap-1 text-left"
+													onClick={header.column.getToggleSortingHandler()}
+												>
+													<span className="min-w-0 break-words whitespace-normal">
+														{flexRender(
+															header.column.columnDef.header,
+															header.getContext(),
+														)}
+													</span>
+													<span className="text-zinc-400">
+														{sorted === "asc"
+															? "^"
+															: sorted === "desc"
+																? "v"
+																: ""}
+													</span>
+												</button>
+												{tooltip ? <InfoTooltip text={tooltip} /> : null}
+											</div>
+										</th>
 									);
 								})}
 							</tr>
-						))
-					)}
-				</tbody>
-			</table>
+						))}
+					</thead>
+					<tbody>
+						{rows.length === 0 ? (
+							<tr>
+								<td
+									className="px-3 py-8 text-center text-zinc-500"
+									colSpan={columns.length + (renderRowActions ? 1 : 0)}
+								>
+									<div className="flex flex-col items-center gap-2">
+										<p className="font-medium text-zinc-700">{emptyTitle}</p>
+										{emptyDescription ? (
+											<p className="max-w-md text-sm text-zinc-500">
+												{emptyDescription}
+											</p>
+										) : null}
+										{emptyAction}
+									</div>
+								</td>
+							</tr>
+						) : (
+							rows.map((row) => (
+								<tr
+									key={row.id}
+									className={`group border-zinc-100 border-t ${rowClassName?.(row.original) ?? ""} hover:bg-zinc-50${
+										onRowClick ? " cursor-pointer" : ""
+									}`}
+									onClick={
+										onRowClick ? () => onRowClick(row.original) : undefined
+									}
+								>
+									{renderRowActions ? (
+										<td
+											className={`sticky left-0 z-30 w-12 ${cellPadding} whitespace-nowrap ${
+												rowStickyClassName?.(row.original) ??
+												"bg-white group-hover:bg-zinc-50"
+											} shadow-[1px_0_0_#f4f4f5]`}
+										>
+											{renderRowActions(row.original)}
+										</td>
+									) : null}
+									{row.getVisibleCells().map((cell, columnIndex) => {
+										const meta = cell.column.columnDef.meta;
+										return (
+											<td
+												key={cell.id}
+												className={`${cellPadding} whitespace-nowrap ${stickyBodyClass(columnIndex)} ${
+													columnIndex < stickyDataColumns
+														? (rowStickyClassName?.(row.original) ??
+															"bg-white group-hover:bg-zinc-50")
+														: ""
+												}`}
+												style={{
+													...stickyStyle(columnIndex),
+													...meta?.cellStyle?.(cell),
+												}}
+											>
+												{flexRender(
+													cell.column.columnDef.cell,
+													cell.getContext(),
+												)}
+											</td>
+										);
+									})}
+								</tr>
+							))
+						)}
+					</tbody>
+				</table>
+			</div>
+			{paginate ? <PaginationControls table={table} /> : null}
 		</div>
 	);
 }
