@@ -157,6 +157,64 @@ def _check_history_completion(
     ]
 
 
+def _check_history_keys(
+    history: pl.DataFrame, enriched: pl.DataFrame, season: str
+) -> list[HealthCheck]:
+    """Reconcile live player/fixture keys and rounds without losing duplicates."""
+    checks = []
+    columns = ("element", "fixture", "round")
+    for frame, name in ((history, "player_gw_history"), (enriched, "enriched")):
+        if frame.is_empty():
+            continue
+        subject = f"{season}/{name}.parquet"
+        missing = sorted(set(columns) - set(frame.columns))
+        if missing:
+            checks.append(
+                _fail(subject, f"Missing history key columns: {', '.join(missing)}.")
+            )
+            continue
+        invalid_types = [
+            column
+            for column in columns
+            if frame.schema[column] != pl.Null and not frame.schema[column].is_integer()
+        ]
+        if invalid_types:
+            checks.append(
+                _fail(
+                    subject,
+                    "History keys must have integer types: "
+                    f"{', '.join(invalid_types)}.",
+                )
+            )
+            continue
+        null_keys = frame.filter(pl.any_horizontal(pl.col(columns).is_null())).height
+        if null_keys:
+            checks.append(_fail(subject, f"{null_keys} rows have null history keys."))
+        duplicates = frame.select("element", "fixture").is_duplicated().sum()
+        if duplicates:
+            checks.append(
+                _fail(subject, f"{duplicates} rows have duplicate player/fixture keys.")
+            )
+    if checks:
+        return checks
+
+    raw_keys = set(history.select(columns).iter_rows()) if history.height else set()
+    served_keys = (
+        set(enriched.select(columns).iter_rows()) if enriched.height else set()
+    )
+    missing_count = len(raw_keys - served_keys)
+    extra_count = len(served_keys - raw_keys)
+    if missing_count or extra_count:
+        checks.append(
+            _fail(
+                f"{season}/enriched.parquet",
+                "Player/fixture keys and rounds differ from raw history: "
+                f"{missing_count} missing, {extra_count} extra.",
+            )
+        )
+    return checks
+
+
 def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
     """Validate the raw and served snapshots for the current live season."""
     data_dir = data_root / season
@@ -210,6 +268,7 @@ def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
             )
         else:
             checks.extend(_check_history_completion(enriched, events, enriched_subject))
+            checks.extend(_check_history_keys(history, enriched, season))
     elif not history.is_empty():
         checks.append(_fail(enriched_subject, "Snapshot is missing."))
 

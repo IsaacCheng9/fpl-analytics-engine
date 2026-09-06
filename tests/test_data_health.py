@@ -365,6 +365,93 @@ def test_validate_data_root_rejects_unknown_history_round(
     )
 
 
+@pytest.mark.parametrize("change", ["missing", "extra", "element", "fixture", "round"])
+def test_validate_data_root_reconciles_served_history_keys(
+    tmp_path: Path, change: str
+) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    path = season_dir / "enriched.parquet"
+    frame = pl.read_parquet(path)
+    if change == "missing":
+        frame = frame.slice(1)
+    elif change == "extra":
+        extra = frame.head(1).with_columns(pl.lit(99).alias("element"))
+        frame = pl.concat([frame, extra], how="vertical_relaxed")
+    else:
+        replacement = frame.head(1).with_columns(
+            pl.lit(2 if change == "round" else 99).alias(change)
+        )
+        frame = pl.concat([replacement, frame.slice(1)], how="vertical_relaxed")
+    frame.write_parquet(path)
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    expected = {
+        "missing": "1 missing, 0 extra",
+        "extra": "0 missing, 1 extra",
+    }.get(change, "1 missing, 1 extra")
+    assert any(
+        not check.ok
+        and check.subject == "2026-27/enriched.parquet"
+        and expected in check.message
+        and "raw history" in check.message
+        for check in checks
+    )
+
+
+@pytest.mark.parametrize("snapshot", ["player_gw_history", "enriched", "both"])
+@pytest.mark.parametrize("different_round", [False, True])
+def test_validate_data_root_rejects_duplicate_history_keys(
+    tmp_path: Path, snapshot: str, different_round: bool
+) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    names = ["player_gw_history", "enriched"] if snapshot == "both" else [snapshot]
+    for name in names:
+        path = season_dir / f"{name}.parquet"
+        frame = pl.read_parquet(path)
+        duplicate = frame.head(1)
+        if different_round:
+            duplicate = duplicate.with_columns(pl.lit(2).alias("round"))
+        pl.concat([frame, duplicate], how="vertical_relaxed").write_parquet(path)
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    for name in names:
+        assert any(
+            not check.ok
+            and check.subject == f"2026-27/{name}.parquet"
+            and "2 rows have duplicate player/fixture keys" in check.message
+            for check in checks
+        )
+
+
+@pytest.mark.parametrize("snapshot", ["player_gw_history", "enriched"])
+@pytest.mark.parametrize("column", ["element", "fixture", "round"])
+@pytest.mark.parametrize("missing", [False, True])
+def test_validate_data_root_requires_live_history_keys(
+    tmp_path: Path, snapshot: str, column: str, missing: bool
+) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    path = season_dir / f"{snapshot}.parquet"
+    frame = pl.read_parquet(path)
+    frame = (
+        frame.drop(column)
+        if missing
+        else frame.with_columns(pl.lit(None, dtype=pl.Int64).alias(column))
+    )
+    frame.write_parquet(path)
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    expected = "Missing history key columns" if missing else "null history keys"
+    assert any(
+        not check.ok
+        and check.subject == f"2026-27/{snapshot}.parquet"
+        and expected in check.message
+        for check in checks
+    )
+
+
 @pytest.mark.parametrize("served", [False, True])
 def test_validate_data_root_rejects_empty_completed_history(
     tmp_path: Path, served: bool
@@ -460,6 +547,18 @@ def test_validate_data_root_requires_served_live_history(
     )
 
 
+def test_validate_data_root_rejects_empty_served_history(tmp_path: Path) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    path = season_dir / "enriched.parquet"
+    pl.read_parquet(path).clear().write_parquet(path)
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    assert any(
+        not check.ok and "3 missing, 0 extra" in check.message for check in checks
+    )
+
+
 def test_validate_data_root_rejects_served_preseason_history(tmp_path: Path) -> None:
     _write_valid_data_root(tmp_path)
     _write_preseason_archive(tmp_path)
@@ -482,6 +581,7 @@ def test_validate_data_root_rejects_served_preseason_history(tmp_path: Path) -> 
         and "unfinished or unchecked gameweeks: 1" in check.message
         for check in checks
     )
+    assert any("0 missing, 1 extra" in check.message for check in checks)
     assert not any("preseason validated" in check.message for check in checks)
 
 
@@ -520,6 +620,31 @@ def test_validate_data_root_reports_invalid_round_type(
     )
 
 
+@pytest.mark.parametrize("snapshot", ["player_gw_history", "enriched"])
+@pytest.mark.parametrize("column", ["element", "fixture", "round"])
+@pytest.mark.parametrize("dtype", [pl.String, pl.Float64, pl.List(pl.Int64)])
+def test_validate_data_root_reports_invalid_key_types(
+    tmp_path: Path,
+    snapshot: str,
+    column: str,
+    dtype: pl.DataType | type[pl.DataType],
+) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    path = season_dir / f"{snapshot}.parquet"
+    value = pl.col(column)
+    value = value.implode() if isinstance(dtype, pl.List) else value.cast(dtype)
+    pl.read_parquet(path).with_columns(value).write_parquet(path)
+
+    checks = data_health.validate_data_root(tmp_path)
+
+    assert any(
+        not check.ok
+        and check.subject == f"2026-27/{snapshot}.parquet"
+        and "History keys must have integer types" in check.message
+        for check in checks
+    )
+
+
 @pytest.mark.parametrize(
     "snapshot", [*data_health.RAW_SNAPSHOT_FILES, "enriched.parquet"]
 )
@@ -546,6 +671,18 @@ def test_data_health_cli_reports_unavailable_live_snapshots(
     assert "[FAIL] 2026-27/" in report
     assert "could not be read" in report if corrupt else "missing" in report.lower()
     assert "[OK] 2025-26/enriched.parquet" in report
+
+
+def test_validate_data_root_accepts_different_integer_key_widths(
+    tmp_path: Path,
+) -> None:
+    season_dir = _write_live_archive(tmp_path)
+    path = season_dir / "enriched.parquet"
+    pl.read_parquet(path).with_columns(
+        pl.col("element", "fixture", "round").cast(pl.UInt32)
+    ).write_parquet(path)
+
+    assert all(check.ok for check in data_health.validate_data_root(tmp_path))
 
 
 def test_validate_data_root_accepts_untyped_null_preseason_flags(
