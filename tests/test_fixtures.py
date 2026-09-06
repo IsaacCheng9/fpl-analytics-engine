@@ -165,3 +165,180 @@ def test_attach_team_fdr_nulls_when_no_fixtures() -> None:
     assert out["avg_fdr"].to_list() == [None]
     assert out["next_opponent_name"].to_list() == [None]
     assert out["next_fdr"].to_list() == [None]
+
+
+def _scheduled_fixture(event: int | None, **overrides: object) -> dict:
+    return {
+        **_fixture(event, home=10, away=20, h_diff=2, a_diff=4),
+        "id": 1,
+        "kickoff_time": "2026-09-12T14:00:00Z",
+        "finished": False,
+        "started": None,
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"finished": True, "started": True},
+        {"finished": True, "started": False},
+        {"finished": False, "started": True},
+        {"finished": None, "started": None},
+    ],
+)
+def test_current_fixtures_exclude_played_started_or_unknown_status(
+    status: dict,
+) -> None:
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(3, **status),
+            _scheduled_fixture(4, id=2, team_a=30, kickoff_time="2026-09-19T14:00:00Z"),
+        ]
+    )
+
+    table = fixtures.current_team_fixture_difficulty(feed)
+    team = table.filter(pl.col("team") == 10).row(0, named=True)
+
+    assert team["next_fixture_gw"] == 4
+    assert team["next_opponent"] == 30
+    assert team["n_fixtures"] == 1
+    assert 20 not in table["team"].to_list()
+
+
+def test_current_fixtures_select_second_match_in_live_double_gameweek() -> None:
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(3, finished=True, started=True),
+            _scheduled_fixture(
+                3,
+                id=2,
+                team_h=30,
+                team_a=10,
+                kickoff_time="2026-09-15T19:00:00Z",
+            ),
+        ]
+    )
+
+    team = (
+        fixtures.current_team_fixture_difficulty(feed)
+        .filter(pl.col("team") == 10)
+        .row(0, named=True)
+    )
+
+    assert team["next_fixture_gw"] == 3
+    assert team["next_opponent"] == 30
+    assert team["next_was_home"] is False
+    assert team["next_fdr"] == 4
+    assert team["avg_difficulty"] == 4
+    assert team["n_fixtures"] == 1
+
+
+def test_current_next_fixture_is_not_limited_by_aggregate_horizon() -> None:
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(3, team_h=30, team_a=40),
+            _scheduled_fixture(9, id=2, kickoff_time="2026-10-24T14:00:00Z"),
+        ]
+    )
+
+    team = (
+        fixtures.current_team_fixture_difficulty(feed, horizon=5)
+        .filter(pl.col("team") == 10)
+        .row(0, named=True)
+    )
+
+    assert team["next_fixture_gw"] == 9
+    assert team["next_opponent"] == 20
+    assert team["n_fixtures"] == 0
+    assert team["avg_difficulty"] is None
+
+
+def test_current_fixtures_use_kickoff_order_for_rearranged_gameweeks() -> None:
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(2, kickoff_time="2026-10-20T19:00:00Z"),
+            _scheduled_fixture(3, id=3, team_a=30),
+            _scheduled_fixture(3, id=2, team_a=40),
+            _scheduled_fixture(None, team_a=50),
+            _scheduled_fixture(1, team_a=60, kickoff_time=None),
+        ]
+    )
+
+    team = (
+        fixtures.current_team_fixture_difficulty(feed)
+        .filter(pl.col("team") == 10)
+        .row(0, named=True)
+    )
+
+    assert team["next_fixture_gw"] == 3
+    assert team["next_opponent"] == 40
+    assert team["n_fixtures"] == 2
+
+
+def test_current_fdr_anchors_to_chronological_gameweek_across_wide_gap() -> None:
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(
+                2, team_h=30, team_a=40, kickoff_time="2026-12-01T19:00:00Z"
+            ),
+            *[
+                _scheduled_fixture(
+                    gw,
+                    id=gw,
+                    team_h_difficulty=2 if gw == 8 else 5,
+                    kickoff_time=f"2026-10-{1 + (gw - 8) * 7:02d}T14:00:00Z",
+                )
+                for gw in range(8, 13)
+            ],
+            _scheduled_fixture(13, id=13, kickoff_time="2026-11-05T14:00:00Z"),
+        ]
+    )
+
+    table = fixtures.current_team_fixture_difficulty(feed, horizon=5)
+    team = table.filter(pl.col("team") == 10).row(0, named=True)
+    rearranged = table.filter(pl.col("team") == 30).row(0, named=True)
+
+    assert team["next_fixture_gw"] == 8
+    assert team["next_fdr"] == 2
+    assert team["n_fixtures"] == 5
+    assert team["total_difficulty"] == 22
+    assert team["avg_difficulty"] == pytest.approx(4.4)
+    assert rearranged["next_fixture_gw"] == 2
+    assert rearranged["n_fixtures"] == 0
+    assert rearranged["avg_difficulty"] is None
+
+
+@pytest.mark.parametrize(
+    "feed",
+    [
+        pl.DataFrame(),
+        pl.DataFrame([_scheduled_fixture(38, finished=True, started=True)]),
+        pl.DataFrame([_scheduled_fixture(1, finished=None)]),
+        pl.DataFrame([_scheduled_fixture(None, kickoff_time=None)]),
+        pl.DataFrame([_fixture(1, home=10, away=20, h_diff=2, a_diff=4)]),
+    ],
+)
+def test_current_fixtures_degrade_safely_without_known_upcoming_matches(
+    feed: pl.DataFrame,
+) -> None:
+    table = fixtures.current_team_fixture_difficulty(feed)
+
+    assert table.is_empty()
+    assert "next_opponent" in table.columns
+
+
+def test_current_fixtures_include_preseason_schedule_without_history() -> None:
+    feed = pl.DataFrame([_scheduled_fixture(1)])
+
+    table = fixtures.current_team_fixture_difficulty(feed)
+
+    assert table["next_fixture_gw"].to_list() == [1, 1]
+
+
+def test_historical_fdr_keeps_finished_matches_after_analytical_cutoff() -> None:
+    feed = [_scheduled_fixture(3, finished=True, started=True)]
+
+    table = fixtures.team_fixture_difficulty(feed, as_of_gw=2)
+
+    assert table["next_fixture_gw"].to_list() == [3, 3]

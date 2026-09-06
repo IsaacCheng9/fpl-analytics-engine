@@ -5,7 +5,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from fpl_analytics_engine import app, archive
+from fpl_analytics_engine import app, archive, data, data_health, player, refresh
 
 
 def _enrichable_bootstrap() -> dict:
@@ -54,6 +54,41 @@ def _history_row(round_: int, defcon: int) -> dict:
 def _fixtures() -> list[dict]:
     """Build the fixture metadata needed for historical club attribution."""
     return [{"id": 1, "team_h": 10, "team_a": 20}]
+
+
+def test_refresh_without_backfill_builds_valid_current_season(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bootstrap = _enrichable_bootstrap()
+    monkeypatch.setattr(app, "get_fpl_data", lambda: bootstrap)
+    monkeypatch.setattr(app, "get_fixtures", _fixtures)
+    monkeypatch.setattr(app, "get_player_history", lambda _id: [_history_row(1, 12)])
+
+    def unexpected_backfill(*_args: object, **_kwargs: object) -> dict:
+        raise AssertionError("Backfill should not run")
+
+    validate = data_health.validate_data_root
+
+    def validate_current(
+        data_root: Path, current_season: str | None = None
+    ) -> list[data_health.HealthCheck]:
+        return validate(data_root, seasons=("2025-26",), current_season=current_season)
+
+    monkeypatch.setattr(refresh.backfill, "backfill", unexpected_backfill)
+    monkeypatch.setattr(data_health, "validate_data_root", validate_current)
+    results = refresh.run_refresh(
+        refresh.RefreshOptions(
+            data_root=tmp_path, request_delay=0, skip_backfill=True, skip_smoke=True
+        )
+    )
+    assert all(result.ok for result in results), results
+    enriched = data.load_enriched(tmp_path / "2025-26")
+    assert enriched["season"].unique().to_list() == ["2025-26"]
+    assert not (tmp_path / "2024-25").exists()
+    saka = data.load_all_seasons(tmp_path).filter(pl.col("element") == 2)
+    summaries = player.season_summaries(saka)
+    assert summaries["season"].to_list() == ["2025-26"]
+    assert summaries["xgi90"][0] == pytest.approx(0.3)
 
 
 def test_detect_season_uses_earliest_deadline_year() -> None:
@@ -154,6 +189,8 @@ def test_archive_season_builds_enriched_snapshot(
     assert by_element[1]["position"] == "DEF"
     assert by_element[1]["defcon_hit"] is True
     assert by_element[2]["defcon_hit"] is False
+    # Derive the season from events, not the caller's arbitrary directory name.
+    assert enriched["season"].unique().to_list() == ["2025-26"]
 
 
 def test_archive_season_excludes_current_gameweek_placeholders(

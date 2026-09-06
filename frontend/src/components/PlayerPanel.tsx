@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
 	CartesianGrid,
 	Line,
@@ -8,7 +9,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { fetchPlayerDetail, type PlayerGameweek } from "../api";
+import { fetchMeta, fetchPlayerDetail, type PlayerGameweek } from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
@@ -75,11 +76,32 @@ export function PlayerPanel({
 	onSeasonChange: (season: string) => void;
 	onClose: () => void;
 }) {
+	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
+	const needsMetadata = season !== null && !meta.data;
+	const requestAsOfGw =
+		season === null || season === meta.data?.season ? asOfGw : null;
 	const query = useQuery({
-		queryKey: ["player", element, rollingWindow, season, asOfGw],
-		queryFn: () => fetchPlayerDetail(element, rollingWindow, season, asOfGw),
+		queryKey: ["player", element, rollingWindow, season, requestAsOfGw],
+		queryFn: () =>
+			fetchPlayerDetail(element, rollingWindow, season, requestAsOfGw),
+		enabled: !needsMetadata,
 	});
 	const detail = query.data;
+	const [availableSeasons, setAvailableSeasons] = useState<string[]>([]);
+	useEffect(() => {
+		if (detail) setAvailableSeasons(detail.available_seasons);
+	}, [detail]);
+	const selectedSeason =
+		season ?? meta.data?.season ?? detail?.selected_season ?? "";
+	const seasonOptions = Array.from(
+		new Set([
+			...(detail?.available_seasons ?? availableSeasons),
+			...(meta.data ? [meta.data.season] : []),
+			...(selectedSeason ? [selectedSeason] : []),
+		]),
+	)
+		.sort()
+		.reverse();
 
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
@@ -111,44 +133,56 @@ export function PlayerPanel({
 					</button>
 				</div>
 
-				{query.isPending ? (
+				<div className="mb-3 flex flex-wrap gap-3">
+					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+						Season
+						<select
+							className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+							value={selectedSeason}
+							onChange={(e) => onSeasonChange(e.target.value)}
+						>
+							{seasonOptions.map((season) => (
+								<option key={season} value={season}>
+									{season}
+								</option>
+							))}
+						</select>
+					</label>
+
+					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+						Rolling Window (Gameweeks)
+						<select
+							className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+							value={rollingWindow}
+							onChange={(e) => onWindowChange(Number(e.target.value))}
+						>
+							{WINDOWS.map((n) => (
+								<option key={n} value={n}>
+									{n}
+								</option>
+							))}
+						</select>
+					</label>
+				</div>
+
+				{query.isError || (needsMetadata && meta.isError) ? (
+					<div className="flex items-center gap-3">
+						<p className="text-red-600 text-sm">Failed to load player.</p>
+						<button
+							type="button"
+							className="rounded-md px-2 py-1 text-sm text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							onClick={() => {
+								if (needsMetadata) void meta.refetch();
+								else void query.refetch();
+							}}
+						>
+							Retry
+						</button>
+					</div>
+				) : query.isPending || !detail ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
-				) : query.isError || !detail ? (
-					<p className="text-red-600 text-sm">Failed to load player.</p>
 				) : (
 					<>
-						<div className="mb-3 flex flex-wrap gap-3">
-							<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
-								Season
-								<select
-									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
-									value={detail.selected_season}
-									onChange={(e) => onSeasonChange(e.target.value)}
-								>
-									{[...detail.available_seasons].reverse().map((season) => (
-										<option key={season} value={season}>
-											{season}
-										</option>
-									))}
-								</select>
-							</label>
-
-							<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
-								Rolling Window (Gameweeks)
-								<select
-									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
-									value={rollingWindow}
-									onChange={(e) => onWindowChange(Number(e.target.value))}
-								>
-									{WINDOWS.map((n) => (
-										<option key={n} value={n}>
-											{n}
-										</option>
-									))}
-								</select>
-							</label>
-						</div>
-
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<Chart
 								data={detail.gameweeks}

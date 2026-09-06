@@ -22,6 +22,14 @@ export interface FixtureContext {
 	current_ownership: number | null;
 }
 
+export interface CurrentPlayerContext extends FixtureContext {
+	element: number;
+	web_name: string | null;
+	position: string | null;
+	team_name: string | null;
+	price: number | null;
+}
+
 // Adds point-in-time value efficiency and playing time, for the form tables.
 export interface PlayerContext extends FixtureContext {
 	window_xgi90_per_million: number | null;
@@ -276,6 +284,10 @@ export function fetchForm(params: FormParams): Promise<FormPlayer[]> {
 	const search = baseSearchParams(params);
 	search.set("min_delta", String(params.minDelta));
 	return getJson<FormPlayer[]>(`/players/form?${search.toString()}`);
+}
+
+export function fetchCurrentPlayerContext(): Promise<CurrentPlayerContext[]> {
+	return getJson<CurrentPlayerContext[]>("/players/current-context");
 }
 
 export function fetchDefcon(params: DefconParams): Promise<DefconPlayer[]> {

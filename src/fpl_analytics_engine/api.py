@@ -16,6 +16,7 @@ from fpl_analytics_engine.schemas import (
     ApiMeta,
     ClubForm,
     ClubFormValidation,
+    CurrentPlayerContext,
     DefconCalibrationBin,
     DefconPlayer,
     DefconProbabilityPlayer,
@@ -294,14 +295,6 @@ def _resolve_as_of_gw(history: pl.DataFrame, as_of_gw: int | None) -> int:
     return as_of_gw if as_of_gw is not None else latest
 
 
-def _latest_season_in_history(history: pl.DataFrame) -> str:
-    """Return the latest season label present in a history frame."""
-    seasons = [str(season) for season in history["season"].drop_nulls().unique()]
-    if not seasons:
-        raise HTTPException(status_code=404, detail="No seasons found")
-    return max(seasons, key=data.season_sort_key)
-
-
 def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
     """Attach current ownership, always the present-day snapshot.
 
@@ -502,6 +495,67 @@ def fpl_team(
         owned_elements=picks["element"].to_list(),
         picks=[FplTeamPick(**row) for row in picks.select(pick_cols).to_dicts()],
     )
+
+
+@app.get("/players/current-context")
+def players_current_context(
+    players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    teams: Annotated[pl.DataFrame, Depends(get_teams)],
+    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+) -> list[CurrentPlayerContext]:
+    """Return current squad context without history or live FPL requests.
+
+    Join fixtures by the player's current snapshot club, including players
+    without historical appearances. The next fixture is independent of any
+    analytical as-of gameweek or FDR horizon. Aggregate difficulty covers five
+    gameweeks from the gameweek of the earliest scheduled, unstarted kickoff
+    in the snapshot, excluding rounds outside that range.
+    """
+    if players.is_empty() or "id" not in players.columns:
+        return []
+
+    # Preserve known players when optional metadata is absent or all-null.
+    player_schema = {
+        "id": pl.Int64,
+        "web_name": pl.String,
+        "element_type": pl.Int64,
+        "team": pl.Int64,
+        "now_cost": pl.Float64,
+        "selected_by_percent": pl.Float64,
+    }
+    players = players.select(
+        (pl.col(name) if name in players.columns else pl.lit(None))
+        .cast(dtype)
+        .alias(name)
+        for name, dtype in player_schema.items()
+    )
+    teams = teams.select(
+        (pl.col(name) if name in teams.columns else pl.lit(None))
+        .cast(dtype)
+        .alias(name)
+        for name, dtype in {"id": pl.Int64, "name": pl.String}.items()
+    )
+    metadata = _player_snapshot_metadata(players, teams)
+    snapshot = players.select(
+        pl.col("id").alias("element"),
+        "team",
+        (pl.col("now_cost") / 10).alias("price"),
+        pl.col("selected_by_percent").alias("current_ownership"),
+    )
+    fdr = fixtures.current_team_fixture_difficulty(fixtures_data)
+    opponents = teams.select(
+        pl.col("id").alias("next_opponent"),
+        pl.col("name").alias("next_opponent_name"),
+    )
+    context = (
+        metadata.join(snapshot, on="element", how="left")
+        .join(fdr, on="team", how="left")
+        .join(opponents, on="next_opponent", how="left")
+        .rename({"n_fixtures": "upcoming_fixtures", "avg_difficulty": "avg_fdr"})
+        .select(list(CurrentPlayerContext.model_fields))
+        .sort("element")
+    )
+    return [CurrentPlayerContext(**row) for row in context.to_dicts()]
 
 
 @app.get("/players/form")
@@ -754,6 +808,8 @@ def player_detail(
     element: int,
     all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
     history: Annotated[pl.DataFrame, Depends(get_history)],
+    current_season: Annotated[str, Depends(get_current_season)],
+    players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
     window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
     season: str | None = None,
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
@@ -762,34 +818,59 @@ def player_detail(
 
     ``element`` is the current-season FPL id; the player is tracked across
     seasons by their stable ``code``. Rolling figures use a trailing ``window``.
+    Resolve the cutoff within the selected season, keeping the live-history
+    limit for current-season requests.
     """
-    _require_current_history(history)
-    gw = _resolve_as_of_gw(history, as_of_gw)
-    current_season = _latest_season_in_history(all_seasons)
-    current = all_seasons.filter(
-        pl.col("season") == current_season, pl.col("element") == element
-    )
-    if current.is_empty():
-        raise HTTPException(status_code=404, detail="Player not found")
+    selected_season = season or current_season
+    if selected_season == current_season:
+        _require_current_history(history)
+    if all_seasons.is_empty():
+        raise HTTPException(status_code=404, detail="Season not found for player")
 
-    current_latest = current.sort("round").row(-1, named=True)
-    code = current_latest["code"]
-    # Track the player across seasons by code; fall back to the current season
-    # when the code is missing.
-    history = (
-        all_seasons.filter(pl.col("code") == code) if code is not None else current
+    current_identity = (pl.col("season") == current_season) & (
+        pl.col("element") == element
+    )
+    current = all_seasons.filter(current_identity)
+    code = current.sort("round")["code"][-1] if not current.is_empty() else None
+    if code is None:
+        # Recover missing history identity from the live player snapshot.
+        identity = (
+            players.filter(pl.col("id") == element)
+            if {"id", "code"}.issubset(players.columns)
+            else pl.DataFrame()
+        )
+        if current.is_empty() and identity.is_empty():
+            raise HTTPException(status_code=404, detail="Player not found")
+        if not identity.is_empty():
+            code = identity["code"][0]
+
+    # Keep current rows by element even when their stable code is missing.
+    player_history = (
+        all_seasons.filter(
+            ((pl.col("season") != current_season) & (pl.col("code") == code))
+            | current_identity
+        )
+        if code is not None
+        else current
     )
     available_seasons = sorted(
-        (str(value) for value in history["season"].drop_nulls().unique()),
+        (str(value) for value in player_history["season"].drop_nulls().unique()),
         key=data.season_sort_key,
     )
-    selected_season = season or current_season
-    selected_history = history.filter(pl.col("season") == selected_season)
+    selected_history = player_history.filter(pl.col("season") == selected_season)
+    if selected_history.is_empty():
+        raise HTTPException(status_code=404, detail="Season not found for player")
+    cutoff_history = (
+        history
+        if selected_season == current_season
+        else all_seasons.filter(pl.col("season") == selected_season)
+    )
+    gw = _resolve_as_of_gw(cutoff_history, as_of_gw)
     season_history = selected_history.filter(pl.col("round") <= gw)
     if season_history.is_empty():
         raise HTTPException(status_code=404, detail="Season not found for player")
 
-    summary_history = history.filter(
+    summary_history = player_history.filter(
         (pl.col("season") < selected_season)
         | ((pl.col("season") == selected_season) & (pl.col("round") <= gw))
     )

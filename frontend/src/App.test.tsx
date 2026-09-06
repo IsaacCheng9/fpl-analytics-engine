@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
+import type { CurrentPlayerContext } from "./api";
 
 const meta = {
 	name: "fpl-analytics-engine",
@@ -128,6 +129,22 @@ const withHistoricalFixtureContext = <T extends typeof broadFormRows>(
 		next_was_home: true,
 		next_fdr: 5,
 	})) as T;
+const currentPlayerContexts: CurrentPlayerContext[] = broadFormRows.map(
+	(row) => ({
+		element: row.element,
+		web_name: row.web_name,
+		position: row.position,
+		team_name: row.team_name,
+		price: row.price,
+		current_ownership: row.current_ownership,
+		upcoming_fixtures: row.upcoming_fixtures,
+		avg_fdr: row.avg_fdr,
+		next_fixture_gw: row.next_fixture_gw,
+		next_opponent_name: row.next_opponent_name,
+		next_was_home: row.next_was_home,
+		next_fdr: row.next_fdr,
+	}),
+);
 const clubRows = [
 	{
 		team: 1,
@@ -610,6 +627,8 @@ function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 			params.get("as_of_gw") === "30"
 				? withHistoricalFixtureContext(rows)
 				: rows;
+	} else if (url.includes("/players/current-context")) {
+		body = currentPlayerContexts;
 	} else if (url.includes("/fpl-team/")) {
 		body = importedTeam;
 	} else if (url.includes("/clubs/form-validation")) {
@@ -1194,6 +1213,157 @@ test("opens a current squad inspection view from an imported FPL team", async ()
 	expect(params.get("squad")).toBe("not-owned");
 });
 
+test("keeps the snapshot club and fixture when the analytical gameweek changes", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/current-context")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify(
+						currentPlayerContexts.map((row) => ({
+							...row,
+							team_name: "New Club",
+							price: 9.5,
+							next_fixture_gw: 7,
+							next_opponent_name: "New Opponent",
+						})),
+					),
+				),
+			);
+		}
+		if (url.includes("/players/form")) {
+			const historical = url.includes("as_of_gw=30");
+			return Promise.resolve(
+				new Response(
+					JSON.stringify(
+						broadFormRows.map((row) => ({
+							...row,
+							team_name: "Old Club",
+							next_opponent_name: "Old Opponent",
+							window_xgi90: historical ? 0.11 : 0.97,
+						})),
+					),
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+
+	const player = await screen.findByText("Mbeumo");
+	let row = within(player.closest("tr") as HTMLElement);
+	expect(row.getByText("New Club")).toBeInTheDocument();
+	expect(row.getByText("\u00a39.5m")).toBeInTheDocument();
+	expect(row.getByText("GW7 H New Opponent")).toBeInTheDocument();
+	expect(row.getByText("0.97")).toBeInTheDocument();
+	expect(row.queryByText("Old Club")).not.toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText(/As Of GW/), {
+		target: { value: "30" },
+	});
+	await waitFor(() => {
+		row = within(screen.getByText("Mbeumo").closest("tr") as HTMLElement);
+		expect(row.getByText("0.11")).toBeInTheDocument();
+	});
+	expect(row.getByText("New Club")).toBeInTheDocument();
+	expect(row.getByText("GW7 H New Opponent")).toBeInTheDocument();
+	expect(screen.queryByText(/Old Opponent/)).not.toBeInTheDocument();
+	const contextCalls = vi
+		.mocked(fetch)
+		.mock.calls.map(([input]) => String(input))
+		.filter((url) => url.includes("/players/current-context"));
+	expect(contextCalls).toEqual(["/api/players/current-context"]);
+});
+
+test.each([
+	false,
+	true,
+])("does not fall back to historical fixtures when current context is missing: %s", async (missingPlayer) => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("/players/current-context")) {
+			const rows = currentPlayerContexts
+				.filter((row) => !missingPlayer || row.element !== 1)
+				.map((row) => ({
+					...row,
+					upcoming_fixtures: null,
+					avg_fdr: null,
+					next_fixture_gw: null,
+					next_opponent_name: null,
+					next_was_home: null,
+					next_fdr: null,
+				}));
+			return Promise.resolve(new Response(JSON.stringify(rows)));
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(
+		null,
+		"",
+		"/?as_of_gw=30&fpl_team=123&squad_view=1",
+	);
+	render(withProviders(<App />));
+
+	const player = await screen.findByText("Mbeumo");
+	const row = within(player.closest("tr") as HTMLElement);
+	expect(row.getByText("Man Utd")).toBeInTheDocument();
+	expect(row.getAllByRole("cell")[4]).toHaveTextContent("-");
+	expect(row.getAllByRole("cell")[5]).toHaveTextContent("-");
+	expect(screen.queryByText("Fixture Risk")).not.toBeInTheDocument();
+	expect(screen.queryByText(/Historical/)).not.toBeInTheDocument();
+});
+
+test("reports a failed current-context request instead of using old fixtures", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("/players/current-context")) {
+			return Promise.resolve(new Response(null, { status: 500 }));
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+
+	expect(
+		await screen.findByText("Failed to load squad context."),
+	).toBeInTheDocument();
+	expect(screen.queryByText("GW39 H Everton")).not.toBeInTheDocument();
+});
+
+test("preserves unknown snapshot labels and venue instead of guessing", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("/players/current-context")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify(
+						currentPlayerContexts.map((row) => ({
+							...row,
+							web_name: null,
+							position: null,
+							team_name: null,
+							price: null,
+							current_ownership: null,
+							next_was_home: null,
+						})),
+					),
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+
+	const player = await screen.findByText("#1");
+	const row = within(player.closest("tr") as HTMLElement);
+	const cells = row.getAllByRole("cell");
+	for (const index of [1, 2, 3, 13]) {
+		expect(cells[index]).toHaveTextContent(/^-$/);
+	}
+	expect(cells[4]).toHaveTextContent("GW39 Everton");
+	expect(cells[4]).not.toHaveTextContent("H Everton");
+	expect(cells[4]).not.toHaveTextContent("A Everton");
+});
+
 test("shows no-form state instead of low threat for missing historical data", async () => {
 	vi.mocked(fetch).mockImplementation((input) => {
 		const url = String(input);
@@ -1774,11 +1944,10 @@ test("initialises filters and player panel state from the URL", async () => {
 		expect(screen.getByText("Season History")).toBeInTheDocument();
 	});
 	const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
-	expect(
-		calls.some((input) =>
-			input.includes("/api/players/1?window=6&season=2024-25&as_of_gw=20"),
-		),
-	).toBe(true);
+	expect(calls).toContain("/api/players/1?window=6&season=2024-25");
+	expect(calls).not.toContain(
+		"/api/players/1?window=6&season=2024-25&as_of_gw=20",
+	);
 });
 
 test("persists filter changes and player panel state to the URL", async () => {
