@@ -182,7 +182,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--skip-backfill",
         action="store_true",
-        help="Skip historical vaastav backfill and current canonicalisation.",
+        help="Skip vaastav backfill; live archiving still builds served data.",
     )
     parser.add_argument(
         "--skip-smoke",
