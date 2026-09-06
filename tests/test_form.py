@@ -201,3 +201,46 @@ def test_evaluate_flags_attaches_next_gameweek_points() -> None:
     # The flag after the final GW4 has no following gameweek.
     after_gw4 = evaluated.filter(pl.col("as_of_gw") == 4).to_dicts()[0]
     assert after_gw4["next_gw_points"] is None
+
+
+def test_evaluate_flags_counts_completed_blanks_without_inventing_future_results() -> (
+    None
+):
+    history = _frame(
+        [
+            _game(1, 1, points=3),
+            _game(2, 1, points=2),
+            _game(2, 2, points=4),
+            _game(2, 2, points=5),
+            _game(3, 2, minutes=0, points=0),
+            _game(1, 4, points=8),
+        ]
+    )
+    flags = pl.DataFrame({"element": [1, 2, 3, 1, 1], "as_of_gw": [1, 1, 1, 2, 4]})
+    evaluated = form.evaluate_flags(history, flags)
+    assert evaluated["next_gw_points"].to_list() == [0, 9, 0, None, None]
+    assert evaluated["next_gw_points"].mean() == 3.0
+    assert evaluated.columns == ["element", "as_of_gw", "next_gw_points"]
+
+
+def test_evaluate_flags_does_not_impute_recorded_missing_points() -> None:
+    history = pl.DataFrame(
+        {
+            "element": [1, 1, 2, 2, 3],
+            "round": [2, 2, 2, 2, 1],
+            "total_points": [None, 4, 3, 2, 1],
+        },
+        schema_overrides={"total_points": pl.Int64},
+    )
+    flags = pl.DataFrame({"element": [1, 2, 3], "as_of_gw": [1, 1, 1]})
+    assert form.evaluate_flags(history, flags)["next_gw_points"].to_list() == [
+        None,
+        5,
+        0,
+    ]
+
+
+def test_evaluate_flags_preserves_empty_history_as_unknown() -> None:
+    history = _frame([_game(1, 1)]).clear()
+    flags = pl.DataFrame({"element": [1], "as_of_gw": [1]})
+    assert form.evaluate_flags(history, flags)["next_gw_points"].to_list() == [None]

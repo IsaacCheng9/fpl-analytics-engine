@@ -280,17 +280,25 @@ def evaluate_flags(history: pl.DataFrame, flags: pl.DataFrame) -> pl.DataFrame:
     to score how the flags performed.
 
     Args:
-        history: Enriched per-gameweek history.
+        history: Complete, finalised single-season history, including unused
+            players. Treat gameweeks present in it as completed; do not pass
+            provisional or player-filtered history.
         flags: Output of :func:`backtest_flags` (must include ``as_of_gw``).
 
     Returns:
         The flags with a ``next_gw_points`` column for gameweek ``as_of_gw + 1``
-        (null where there is no following gameweek), summed across any double
-        gameweek.
+        summed across double-gameweek fixtures. A missing player row in a
+        completed gameweek counts as zero points. Entirely absent gameweeks
+        and recorded results with missing points remain null, not zero.
     """
     next_points = history.group_by("element", "round").agg(
-        pl.col("total_points").sum().alias("next_gw_points")
+        pl.when(pl.col("total_points").count() == pl.len())
+        .then(pl.col("total_points").sum())
+        .otherwise(None)
+        .alias("next_gw_points"),
+        pl.lit(True).alias("_has_outcome"),
     )
+    completed_rounds = history["round"].drop_nulls().unique()
     return (
         flags.with_columns((pl.col("as_of_gw") + 1).alias("_next_gw"))
         .join(
@@ -299,5 +307,14 @@ def evaluate_flags(history: pl.DataFrame, flags: pl.DataFrame) -> pl.DataFrame:
             right_on=["element", "round"],
             how="left",
         )
-        .drop("_next_gw")
+        .with_columns(
+            pl.when(
+                pl.col("_has_outcome").is_null()
+                & pl.col("_next_gw").is_in(completed_rounds.implode())
+            )
+            .then(0)
+            .otherwise(pl.col("next_gw_points"))
+            .alias("next_gw_points")
+        )
+        .drop("_next_gw", "_has_outcome")
     )
