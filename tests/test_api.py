@@ -649,9 +649,212 @@ def test_player_detail_can_return_prior_season_gameweeks(client: TestClient) -> 
     assert [summary["season"] for summary in body["seasons"]] == ["2024-25"]
 
 
+@pytest.fixture
+def historical_client(client: TestClient) -> TestClient:
+    current = (
+        _detail_rows()
+        .filter(pl.col("season") == "2025-26")
+        .with_columns(pl.lit("2026-27").alias("season"))
+    )
+    template = _detail_rows().row(0, named=True)
+    previous = pl.DataFrame(
+        [
+            {
+                **template,
+                "element": 3,
+                "round": gw,
+                "kickoff_time": "2026-05-24T15:00:00Z" if gw == 38 else None,
+                "web_name": "Late Saka" if gw == 38 else "Early Saka",
+                "team_name": "Chelsea" if gw == 38 else "Arsenal",
+                "expected_goal_involvements": 10.0 if gw == 38 else 0.4,
+            }
+            for gw in range(1, 39)
+        ]
+    )
+    older = _detail_rows().filter(pl.col("season") == "2024-25")
+    archived = pl.concat([older, previous, current], how="vertical_relaxed")
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = lambda: current
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: archived
+    return client
+
+
+@pytest.mark.parametrize("cutoff", [None, 38])
+def test_historical_player_detail_reaches_gw38(
+    historical_client: TestClient, cutoff: int | None
+) -> None:
+    params: dict[str, str | int] = {"season": "2025-26"}
+    if cutoff is not None:
+        params["as_of_gw"] = cutoff
+
+    response = historical_client.get("/players/7", params=params)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["as_of_gw"] == 38
+    assert body["selected_season"] == "2025-26"
+    assert [row["round"] for row in body["gameweeks"]] == list(range(1, 39))
+    assert body["web_name"] == "Late Saka"
+    assert body["team_name"] == "Chelsea"
+    assert [summary["season"] for summary in body["seasons"]] == ["2024-25", "2025-26"]
+    assert body["seasons"][-1]["games"] == 38
+    assert body["seasons"][-1]["points"] == 190
+
+
+def test_historical_player_detail_honours_explicit_selected_cutoff(
+    historical_client: TestClient,
+) -> None:
+    response = historical_client.get(
+        "/players/7", params={"season": "2025-26", "as_of_gw": 20}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["as_of_gw"] == 20
+    assert [row["round"] for row in body["gameweeks"]] == list(range(1, 21))
+    assert body["gameweeks"][-1]["rolling_xgi90"] == pytest.approx(0.4)
+    assert body["web_name"] == "Early Saka"
+    assert body["team_name"] == "Arsenal"
+    assert [summary["season"] for summary in body["seasons"]] == ["2024-25", "2025-26"]
+    assert body["seasons"][-1]["games"] == 20
+    assert body["seasons"][-1]["points"] == 100
+    assert body["seasons"][-1]["xgi90"] == pytest.approx(0.4)
+    assert body["seasons"][0]["games"] == 1
+
+
+@pytest.mark.parametrize("season", [None, "2026-27"])
+def test_current_player_detail_keeps_live_cutoff(
+    historical_client: TestClient, season: str | None
+) -> None:
+    params = {"season": season} if season else {}
+
+    response = historical_client.get("/players/7", params=params)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["as_of_gw"] == 2
+    assert [row["round"] for row in body["gameweeks"]] == [1, 2]
+    response = historical_client.get("/players/7", params={**params, "as_of_gw": 3})
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "as_of_gw 3 is beyond the latest available gameweek (2)."
+    )
+
+
+def test_historical_player_detail_rejects_cutoff_beyond_selected_season(
+    historical_client: TestClient,
+) -> None:
+    response = historical_client.get(
+        "/players/7", params={"season": "2025-26", "as_of_gw": 39}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "as_of_gw 39 is beyond the latest available gameweek (38)."
+    )
+
+
+def test_historical_cutoff_uses_season_latest_not_players_last_appearance(
+    historical_client: TestClient,
+) -> None:
+    archived = api.app.dependency_overrides[api.get_all_seasons]()
+    archived = archived.with_columns(
+        pl.when((pl.col("season") == "2025-26") & (pl.col("round") == 38))
+        .then(501)
+        .otherwise(pl.col("code"))
+        .alias("code")
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: archived
+
+    response = historical_client.get(
+        "/players/7", params={"season": "2025-26", "as_of_gw": 38}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["as_of_gw"] == 38
+    assert response.json()["gameweeks"][-1]["round"] == 37
+
+
+@pytest.mark.parametrize("code", [500, None])
+def test_historical_detail_uses_preseason_identity_snapshot(
+    historical_client: TestClient, code: int | None
+) -> None:
+    archived = api.app.dependency_overrides[api.get_all_seasons]().filter(
+        pl.col("season") != "2026-27"
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: archived
+    api.app.dependency_overrides[api.get_history] = pl.DataFrame
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {"id": [70], "code": [code]}
+    )
+
+    response = historical_client.get("/players/70", params={"season": "2025-26"})
+
+    if code is None:
+        assert response.status_code == 404
+    else:
+        assert response.status_code == 200
+        assert response.json()["code"] == code
+        assert response.json()["element"] == 70
+        assert response.json()["as_of_gw"] == 38
+    assert historical_client.get("/players/70").status_code == 409
+    assert (
+        historical_client.get("/players/7", params={"season": "2025-26"}).status_code
+        == 404
+    )
+
+
 def test_player_detail_404_for_unknown_season(client: TestClient) -> None:
     api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
     assert client.get("/players/7", params={"season": "2023-24"}).status_code == 404
+
+
+@pytest.mark.parametrize("snapshot_code", [500, None])
+def test_player_detail_falls_back_to_snapshot_for_missing_history_code(
+    historical_client: TestClient, snapshot_code: int | None
+) -> None:
+    archived = api.app.dependency_overrides[api.get_all_seasons]().with_columns(
+        pl.when(pl.col("season") == "2026-27")
+        .then(None)
+        .otherwise(pl.col("code"))
+        .alias("code")
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: archived
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {"id": [7], "code": [snapshot_code]}
+    )
+
+    current = historical_client.get("/players/7")
+    assert current.status_code == 200
+    assert current.json()["code"] == snapshot_code
+    assert [row["round"] for row in current.json()["gameweeks"]] == [1, 2]
+    assert current.json()["seasons"][-1]["games"] == 2
+
+    previous = historical_client.get("/players/7", params={"season": "2025-26"})
+    assert previous.status_code == (200 if snapshot_code is not None else 404)
+    if snapshot_code is not None:
+        assert previous.json()["seasons"][-1]["games"] == 38
+    else:
+        assert current.json()["available_seasons"] == ["2026-27"]
+
+
+def test_historical_detail_resolves_new_player_before_first_live_history_row(
+    historical_client: TestClient,
+) -> None:
+    archived = api.app.dependency_overrides[api.get_all_seasons]().filter(
+        ~((pl.col("season") == "2026-27") & (pl.col("element") == 7))
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: archived
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {"id": [70], "code": [500]}
+    )
+
+    response = historical_client.get("/players/70", params={"season": "2025-26"})
+
+    assert response.status_code == 200
+    assert response.json()["element"] == 70
+    assert response.json()["as_of_gw"] == 38
+    assert historical_client.get("/players/70").status_code == 404
 
 
 def test_player_detail_404_for_unknown_element(client: TestClient) -> None:
@@ -659,7 +862,7 @@ def test_player_detail_404_for_unknown_element(client: TestClient) -> None:
     assert client.get("/players/999").status_code == 404
 
 
-def test_player_detail_uses_latest_season_as_current(client: TestClient) -> None:
+def test_player_detail_uses_live_season_as_current(client: TestClient) -> None:
     def rows() -> pl.DataFrame:
         base = _detail_rows()
         newer = pl.DataFrame(
@@ -676,6 +879,7 @@ def test_player_detail_uses_latest_season_as_current(client: TestClient) -> None
         return pl.concat([base, newer], how="vertical_relaxed")
 
     api.app.dependency_overrides[api.get_all_seasons] = rows
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
 
     body = client.get("/players/11").json()
 
