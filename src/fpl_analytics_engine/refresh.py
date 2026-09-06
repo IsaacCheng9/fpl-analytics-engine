@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from fpl_analytics_engine import archive, backfill, data_health, smoke
+from fpl_analytics_engine import archive, backfill, data_health, smoke, snapshots
 
 DEFAULT_DATA_ROOT = Path("data")
 DEFAULT_SMOKE_PLAYER = "Saka"
@@ -34,9 +34,11 @@ class StepResult:
     message: str
 
 
-def _path_summary(paths: dict[str, Path]) -> str:
+def _path_summary(paths: dict[str, Path], data_root: Path) -> str:
     """Return a compact summary of paths written by a step."""
-    return ", ".join(f"{name}={path}" for name, path in sorted(paths.items()))
+    return ", ".join(
+        f"{name}={path.relative_to(data_root)}" for name, path in sorted(paths.items())
+    )
 
 
 def _health_summary(checks: Sequence[data_health.HealthCheck]) -> str:
@@ -69,7 +71,9 @@ def _archive_current_season(options: RefreshOptions) -> tuple[StepResult, str | 
         )
     except Exception as exc:
         return _fail(name, exc), None
-    return _ok(name, f"Ingested {season}: {_path_summary(paths)}."), season
+    return _ok(
+        name, f"Ingested {season}: {_path_summary(paths, options.data_root)}."
+    ), season
 
 
 def _backfill_historical(
@@ -83,7 +87,7 @@ def _backfill_historical(
         paths = backfill.backfill(options.data_root, current_season=current_season)
     except Exception as exc:
         return _fail(name, exc)
-    return _ok(name, f"Wrote {_path_summary(paths)}.")
+    return _ok(name, f"Wrote {_path_summary(paths, options.data_root)}.")
 
 
 def _validate_data(
@@ -117,7 +121,7 @@ def _smoke_data(options: RefreshOptions) -> StepResult:
 
 
 def run_refresh(options: RefreshOptions) -> list[StepResult]:
-    """Run archive, backfill, validation, and smoke checks in order.
+    """Publish refreshed snapshots only after all selected checks succeed.
 
     Args:
         options: Refresh options controlling the data root and skipped steps.
@@ -126,6 +130,21 @@ def run_refresh(options: RefreshOptions) -> list[StepResult]:
         The step results in execution order. Execution stops after a failed
         archive, backfill, or validation step to avoid piling on noisy errors.
     """
+    if options.skip_archive and options.skip_backfill:
+        return _run_refresh_steps(options)
+    results: list[StepResult] = []
+    try:
+        with snapshots.stage_snapshot(options.data_root) as staged:
+            results = _run_refresh_steps(replace(options, data_root=staged))
+            if all(result.ok for result in results):
+                snapshots.publish_snapshot(staged, options.data_root)
+    except Exception as exc:
+        results.append(_fail("Publish Data", exc))
+    return results
+
+
+def _run_refresh_steps(options: RefreshOptions) -> list[StepResult]:
+    """Run archive, backfill, validation, and smoke against staged snapshots."""
     results: list[StepResult] = []
 
     archive_result, current_season = _archive_current_season(options)
