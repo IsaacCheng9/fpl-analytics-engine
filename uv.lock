@@ -160,7 +160,7 @@ wheels = [
 
 [[package]]
 name = "fpl-analytics-engine"
-version = "0.25.7"
+version = "0.25.8"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
