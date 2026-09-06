@@ -1,10 +1,15 @@
-import type { DefconProbabilityPlayer, FormPlayer, FplTeamPick } from "../api";
+import type {
+	CurrentPlayerContext,
+	DefconProbabilityPlayer,
+	FormPlayer,
+	FplTeamPick,
+} from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 
 type SquadInspectionRow = {
 	pick: FplTeamPick;
 	form?: FormPlayer;
-	currentForm?: FormPlayer;
+	current?: CurrentPlayerContext;
 	defcon?: DefconProbabilityPlayer;
 };
 
@@ -35,22 +40,16 @@ function indexByElement<T extends { element: number }>(
 }
 
 function playerName(row: SquadInspectionRow): string {
-	return (
-		row.currentForm?.web_name ??
-		row.form?.web_name ??
-		row.pick.web_name ??
-		`#${row.pick.element}`
-	);
+	const name = row.current ? row.current.web_name : row.pick.web_name;
+	return name ?? `#${row.pick.element}`;
 }
 
 function playerPosition(row: SquadInspectionRow): string | null {
-	return row.currentForm?.position ?? row.form?.position ?? row.pick.position;
+	return row.current ? row.current.position : row.pick.position;
 }
 
 function playerTeam(row: SquadInspectionRow): string | null {
-	return (
-		row.currentForm?.team_name ?? row.form?.team_name ?? row.pick.team_name
-	);
+	return row.current ? row.current.team_name : row.pick.team_name;
 }
 
 function compareSquadRows(left: SquadInspectionRow, right: SquadInspectionRow) {
@@ -62,16 +61,17 @@ function compareSquadRows(left: SquadInspectionRow, right: SquadInspectionRow) {
 	return playerName(left).localeCompare(playerName(right));
 }
 
-function formatNextFixture(form: FormPlayer | undefined): string {
-	if (!form?.next_opponent_name) {
+function formatNextFixture(current: CurrentPlayerContext | undefined): string {
+	if (!current?.next_opponent_name) {
 		return "-";
 	}
-	const venue = form.next_was_home === false ? "A" : "H";
+	const venue =
+		current.next_was_home == null ? "" : current.next_was_home ? "H " : "A ";
 	const gameweek =
-		typeof form.next_fixture_gw === "number"
-			? `GW${form.next_fixture_gw} `
+		typeof current.next_fixture_gw === "number"
+			? `GW${current.next_fixture_gw} `
 			: "";
-	return `${gameweek}${venue} ${form.next_opponent_name}`;
+	return `${gameweek}${venue}${current.next_opponent_name}`;
 }
 
 function fixtureClass(fdr: number | null | undefined): string {
@@ -88,16 +88,15 @@ function fixtureClass(fdr: number | null | undefined): string {
 }
 
 function squadFlags(row: SquadInspectionRow): SquadFlag[] {
-	const { form, defcon } = row;
-	const currentForm = row.currentForm ?? form;
+	const { form, defcon, current } = row;
 	const position = playerPosition(row);
 	const startRate = form?.window_start_rate;
 	const minsPerApp = form?.window_mins_per_appearance;
 	const windowXgi = form?.window_xgi90;
 	const seasonXgi = form?.season_xgi90;
 	const deltaXgi = form?.delta_xgi90;
-	const nextFdr = currentForm?.next_fdr;
-	const avgFdr = currentForm?.avg_fdr;
+	const nextFdr = current?.next_fdr;
+	const avgFdr = current?.avg_fdr;
 	const flags: SquadFlag[] = [];
 
 	if (
@@ -192,8 +191,7 @@ function SquadRows({
 					</thead>
 					<tbody>
 						{rows.map((row) => {
-							const form = row.form;
-							const currentForm = row.currentForm ?? form;
+							const { form, current } = row;
 							const flags = squadFlags(row);
 							return (
 								<tr
@@ -207,15 +205,13 @@ function SquadRows({
 									<td className="px-3 py-2">{playerPosition(row) ?? "-"}</td>
 									<td className="px-3 py-2">{playerTeam(row) ?? "-"}</td>
 									<td className="px-3 py-2">
-										{fmtPrice(currentForm?.price ?? form?.price ?? null)}
+										{fmtPrice(current?.price ?? null)}
 									</td>
-									<td className="px-3 py-2">
-										{formatNextFixture(currentForm)}
-									</td>
+									<td className="px-3 py-2">{formatNextFixture(current)}</td>
 									<td
-										className={`px-3 py-2 ${fixtureClass(currentForm?.next_fdr)}`}
+										className={`px-3 py-2 ${fixtureClass(current?.next_fdr)}`}
 									>
-										{fmtNum(currentForm?.next_fdr ?? null, 0)}
+										{fmtNum(current?.next_fdr ?? null, 0)}
 									</td>
 									<td className="px-3 py-2">
 										{fmtNum(form?.window_xgi90 ?? null)}
@@ -239,12 +235,7 @@ function SquadRows({
 										{fmtPct(row.defcon?.prob ?? null)}
 									</td>
 									<td className="px-3 py-2">
-										{fmtPctPoints(
-											currentForm?.current_ownership ??
-												form?.current_ownership ??
-												null,
-											1,
-										)}
+										{fmtPctPoints(current?.current_ownership ?? null, 1)}
 									</td>
 									<td className="px-3 py-2">
 										<div className="flex flex-wrap gap-1">
@@ -271,7 +262,7 @@ function SquadRows({
 export function SquadInspection({
 	picks,
 	formPlayers,
-	currentFormPlayers,
+	currentPlayers,
 	defconPlayers,
 	window,
 	asOfGw,
@@ -282,7 +273,7 @@ export function SquadInspection({
 }: {
 	picks: FplTeamPick[];
 	formPlayers: FormPlayer[];
-	currentFormPlayers: FormPlayer[];
+	currentPlayers: CurrentPlayerContext[];
 	defconPlayers: DefconProbabilityPlayer[];
 	window: number;
 	asOfGw: number | null;
@@ -292,13 +283,13 @@ export function SquadInspection({
 	onPlayerClick: (element: number) => void;
 }) {
 	const formByElement = indexByElement(formPlayers);
-	const currentFormByElement = indexByElement(currentFormPlayers);
+	const currentByElement = indexByElement(currentPlayers);
 	const defconByElement = indexByElement(defconPlayers);
 	const rows = picks
 		.map((pick) => ({
 			pick,
 			form: formByElement.get(pick.element),
-			currentForm: currentFormByElement.get(pick.element),
+			current: currentByElement.get(pick.element),
 			defcon: defconByElement.get(pick.element),
 		}))
 		.sort(compareSquadRows);

@@ -438,6 +438,7 @@ from one FastAPI deployment.
 | --- | --- | --- |
 | `GET /` | Live season, analytical readiness, next deadline, and latest completed gameweek | – |
 | `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
+| `GET /players/current-context` | Current snapshot player metadata and scheduled, unstarted fixture context | – |
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
@@ -458,6 +459,25 @@ display.
 Before GW1, analytical and team-import endpoints return HTTP 409 rather than
 silently serving the previous season. In the deployed app, prefix these routes
 with `/api` (for example, `/api/players/form`).
+
+### Current Squad Context
+`/players/current-context` supplies squad inspection with current snapshot club,
+price, ownership, and fixture context, including players without appearances.
+Unlike historical analytical FDR anchored to `as_of_gw`, it selects the earliest
+scheduled, unstarted fixture by kickoff time for the player's snapshot club,
+excluding finished or started matches. The next fixture is not horizon-limited;
+aggregate FDR covers five gameweeks starting at the gameweek of the earliest
+scheduled, unstarted kickoff in the snapshot. Rounds outside that range are
+excluded, including rearranged earlier rounds. Historical analytical endpoints
+retain their existing semantics.
+
+This route reads archived snapshots only and makes no live FPL requests. Club,
+schedule, and match-status changes since the last snapshot refresh are not
+reflected, so 'current' does not mean real-time. It also works before GW1 and
+returns null next-fixture context when no eligible fixture is known.
+Missing metadata leaves known player IDs in the response with null fields;
+squad inspection does not replace unknown fixtures with historical context or
+infer a home venue when it is unknown.
 
 ## Testing
 

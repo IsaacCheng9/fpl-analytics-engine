@@ -9,6 +9,7 @@ import {
 	type FplTeamPick,
 	fetchClubForm,
 	fetchClubFormValidation,
+	fetchCurrentPlayerContext,
 	fetchDefcon,
 	fetchDefconProbability,
 	fetchDefconProbabilityValidation,
@@ -2094,14 +2095,9 @@ export default function App() {
 			}),
 		enabled: analyticsReady && isSquadViewActive,
 	});
-	const squadCurrentFormQuery = useQuery({
-		queryKey: ["squadCurrentForm", windowSize],
-		queryFn: () =>
-			fetchForm({
-				...squadBase,
-				asOfGw: null,
-				minDelta: FORM_MIN_DELTA_FLOOR,
-			}),
+	const squadCurrentContextQuery = useQuery({
+		queryKey: ["squadCurrentContext"],
+		queryFn: fetchCurrentPlayerContext,
 		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadDefconProbabilityQuery = useQuery({
@@ -3393,7 +3389,7 @@ export default function App() {
 					<SquadInspection
 						picks={squadPicks}
 						formPlayers={squadFormQuery.data ?? []}
-						currentFormPlayers={squadCurrentFormQuery.data ?? []}
+						currentPlayers={squadCurrentContextQuery.data ?? []}
 						defconPlayers={squadDefconProbabilityQuery.data ?? []}
 						window={windowSize}
 						asOfGw={asOfGw}
@@ -3401,14 +3397,14 @@ export default function App() {
 						loading={
 							fplTeamQuery.isPending ||
 							squadFormQuery.isPending ||
-							squadCurrentFormQuery.isPending ||
+							squadCurrentContextQuery.isPending ||
 							squadDefconProbabilityQuery.isPending
 						}
 						error={
 							fplTeamQuery.isError ||
 							teamImportIdentityError ||
 							squadFormQuery.isError ||
-							squadCurrentFormQuery.isError ||
+							squadCurrentContextQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
 						onPlayerClick={openPlayerDetail}

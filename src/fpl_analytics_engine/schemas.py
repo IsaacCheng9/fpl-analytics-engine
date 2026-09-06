@@ -31,6 +31,16 @@ class FixtureContext(BaseModel):
     )
 
 
+class CurrentPlayerContext(FixtureContext):
+    """Describe current snapshot metadata and scheduled, unplayed fixtures."""
+
+    element: int
+    web_name: str | None
+    position: str | None
+    team_name: str | None
+    price: float | None
+
+
 class PlayerContext(FixtureContext):
     """Adds point-in-time value efficiency and playing time to the context."""
 
