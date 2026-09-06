@@ -321,6 +321,18 @@ canonicalises the current season's `enriched.parquet`, runs data-health
 validation, and finishes with the real-data smoke check. Use it before pushing
 updated `data/` snapshots during the season.
 
+Refreshes run against a temporary copy and publish only after every selected
+step passes. Failed downloads, enrichment, validation or smoke checks leave the
+published snapshots unchanged. Direct archiving also stages raw and enriched
+files before publication, and rejects empty completed history or the loss of
+previously archived player-fixture records. Limited archive runs should target a
+separate directory rather than overwrite a full snapshot.
+
+Run only one refresh writer at a time. Publication uses directory replacement
+with rollback, not a concurrent-reader transaction. If backup cleanup fails
+after a successful publication, the command logs the retained backup path for
+manual removal. Validation-only runs do not stage or republish data.
+
 Only gameweeks marked both finished and data-checked by FPL are added to player
 history. This makes a refresh safe during an active gameweek: zero-minute
 placeholder rows and provisional results from that gameweek are excluded.

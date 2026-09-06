@@ -14,7 +14,7 @@ from pathlib import Path
 
 import polars as pl
 
-from fpl_analytics_engine import app, data
+from fpl_analytics_engine import app, data, snapshots
 
 # Politeness delay between element-summary requests (community norm ~1 req/s).
 REQUEST_DELAY_SECONDS = 1.0
@@ -133,8 +133,6 @@ def archive_season(
         A mapping of dataset name to the Parquet file path written. Includes
         ``enriched`` only when the snapshot was built.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     if bootstrap is None:
         bootstrap = app.get_fpl_data()
     players = pl.DataFrame(
@@ -175,6 +173,37 @@ def archive_season(
         else pl.DataFrame(schema=EMPTY_HISTORY_SCHEMA)
     )
 
+    if completed_gameweeks and history.is_empty():
+        raise ValueError("Completed gameweeks exist but no player history was returned")
+    previous_path = output_dir / "player_gw_history.parquet"
+    if previous_path.exists():
+        previous = pl.read_parquet(previous_path)
+        if not previous.is_empty():
+            keys = ["element", "fixture", "round"]
+            if (
+                history.is_empty()
+                or previous.join(history.select(keys), on=keys, how="anti").height
+            ):
+                raise ValueError("Refresh would discard previously archived history")
+
+    with snapshots.stage_snapshot(output_dir) as staged:
+        paths = _write_snapshot(
+            staged, players, teams, events, fixtures, history, enrich
+        )
+        snapshots.publish_snapshot(staged, output_dir)
+    return {name: output_dir / path.name for name, path in paths.items()}
+
+
+def _write_snapshot(
+    output_dir: Path,
+    players: pl.DataFrame,
+    teams: pl.DataFrame,
+    events: pl.DataFrame,
+    fixtures: pl.DataFrame,
+    history: pl.DataFrame,
+    enrich: bool,
+) -> dict[str, Path]:
+    """Write raw and served data into the unpublished snapshot directory."""
     paths = {
         "players": output_dir / "players.parquet",
         "teams": output_dir / "teams.parquet",
@@ -188,10 +217,12 @@ def archive_season(
     fixtures.write_parquet(paths["fixtures"])
     history.write_parquet(paths["player_gw_history"])
 
-    if enrich:
-        enriched_path = _build_enriched(output_dir)
-        if enriched_path is not None:
-            paths["enriched"] = enriched_path
+    enriched_path = _build_enriched(output_dir) if enrich else None
+    if enriched_path is not None:
+        paths["enriched"] = enriched_path
+    else:
+        # Do not keep an outdated served view beside refreshed raw inputs.
+        (output_dir / "enriched.parquet").unlink(missing_ok=True)
     return paths
 
 
