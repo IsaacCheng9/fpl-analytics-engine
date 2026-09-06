@@ -1944,11 +1944,10 @@ test("initialises filters and player panel state from the URL", async () => {
 		expect(screen.getByText("Season History")).toBeInTheDocument();
 	});
 	const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
-	expect(
-		calls.some((input) =>
-			input.includes("/api/players/1?window=6&season=2024-25&as_of_gw=20"),
-		),
-	).toBe(true);
+	expect(calls).toContain("/api/players/1?window=6&season=2024-25");
+	expect(calls).not.toContain(
+		"/api/players/1?window=6&season=2024-25&as_of_gw=20",
+	);
 });
 
 test("persists filter changes and player panel state to the URL", async () => {
