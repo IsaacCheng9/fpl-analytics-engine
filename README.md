@@ -444,6 +444,11 @@ keyed by the current-season `element` id, tracks the player across seasons by
 stable `code`, and uses `season` only to choose which season's gameweeks to
 display.
 
+Before GW1, analytical and team-import endpoints return HTTP 409 rather than
+silently serving the previous season. In the deployed app, prefix these routes
+with `/api` (for example, `/api/players/form`).
+
+### Current Squad Context
 `/players/current-context` supplies squad inspection with current snapshot club,
 price, ownership, and fixture context, including players without appearances.
 Unlike historical analytical FDR anchored to `as_of_gw`, it selects the earliest
@@ -461,10 +466,6 @@ returns null next-fixture context when no eligible fixture is known.
 Missing metadata leaves known player IDs in the response with null fields;
 squad inspection does not replace unknown fixtures with historical context or
 infer a home venue when it is unknown.
-
-Before GW1, analytical and team-import endpoints return HTTP 409 rather than
-silently serving the previous season. In the deployed app, prefix these routes
-with `/api` (for example, `/api/players/form`).
 
 ## Testing
 
