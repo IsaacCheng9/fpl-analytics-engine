@@ -150,20 +150,50 @@ is flat.
 
 #### DefCon Probability Backtest Results (2025-26 Season)
 
-Every method was replayed point-in-time, predicting the following gameweek from
-only data that would have been known at the as-of gameweek.
+Player models were replayed point-in-time at GW1–37, predicting each eligible
+appearance in GW2–38 using only data through the as-of gameweek. The committed
+2025-26 archive yields 6,635 scored appearances (1,350 hits), requiring at least
+60 minutes and a non-null DefCon outcome. Each of the 69 player double gameweeks
+contributes two observations with the same pre-gameweek prediction, including
+20 mixed hit/miss pairs. Calibration also counts those appearances separately
+and uses only outcomes realised by the as-of gameweek. Settings are unchanged:
+empirical-Bayes priors, fallback strength 5, at least 3 appearances to inform
+prior variance, 10 calibration bins and calibration prior strength 50. The
+constant baseline uses the full scored sample's hit rate, so it is a hindsight
+reference rather than a point-in-time forecast.
 
 | Method | Brier | ECE | Verdict |
 | --- | ---: | ---: | --- |
-| Calibrated count model | 0.1387 | 0.0067 | Best displayed probability – keeps the count signal while making the probabilities trustworthy |
-| Raw count model | 0.1385 | 0.0323 | Sharpest Brier, but overconfident; useful signal, misleading as a displayed probability |
-| Binary empirical-Bayes model | 0.1406 | 0.0130 | Well-calibrated and safe, but throws away margin information from the contribution count |
-| Raw player hit-rate | 0.1510 | 0.0632 | Too noisy and overconfident for small samples |
-| Constant base rate | 0.1629 | 0.0000 | Perfectly calibrated by construction, but not useful for ranking players |
+| Calibrated count model | 0.1382 | 0.0075 | Best displayed probability – keeps the count signal while making the probabilities trustworthy |
+| Raw count model | 0.1380 | 0.0320 | Sharpest Brier, but overconfident; useful signal, misleading as a displayed probability |
+| Binary empirical-Bayes model | 0.1400 | 0.0120 | Well-calibrated and safe, but throws away margin information from the contribution count |
+| Raw player hit-rate | 0.1505 | 0.0630 | Too noisy and overconfident for small samples |
+| Constant base rate | 0.1621 | 0.0000 | Perfectly calibrated by construction, but not useful for ranking players |
 
 The calibrated count model is preferred because it keeps almost all of the raw
 count model's Brier improvement while sharply reducing ECE, making the displayed
 probability more trustworthy.
+
+Reproduce the metrics through the existing validation endpoint without fetching
+or modifying data:
+
+```bash
+uv run --frozen python - <<'PY'
+import json
+from pathlib import Path
+from fastapi.testclient import TestClient
+from fpl_analytics_engine import api, data
+
+history = data.load_enriched(Path("data/2025-26"))
+api.app.dependency_overrides[api.get_history] = lambda: history
+with TestClient(api.app) as client:
+    response = client.get(
+        "/players/defcon-probability-validation?min_minutes=60&bins=10"
+    )
+    response.raise_for_status()
+    print(json.dumps(response.json(), indent=2))
+PY
+```
 
 ### Club Form
 

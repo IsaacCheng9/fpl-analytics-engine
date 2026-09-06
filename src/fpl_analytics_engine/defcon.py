@@ -208,9 +208,10 @@ def backtest_defcon_probabilities(
     """Score the model against the following gameweek's actual outcomes.
 
     For each gameweek it predicts every eligible player point-in-time, then
-    attaches whether they hit the threshold in their next appearance. Rows
-    where the player did not feature in the next gameweek are dropped, so the
-    target is ``P(hit | plays)``.
+    scores that same prediction against each eligible appearance in the next
+    gameweek. Double gameweeks contribute separate hit/miss observations, not
+    a hit-at-least-once target. Players without an eligible next-gameweek
+    appearance are dropped, so the target is ``P(hit | eligible appearance)``.
 
     Args:
         history: Enriched per-gameweek history.
@@ -222,20 +223,16 @@ def backtest_defcon_probabilities(
         min_games_for_prior: Forwarded to :func:`defcon_probabilities`.
 
     Returns:
-        Per-prediction rows with ``prob``, the raw-rate baseline, and the
+        Per-appearance rows with ``prob``, the raw-rate baseline, and the
         realised ``hit`` (0.0 or 1.0).
     """
     max_round = cast(int, history["round"].max())
     if gw_range is None:
         gw_range = range(1, max_round)
 
-    next_hit = (
-        history.filter(
-            (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
-        )
-        .group_by("element", "round")
-        .agg(pl.col("defcon_hit").max().alias("hit"))
-    )
+    next_hit = history.filter(
+        (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
+    ).select("element", "round", pl.col("defcon_hit").alias("hit"))
 
     frames = [
         defcon_probabilities(
@@ -516,9 +513,10 @@ def _apply_count_calibration(
     """Calibrate count probabilities from prior prediction buckets.
 
     The raw count model is sharp but overconfident. For each probability bucket,
-    prior as-of predictions provide an observed hit rate. Each current
-    prediction is then shrunk toward that bucket outcome, using its own raw
-    count probability as the prior mean so unseen buckets degrade gracefully.
+    prior scored appearances provide an observed hit rate, counting each
+    double-gameweek fixture separately. Each current prediction is then shrunk
+    toward that bucket outcome, using its own raw count probability as the
+    prior mean so unseen buckets degrade gracefully.
     """
     if predictions.is_empty():
         return predictions
@@ -567,8 +565,10 @@ def backtest_defcon_count_probabilities(
 ) -> pl.DataFrame:
     """Score the recalibrated count model against following-GW outcomes.
 
-    Calibration is nested point-in-time: the GW N prediction can only use
-    realised outcomes from predictions made before GW N.
+    Score each eligible next-gameweek appearance separately, repeating the
+    same as-of prediction for double-gameweek fixtures. Calibration is nested
+    point-in-time: predictions made after GW N use only scored appearances
+    through GW N, never outcomes from the target gameweek N + 1.
 
     Args:
         history: Enriched per-gameweek history.
@@ -582,20 +582,16 @@ def backtest_defcon_count_probabilities(
         calibration_prior_strength: Pseudo-prediction strength for each bucket.
 
     Returns:
-        Per-prediction rows with calibrated ``prob``, uncalibrated
+        Per-appearance rows with calibrated ``prob``, uncalibrated
         ``count_prob``, ``binary_prob`` and realised ``hit``.
     """
     max_round = cast(int, history["round"].max())
     if gw_range is None:
         gw_range = range(1, max_round)
 
-    next_hit = (
-        history.filter(
-            (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
-        )
-        .group_by("element", "round")
-        .agg(pl.col("defcon_hit").max().alias("hit"))
-    )
+    next_hit = history.filter(
+        (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
+    ).select("element", "round", pl.col("defcon_hit").alias("hit"))
 
     frames = [
         _count_and_binary_probabilities(
