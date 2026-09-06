@@ -104,6 +104,11 @@ rolling player detail, and club form. Double gameweeks include every fixture;
 blanks never pull older fixtures into the window. Game and match counts remain
 fixture counts, and per-match rates use the number of fixtures actually present.
 
+Expected-stat rates use only minutes with an available observation for that
+statistic. For 2022-23, this excludes GW1–15 from expected-stat totals and
+denominators without removing those games from minutes or points totals. Rates
+with no observed minutes remain unavailable rather than appearing as zero.
+
 ### Transfer Workflow
 
 The dashboard is designed around narrowing transfer candidates without hiding
@@ -232,8 +237,8 @@ available in the live scouting view only as current fixture context.
 - DefCon was introduced by FPL in 2025-26 – the underlying defensive components
   do not exist in any comparable form before then, so DefCon analysis is
   2025-26-only and historical seasons carry null DefCon columns
-- In the vaastav archive, 2022-23 expected stats only cover GW16-38; scope
-  2022-23 form comparisons to GW16 onward
+- In the vaastav archive, 2022-23 expected stats only cover GW16-38; expected
+  rates use that coverage and remain unavailable before GW16
 - Cross-season player matching uses stable FPL `code`; historical `element` ids
   are season-local and are not safe for matching the same player across seasons
 - Current ownership and imported squad membership are live/current-state
