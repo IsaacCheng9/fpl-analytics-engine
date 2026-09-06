@@ -132,6 +132,70 @@ def team_fixture_difficulty(
     )
 
 
+def current_team_fixture_difficulty(
+    fixtures: pl.DataFrame, horizon: int = DEFAULT_HORIZON
+) -> pl.DataFrame:
+    """Summarise scheduled, unstarted fixtures from the current snapshot.
+
+    Use kickoff order for the next fixture, independently of the FDR horizon
+    and analytical history. Start the aggregate gameweek range at the gameweek
+    of the earliest scheduled, unstarted kickoff anywhere in the snapshot.
+    Exclude gameweeks outside that range, including rearranged earlier rounds.
+    Require an assigned gameweek and kickoff so postponements without a
+    schedule cannot be next.
+    Null ``started`` is normal for future FPL fixtures; unknown ``finished``
+    or missing status columns cannot establish that a fixture is unplayed.
+
+    Args:
+        fixtures: Current archived fixture records, including status flags.
+        horizon: Number of gameweeks to include in the difficulty aggregate.
+
+    Returns:
+        One row per team with a scheduled, unstarted fixture. The next fixture
+        can lie outside the aggregate window. Empty if none are known.
+    """
+    required = {"event", "kickoff_time", "finished", "started"}
+    if fixtures.is_empty() or not required.issubset(fixtures.columns):
+        return pl.DataFrame(schema=_SUMMARY_SCHEMA)
+
+    scheduled = fixtures.filter(
+        pl.col("event").is_not_null(),
+        pl.col("kickoff_time").is_not_null(),
+        ~pl.col("finished").fill_null(True),
+        ~pl.col("started").fill_null(False),
+    )
+    if scheduled.is_empty():
+        return pl.DataFrame(schema=_SUMMARY_SCHEMA)
+
+    upcoming = _explode_to_team_rows(scheduled)
+    first_gw = upcoming.sort("kickoff_time", "fixture_order", "team")["event"][0]
+    summary = (
+        upcoming.filter(
+            pl.col("event").is_between(first_gw, first_gw + horizon, closed="left")
+        )
+        .group_by("team")
+        .agg(
+            pl.len().alias("n_fixtures"),
+            pl.col("difficulty").mean().alias("avg_difficulty"),
+            pl.col("difficulty").sum().alias("total_difficulty"),
+        )
+    )
+    next_fixture = (
+        upcoming.sort("team", "kickoff_time", "fixture_order", "opponent")
+        .group_by("team", maintain_order=True)
+        .agg(
+            pl.col("event").first().alias("next_fixture_gw"),
+            pl.col("opponent").first().alias("next_opponent"),
+            pl.col("was_home").first().alias("next_was_home"),
+            pl.col("difficulty").first().alias("next_fdr"),
+        )
+    )
+    return next_fixture.join(summary, on="team", how="left").with_columns(
+        pl.col("n_fixtures").fill_null(0),
+        pl.col("total_difficulty").fill_null(0),
+    )
+
+
 def attach_team_fdr(
     form_table: pl.DataFrame,
     fixtures: pl.DataFrame,

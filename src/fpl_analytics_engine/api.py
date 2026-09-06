@@ -16,6 +16,7 @@ from fpl_analytics_engine.schemas import (
     ApiMeta,
     ClubForm,
     ClubFormValidation,
+    CurrentPlayerContext,
     DefconCalibrationBin,
     DefconPlayer,
     DefconProbabilityPlayer,
@@ -502,6 +503,67 @@ def fpl_team(
         owned_elements=picks["element"].to_list(),
         picks=[FplTeamPick(**row) for row in picks.select(pick_cols).to_dicts()],
     )
+
+
+@app.get("/players/current-context")
+def players_current_context(
+    players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    teams: Annotated[pl.DataFrame, Depends(get_teams)],
+    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+) -> list[CurrentPlayerContext]:
+    """Return current squad context without history or live FPL requests.
+
+    Join fixtures by the player's current snapshot club, including players
+    without historical appearances. The next fixture is independent of any
+    analytical as-of gameweek or FDR horizon. Aggregate difficulty covers five
+    gameweeks from the gameweek of the earliest scheduled, unstarted kickoff
+    in the snapshot, excluding rounds outside that range.
+    """
+    if players.is_empty() or "id" not in players.columns:
+        return []
+
+    # Preserve known players when optional metadata is absent or all-null.
+    player_schema = {
+        "id": pl.Int64,
+        "web_name": pl.String,
+        "element_type": pl.Int64,
+        "team": pl.Int64,
+        "now_cost": pl.Float64,
+        "selected_by_percent": pl.Float64,
+    }
+    players = players.select(
+        (pl.col(name) if name in players.columns else pl.lit(None))
+        .cast(dtype)
+        .alias(name)
+        for name, dtype in player_schema.items()
+    )
+    teams = teams.select(
+        (pl.col(name) if name in teams.columns else pl.lit(None))
+        .cast(dtype)
+        .alias(name)
+        for name, dtype in {"id": pl.Int64, "name": pl.String}.items()
+    )
+    metadata = _player_snapshot_metadata(players, teams)
+    snapshot = players.select(
+        pl.col("id").alias("element"),
+        "team",
+        (pl.col("now_cost") / 10).alias("price"),
+        pl.col("selected_by_percent").alias("current_ownership"),
+    )
+    fdr = fixtures.current_team_fixture_difficulty(fixtures_data)
+    opponents = teams.select(
+        pl.col("id").alias("next_opponent"),
+        pl.col("name").alias("next_opponent_name"),
+    )
+    context = (
+        metadata.join(snapshot, on="element", how="left")
+        .join(fdr, on="team", how="left")
+        .join(opponents, on="next_opponent", how="left")
+        .rename({"n_fixtures": "upcoming_fixtures", "avg_difficulty": "avg_fdr"})
+        .select(list(CurrentPlayerContext.model_fields))
+        .sort("element")
+    )
+    return [CurrentPlayerContext(**row) for row in context.to_dicts()]
 
 
 @app.get("/players/form")

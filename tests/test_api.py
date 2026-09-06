@@ -191,6 +191,185 @@ def test_fpl_team_endpoint_uses_requested_event(client: TestClient) -> None:
     assert seen == {"entry_id": 123, "event": 2}
 
 
+@pytest.fixture
+def current_context_client(client: TestClient) -> TestClient:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [1, 99],
+            "web_name": ["Transferred", "New Signing"],
+            "element_type": [3, 4],
+            "team": [20, 20],
+            "now_cost": [75, 60],
+            "selected_by_percent": ["12.5", "1.0"],
+        }
+    )
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {"id": [10, 20, 30], "name": ["T", "New Club", "Opponent"]}
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "event": [5, 5, 5],
+            "kickoff_time": [
+                "2026-09-12T12:00:00Z",
+                "2026-09-12T14:00:00Z",
+                "2026-09-15T19:00:00Z",
+            ],
+            "finished": [True, False, False],
+            "started": [True, True, None],
+            "team_h": [10, 20, 30],
+            "team_a": [20, 30, 20],
+            "team_h_difficulty": [2, 2, 3],
+            "team_a_difficulty": [5, 4, 4],
+        }
+    )
+    return client
+
+
+def test_current_context_uses_snapshot_club_and_includes_new_signings(
+    current_context_client: TestClient,
+) -> None:
+    response = current_context_client.get("/players/current-context")
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert [row["element"] for row in rows] == [1, 99]
+    assert rows[0] == {
+        "element": 1,
+        "web_name": "Transferred",
+        "position": "MID",
+        "team_name": "New Club",
+        "price": 7.5,
+        "current_ownership": 12.5,
+        "upcoming_fixtures": 1,
+        "avg_fdr": 4.0,
+        "next_fixture_gw": 5,
+        "next_opponent_name": "Opponent",
+        "next_was_home": False,
+        "next_fdr": 4,
+    }
+    assert rows[1]["next_opponent_name"] == "Opponent"
+
+
+def test_current_context_does_not_depend_on_history_or_entry_fetching(
+    current_context_client: TestClient,
+) -> None:
+    def forbidden_dependency() -> None:
+        pytest.fail("Current context must only read archived snapshots")
+
+    api.app.dependency_overrides[api.get_history] = forbidden_dependency
+    api.app.dependency_overrides[api.get_entry_picks_fetcher] = forbidden_dependency
+
+    latest = current_context_client.get("/players/current-context")
+    historical = current_context_client.get(
+        "/players/current-context", params={"as_of_gw": 1}
+    )
+    assert latest.status_code == historical.status_code == 200
+    assert latest.json() == historical.json()
+
+
+def test_current_context_preserves_historical_form_fdr(
+    current_context_client: TestClient,
+) -> None:
+    response = current_context_client.get("/players/form", params={"as_of_gw": 2})
+
+    assert response.status_code == 200
+    row = next(row for row in response.json() if row["element"] == 1)
+    assert row["team_name"] == "T"
+    assert row["next_opponent_name"] == "New Club"
+    assert row["next_fdr"] == 2
+    assert row["price"] == 5.0
+
+
+@pytest.mark.parametrize("preseason", [False, True])
+def test_current_context_handles_preseason_and_completed_season(
+    current_context_client: TestClient, preseason: bool
+) -> None:
+    api.app.dependency_overrides[api.get_history] = pl.DataFrame
+    feed = api.app.dependency_overrides[api.get_fixtures_data]()
+    feed = feed.with_columns(
+        pl.lit(1 if preseason else 38).alias("event"),
+        pl.lit(not preseason).alias("finished"),
+        pl.lit(not preseason).alias("started"),
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: feed
+
+    response = current_context_client.get("/players/current-context")
+
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row["team_name"] == "New Club"
+    assert row["next_fixture_gw"] == (1 if preseason else None)
+    assert row["next_opponent_name"] == ("T" if preseason else None)
+    if not preseason:
+        assert row["next_fdr"] is None
+        assert row["avg_fdr"] is None
+
+
+def test_current_context_handles_empty_snapshots(client: TestClient) -> None:
+    response = client.get("/players/current-context")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_current_context_handles_missing_fixtures(
+    current_context_client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_fixtures_data] = pl.DataFrame
+
+    response = current_context_client.get("/players/current-context")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert response.json()[0]["next_opponent_name"] is None
+
+
+@pytest.mark.parametrize("teams", [pl.DataFrame(), _empty_teams()])
+def test_current_context_preserves_players_without_team_metadata(
+    current_context_client: TestClient, teams: pl.DataFrame
+) -> None:
+    api.app.dependency_overrides[api.get_teams] = lambda: teams
+
+    response = current_context_client.get("/players/current-context")
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert [row["element"] for row in rows] == [1, 99]
+    assert rows[0]["web_name"] == "Transferred"
+    assert rows[0]["price"] == 7.5
+    assert rows[0]["team_name"] is None
+    assert rows[0]["next_opponent_name"] is None
+    assert rows[0]["next_fixture_gw"] == 5
+    assert rows[0]["next_was_home"] is False
+
+
+@pytest.mark.parametrize("missing_columns", [False, True])
+def test_current_context_preserves_players_with_unknown_metadata(
+    current_context_client: TestClient, missing_columns: bool
+) -> None:
+    players = pl.DataFrame(
+        {
+            "id": [1],
+            "web_name": [None],
+            "element_type": [None],
+            "team": [None],
+            "now_cost": [None],
+            "selected_by_percent": [None],
+        }
+    )
+    if missing_columns:
+        players = players.select("id")
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: players
+
+    response = current_context_client.get("/players/current-context")
+
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row["element"] == 1
+    assert all(value is None for key, value in row.items() if key != "element")
+
+
 def test_form_endpoint_flags_improving_player(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2}).json()
     names = [row["web_name"] for row in body]
