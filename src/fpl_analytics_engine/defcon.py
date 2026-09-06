@@ -568,11 +568,12 @@ def backtest_defcon_count_probabilities(
     Score each eligible next-gameweek appearance separately, repeating the
     same as-of prediction for double-gameweek fixtures. Calibration is nested
     point-in-time: predictions made after GW N use only scored appearances
-    through GW N, never outcomes from the target gameweek N + 1.
+    through GW N, never outcomes from the target gameweek N + 1. Retain all
+    preceding calibration appearances regardless of the scored range.
 
     Args:
         history: Enriched per-gameweek history.
-        gw_range: Gameweeks to evaluate; defaults to GW1 through the
+        gw_range: Gameweeks to score; defaults to GW1 through the
             second-to-last.
         prior_strength: Forwarded to the binary and count probability models.
         min_minutes: Forwarded to the probability models and target frame.
@@ -588,6 +589,9 @@ def backtest_defcon_count_probabilities(
     max_round = cast(int, history["round"].max())
     if gw_range is None:
         gw_range = range(1, max_round)
+    score_gameweeks = [gw for gw in gw_range if 1 <= gw < max_round]
+    if not score_gameweeks:
+        return pl.DataFrame()
 
     next_hit = history.filter(
         (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
@@ -602,7 +606,7 @@ def backtest_defcon_count_probabilities(
             empirical_bayes,
             min_games_for_prior,
         ).with_columns((pl.lit(as_of_gw) + 1).alias("next_round"))
-        for as_of_gw in gw_range
+        for as_of_gw in range(1, max(score_gameweeks) + 1)
     ]
     if not frames:
         return pl.DataFrame()
@@ -620,9 +624,9 @@ def backtest_defcon_count_probabilities(
     )
 
     calibrated_frames = []
-    for as_of_gw in gw_range:
+    for as_of_gw in score_gameweeks:
         predictions = raw_scored.filter(pl.col("as_of_gw") == as_of_gw)
-        calibration_rows = raw_scored.filter(pl.col("as_of_gw") < as_of_gw)
+        calibration_rows = raw_scored.filter(pl.col("next_round") <= as_of_gw)
         if predictions.is_empty():
             continue
         calibrated_frames.append(
