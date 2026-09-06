@@ -50,6 +50,9 @@ where the current squad looks weak for the next gameweek.
   Form, and Model Evidence views, URL-backed controls, active filter chips,
   presets, heat-shaded metrics, sticky player context columns, and a collapsible
   form-versus-baseline scatter plot in Attacking Form
+- **Table pagination** – shows 25 rows per page in the player and club tables,
+  with 10, 25, 50, 100, or all rows available. Sorting and filtering apply to the
+  full result set, and the scatter plot retains all matching players
 - **Transfer decision workflow** – combines attacking-threat thresholds, price,
   FDR, minutes, starts, ownership, shortlist filtering, and side-by-side player
   comparison so transfer candidates can be narrowed and inspected without
