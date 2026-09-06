@@ -2,6 +2,7 @@
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from fpl_analytics_engine import defcon
 
@@ -196,3 +197,145 @@ def test_calibrated_count_probabilities_keep_diagnostic_probabilities() -> None:
 
     assert {"prob", "count_prob", "binary_prob", "raw_rate"} <= set(table.columns)
     assert all(0 <= prob <= 1 for prob in table["prob"].to_list())
+
+
+@pytest.mark.parametrize("count_model", [False, True], ids=["binary", "count"])
+@pytest.mark.parametrize("counts", [(12, 8), (12, 12), (8, 8)])
+def test_backtest_scores_each_eligible_double_gameweek_appearance(
+    count_model: bool, counts: tuple[int, int]
+) -> None:
+    history = _frame(
+        [
+            _count_game(1, 1, count=12),
+            _count_game(2, 1, count=8),
+            _count_game(4, 1, count=8),
+            _count_game(1, 2, count=counts[0]),
+            _count_game(1, 2, count=counts[1]),
+            {**_count_game(1, 2, count=12), "minutes": 59},
+            {**_count_game(1, 2, count=12), "defcon_hit": None},
+            {**_count_game(2, 2, count=8), "minutes": 60},
+            _count_game(3, 2, count=12),
+        ]
+    )
+    backtest = (
+        defcon.backtest_defcon_count_probabilities
+        if count_model
+        else defcon.backtest_defcon_probabilities
+    )
+
+    scored = backtest(history, min_minutes=60)
+    double = scored.filter(pl.col("element") == 1)
+
+    assert scored.height == 3
+    assert sorted(scored["element"].to_list()) == [1, 1, 2]
+    assert sorted(double["hit"].to_list()) == sorted(
+        float(count >= 10) for count in counts
+    )
+    assert double["prob"].n_unique() == 1
+    assert double["games"].to_list() == [1, 1]
+    assert double["as_of_gw"].to_list() == [1, 1]
+    assert double["next_round"].to_list() == [2, 2]
+    probability = double["prob"][0]
+    expected_brier = sum((probability - (count >= 10)) ** 2 for count in counts) / 2
+    assert defcon.brier_score(double) == pytest.approx(expected_brier)
+    calibration = defcon.calibration_table(double)
+    assert calibration["n"].to_list() == [2]
+    assert calibration["observed_rate"][0] == sum(count >= 10 for count in counts) / 2
+
+
+@pytest.mark.parametrize("count_model", [False, True], ids=["binary", "count"])
+def test_backtest_single_gameweeks_match_point_in_time_predictions(
+    count_model: bool,
+) -> None:
+    history = _frame(
+        [
+            _count_game(e, r, count=8 + 4 * ((e + r) % 2))
+            for e in (1, 2)
+            for r in (1, 2, 3)
+        ]
+    )
+    backtest = (
+        defcon.backtest_defcon_count_probabilities
+        if count_model
+        else defcon.backtest_defcon_probabilities
+    )
+    model = (
+        defcon.defcon_count_probabilities
+        if count_model
+        else defcon.defcon_probabilities
+    )
+    scored = backtest(history)
+
+    assert scored.height == 4
+    for as_of_gw in (1, 2):
+        expected = model(history.filter(pl.col("round") <= as_of_gw), as_of_gw)
+        actual = scored.filter(pl.col("as_of_gw") == as_of_gw).sort("element")
+        probability_column = "count_prob" if count_model else "prob"
+        assert actual[probability_column].to_list() == pytest.approx(
+            expected.sort("element")["prob"].to_list()
+        )
+        assert actual["hit"].to_list() == [
+            float((e + as_of_gw + 1) % 2) for e in (1, 2)
+        ]
+        if count_model:
+            prior = scored.filter(pl.col("as_of_gw") < as_of_gw)
+            for row in actual.iter_rows(named=True):
+                bucket = min(int(row["count_prob"] * 10), 9)
+                observations = [
+                    prior_row["hit"]
+                    for prior_row in prior.iter_rows(named=True)
+                    if min(int(prior_row["count_prob"] * 10), 9) == bucket
+                ]
+                assert row["prob"] == pytest.approx(
+                    (sum(observations) + 50 * row["count_prob"])
+                    / (len(observations) + 50)
+                )
+
+
+def test_double_gameweek_calibration_is_per_appearance_and_point_in_time() -> None:
+    history = _frame(
+        [
+            _count_game(1, 1, count=8),
+            _count_game(1, 2, count=12),
+            _count_game(1, 2, count=8),
+            _count_game(1, 3, count=12),
+            _count_game(1, 4, count=8),
+        ]
+    )
+    scored = defcon.backtest_defcon_count_probabilities(
+        history, calibration_bins=1, calibration_prior_strength=2
+    )
+    first = scored.filter(pl.col("as_of_gw") == 1)
+    assert first["prob"].to_list() == first["count_prob"].to_list()
+    second = scored.filter(pl.col("as_of_gw") == 2)
+    assert second.height == 1
+    # Use both GW2 appearances: one hit and one miss, plus two pseudo-counts.
+    expected = (1 + 2 * second["count_prob"][0]) / 4
+    assert second["prob"][0] == pytest.approx(expected)
+
+    current = defcon.calibrated_defcon_count_probabilities(
+        history, as_of_gw=2, calibration_bins=1, calibration_prior_strength=2
+    )
+    assert current["prob"][0] == pytest.approx(expected)
+
+    changed_future = history.with_columns(
+        pl.when(pl.col("round") > 2)
+        .then(~pl.col("defcon_hit"))
+        .otherwise(pl.col("defcon_hit"))
+        .alias("defcon_hit"),
+        pl.when(pl.col("round") > 2)
+        .then(20 - pl.col("defensive_contribution"))
+        .otherwise(pl.col("defensive_contribution"))
+        .alias("defensive_contribution"),
+    )
+    changed_scored = defcon.backtest_defcon_count_probabilities(
+        changed_future, calibration_bins=1, calibration_prior_strength=2
+    )
+    assert_frame_equal(
+        scored.filter(pl.col("as_of_gw") <= 2).drop("hit").sort("as_of_gw"),
+        changed_scored.filter(pl.col("as_of_gw") <= 2).drop("hit").sort("as_of_gw"),
+    )
+    changed_current = defcon.calibrated_defcon_count_probabilities(
+        changed_future, as_of_gw=2, calibration_bins=1, calibration_prior_strength=2
+    )
+    assert_frame_equal(current, changed_current)
