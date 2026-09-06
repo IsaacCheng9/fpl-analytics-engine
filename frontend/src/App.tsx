@@ -1658,6 +1658,7 @@ function parseOptionalInputNumber(
 export default function App() {
 	const initialUrlState = useMemo(() => readUrlState(), []);
 	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
+	const [tablePageSize, setTablePageSize] = useState(25);
 	const [playerSearch, setPlayerSearch] = useState(
 		initialUrlState.playerSearch,
 	);
@@ -2327,59 +2328,94 @@ export default function App() {
 		return Array.from(new Set(names)).sort();
 	}, [active?.data]);
 
-	const filteredForm = filterPlayers(
-		formQuery.data ?? [],
+	// Keep table pages stable when shortlist or ownership changes only affect styling.
+	const shortlistFilter = showShortlistedOnly ? shortlist : null;
+	const ownedFilter = ownershipFilter === "all" ? null : ownedElements;
+	const visibleFormRows = useMemo(() => {
+		const players = filterPlayers(
+			formQuery.data ?? [],
+			playerSearch,
+			teamFilter,
+		);
+		const transfers = filterTransferCandidates(players, transferFilters);
+		const threats = filterAttackingThreatCandidates(
+			transfers,
+			attackingThreatFilters,
+			attackingMetrics,
+		);
+		const owned = ownedFilter
+			? filterOwnedPlayers(threats, ownedFilter, ownershipFilter)
+			: threats;
+		return filterShortlistedPlayers(
+			owned,
+			shortlistFilter ?? [],
+			shortlistFilter !== null,
+		);
+	}, [
+		formQuery.data,
 		playerSearch,
 		teamFilter,
-	);
-	const filteredTransferForm = filterTransferCandidates(
-		filteredForm,
 		transferFilters,
-	);
-	const filteredThreatForm = filterAttackingThreatCandidates(
-		filteredTransferForm,
 		attackingThreatFilters,
 		attackingMetrics,
-	);
-	const visibleFormRows = filterShortlistedPlayers(
-		filterOwnedPlayers(filteredThreatForm, ownedElements, ownershipFilter),
-		shortlist,
-		showShortlistedOnly,
-	);
-	const filteredDefcon = filterPlayers(
-		defconQuery.data ?? [],
+		ownedFilter,
+		ownershipFilter,
+		shortlistFilter,
+	]);
+	const visibleDefconRows = useMemo(() => {
+		const players = filterPlayers(
+			defconQuery.data ?? [],
+			playerSearch,
+			teamFilter,
+		);
+		const transfers = filterTransferCandidates(players, transferFilters);
+		const owned = ownedFilter
+			? filterOwnedPlayers(transfers, ownedFilter, ownershipFilter)
+			: transfers;
+		return filterShortlistedPlayers(
+			owned,
+			shortlistFilter ?? [],
+			shortlistFilter !== null,
+		);
+	}, [
+		defconQuery.data,
 		playerSearch,
 		teamFilter,
-	);
-	const filteredTransferDefcon = filterTransferCandidates(
-		filteredDefcon,
 		transferFilters,
-	);
-	const visibleDefconRows = filterShortlistedPlayers(
-		filterOwnedPlayers(filteredTransferDefcon, ownedElements, ownershipFilter),
-		shortlist,
-		showShortlistedOnly,
-	);
-	const filteredDefconProb = filterPlayers(
-		defconProbQuery.data ?? [],
+		ownedFilter,
+		ownershipFilter,
+		shortlistFilter,
+	]);
+	const visibleDefconProbRows = useMemo(() => {
+		const players = filterPlayers(
+			defconProbQuery.data ?? [],
+			playerSearch,
+			teamFilter,
+		);
+		const transfers = filterTransferCandidates(players, transferFilters);
+		const owned = ownedFilter
+			? filterOwnedPlayers(transfers, ownedFilter, ownershipFilter)
+			: transfers;
+		return filterShortlistedPlayers(
+			owned,
+			shortlistFilter ?? [],
+			shortlistFilter !== null,
+		);
+	}, [
+		defconProbQuery.data,
 		playerSearch,
 		teamFilter,
-	);
-	const filteredTransferDefconProb = filterTransferCandidates(
-		filteredDefconProb,
 		transferFilters,
-	);
-	const visibleDefconProbRows = filterShortlistedPlayers(
-		filterOwnedPlayers(
-			filteredTransferDefconProb,
-			ownedElements,
-			ownershipFilter,
-		),
-		shortlist,
-		showShortlistedOnly,
-	);
-	const filteredClubs = (clubQuery.data ?? []).filter(
-		(row) => teamFilter === "" || row.team_name === teamFilter,
+		ownedFilter,
+		ownershipFilter,
+		shortlistFilter,
+	]);
+	const filteredClubs = useMemo(
+		() =>
+			(clubQuery.data ?? []).filter(
+				(row) => teamFilter === "" || row.team_name === teamFilter,
+			),
+		[clubQuery.data, teamFilter],
 	);
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
@@ -3388,6 +3424,9 @@ export default function App() {
 						<FormScatter players={visibleFormRows} />
 						<DataTable
 							data={visibleFormRows}
+							paginate
+							initialPageSize={tablePageSize}
+							onPageSizeChange={setTablePageSize}
 							columns={formColumns}
 							onRowClick={(row) => openPlayerDetail(row.element)}
 							rowClassName={playerRowClassName}
@@ -3405,6 +3444,9 @@ export default function App() {
 				) : tab === "defcon" ? (
 					<DataTable
 						data={visibleDefconRows}
+						paginate
+						initialPageSize={tablePageSize}
+						onPageSizeChange={setTablePageSize}
 						columns={defconColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
 						rowClassName={playerRowClassName}
@@ -3421,6 +3463,9 @@ export default function App() {
 				) : tab === "defconProb" ? (
 					<DataTable
 						data={visibleDefconProbRows}
+						paginate
+						initialPageSize={tablePageSize}
+						onPageSizeChange={setTablePageSize}
 						columns={defconProbColumns}
 						onRowClick={(row) => openPlayerDetail(row.element)}
 						rowClassName={playerRowClassName}
@@ -3442,6 +3487,9 @@ export default function App() {
 						</p>
 						<DataTable
 							data={filteredClubs}
+							paginate
+							initialPageSize={tablePageSize}
+							onPageSizeChange={setTablePageSize}
 							columns={clubColumns}
 							stickyDataColumns={1}
 							emptyTitle={clubEmptyTitle}
