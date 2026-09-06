@@ -1,6 +1,9 @@
-"""Shared domain vocabulary for player positions and DefCon thresholds."""
+"""Define shared positions, DefCon thresholds and expected-stat coverage."""
 
 from enum import StrEnum
+
+PARTIAL_EXPECTED_STAT_SEASON = "2022-23"
+PARTIAL_EXPECTED_STAT_START_GW = 16
 
 
 class Position(StrEnum):

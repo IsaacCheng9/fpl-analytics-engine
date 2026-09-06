@@ -8,9 +8,12 @@ Players are tracked across seasons by their stable ``code``, since the FPL
 
 import polars as pl
 
+from fpl_analytics_engine.domain import (
+    PARTIAL_EXPECTED_STAT_SEASON,
+    PARTIAL_EXPECTED_STAT_START_GW,
+)
+
 DEFAULT_ROLLING_WINDOW = 5
-PARTIAL_EXPECTED_STAT_SEASON = "2022-23"
-PARTIAL_EXPECTED_STAT_START_GW = 16
 
 
 def _has_expected_stats() -> pl.Expr:
