@@ -103,8 +103,120 @@ def _season_from_events(events: pl.DataFrame) -> str | None:
     return f"{start}-{(start + 1) % 100:02d}"
 
 
+def _check_history_completion(
+    history: pl.DataFrame, events: pl.DataFrame, subject: str
+) -> list[HealthCheck]:
+    """Require live history rows to belong to finished, checked gameweeks."""
+    missing = sorted({"id", "finished", "data_checked"} - set(events.columns))
+    if missing:
+        # Preserve legacy preseason snapshots without completion metadata.
+        if history.is_empty():
+            return []
+        return [
+            _fail(
+                subject,
+                "Cannot validate history completion without event columns: "
+                f"{', '.join(missing)}.",
+            )
+        ]
+
+    invalid_types = [
+        column
+        for column in ("finished", "data_checked")
+        if events.schema[column] not in (pl.Boolean, pl.Null)
+    ]
+    if events.schema["id"] != pl.Null and not events.schema["id"].is_integer():
+        invalid_types.append("id")
+    if invalid_types:
+        return [
+            _fail(
+                subject,
+                f"Invalid event completion types: {', '.join(sorted(invalid_types))}.",
+            )
+        ]
+
+    completed_rounds = events.filter(
+        pl.col("finished").fill_null(False) & pl.col("data_checked").fill_null(False)
+    )["id"].drop_nulls()
+    if history.is_empty():
+        if not completed_rounds.is_empty():
+            return [_fail(subject, "History is empty despite completed gameweeks.")]
+        return []
+    if "round" not in history.columns:
+        return [_fail(subject, "History snapshot has no round column.")]
+    if history.schema["round"] != pl.Null and not history.schema["round"].is_integer():
+        return [_fail(subject, "History round must have an integer type.")]
+    invalid_rounds = history.filter(
+        ~pl.col("round").is_in(completed_rounds.implode()).fill_null(False)
+    )["round"].unique()
+    if invalid_rounds.is_empty():
+        return []
+    rounds = ", ".join(str(value) for value in invalid_rounds.sort())
+    return [
+        _fail(subject, f"History contains unfinished or unchecked gameweeks: {rounds}.")
+    ]
+
+
+def _check_history_keys(
+    history: pl.DataFrame, enriched: pl.DataFrame, season: str
+) -> list[HealthCheck]:
+    """Reconcile live player/fixture keys and rounds without losing duplicates."""
+    checks = []
+    columns = ("element", "fixture", "round")
+    for frame, name in ((history, "player_gw_history"), (enriched, "enriched")):
+        if frame.is_empty():
+            continue
+        subject = f"{season}/{name}.parquet"
+        missing = sorted(set(columns) - set(frame.columns))
+        if missing:
+            checks.append(
+                _fail(subject, f"Missing history key columns: {', '.join(missing)}.")
+            )
+            continue
+        invalid_types = [
+            column
+            for column in columns
+            if frame.schema[column] != pl.Null and not frame.schema[column].is_integer()
+        ]
+        if invalid_types:
+            checks.append(
+                _fail(
+                    subject,
+                    "History keys must have integer types: "
+                    f"{', '.join(invalid_types)}.",
+                )
+            )
+            continue
+        null_keys = frame.filter(pl.any_horizontal(pl.col(columns).is_null())).height
+        if null_keys:
+            checks.append(_fail(subject, f"{null_keys} rows have null history keys."))
+        duplicates = frame.select("element", "fixture").is_duplicated().sum()
+        if duplicates:
+            checks.append(
+                _fail(subject, f"{duplicates} rows have duplicate player/fixture keys.")
+            )
+    if checks:
+        return checks
+
+    raw_keys = set(history.select(columns).iter_rows()) if history.height else set()
+    served_keys = (
+        set(enriched.select(columns).iter_rows()) if enriched.height else set()
+    )
+    missing_count = len(raw_keys - served_keys)
+    extra_count = len(served_keys - raw_keys)
+    if missing_count or extra_count:
+        checks.append(
+            _fail(
+                f"{season}/enriched.parquet",
+                "Player/fixture keys and rounds differ from raw history: "
+                f"{missing_count} missing, {extra_count} extra.",
+            )
+        )
+    return checks
+
+
 def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
-    """Validate the raw snapshots that define the current live season."""
+    """Validate the raw and served snapshots for the current live season."""
     data_dir = data_root / season
     subject = f"{season}/live archive"
     missing = [name for name in RAW_SNAPSHOT_FILES if not (data_dir / name).exists()]
@@ -144,36 +256,21 @@ def _check_live_archive(data_root: Path, season: str) -> list[HealthCheck]:
     if checks:
         return checks
 
-    if not history.is_empty():
-        required_event_columns = {"id", "finished", "data_checked"}
-        missing_event_columns = sorted(required_event_columns - set(events.columns))
-        if missing_event_columns:
+    checks.extend(_check_history_completion(history, events, subject))
+    enriched_path = data_dir / "enriched.parquet"
+    enriched_subject = f"{season}/enriched.parquet"
+    if enriched_path.exists():
+        try:
+            enriched = pl.read_parquet(enriched_path)
+        except Exception as exc:
             checks.append(
-                _fail(
-                    subject,
-                    "Cannot validate history completion without event columns: "
-                    f"{', '.join(missing_event_columns)}.",
-                )
+                _fail(enriched_subject, f"Snapshot could not be read: {exc}.")
             )
-        elif "round" not in history.columns:
-            checks.append(_fail(subject, "History snapshot has no round column."))
         else:
-            completed_rounds = events.filter(
-                pl.col("finished").fill_null(False)
-                & pl.col("data_checked").fill_null(False)
-            )["id"]
-            invalid_rounds = history.filter(
-                ~pl.col("round").is_in(completed_rounds.implode())
-            )["round"].unique()
-            if not invalid_rounds.is_empty():
-                rounds = ", ".join(str(value) for value in sorted(invalid_rounds))
-                checks.append(
-                    _fail(
-                        subject,
-                        "History contains unfinished or unchecked gameweeks: "
-                        f"{rounds}.",
-                    )
-                )
+            checks.extend(_check_history_completion(enriched, events, enriched_subject))
+            checks.extend(_check_history_keys(history, enriched, season))
+    elif not history.is_empty():
+        checks.append(_fail(enriched_subject, "Snapshot is missing."))
 
     if checks:
         return checks
@@ -262,13 +359,14 @@ def validate_data_root(
     """
     checks: list[HealthCheck] = []
     seasons_to_check = list(seasons or expected_seasons(data_root))
-    live_history_paths = list(data_root.glob("*/player_gw_history.parquet"))
-    if seasons is None and live_history_paths:
-        live_season = current_season or data.latest_archived_season(data_root)
+    live_seasons = {
+        path.parent.name
+        for name in RAW_SNAPSHOT_FILES
+        for path in data_root.glob(f"*/{name}")
+    }
+    if seasons is None and live_seasons:
+        live_season = current_season or max(live_seasons, key=data.season_sort_key)
         checks.extend(_check_live_archive(data_root, live_season))
-        history = data.load_player_history(data_root / live_season)
-        if not history.is_empty() and live_season not in seasons_to_check:
-            seasons_to_check.append(live_season)
     elif current_season is not None:
         checks.extend(_check_live_archive(data_root, current_season))
 
