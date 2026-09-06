@@ -154,6 +154,8 @@ def test_archive_season_builds_enriched_snapshot(
     assert by_element[1]["position"] == "DEF"
     assert by_element[1]["defcon_hit"] is True
     assert by_element[2]["defcon_hit"] is False
+    # Derive the season from events, not the caller's arbitrary directory name.
+    assert enriched["season"].unique().to_list() == ["2025-26"]
 
 
 def test_archive_season_excludes_current_gameweek_placeholders(

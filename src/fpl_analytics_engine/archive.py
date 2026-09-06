@@ -97,7 +97,10 @@ def _build_enriched(output_dir: Path) -> Path | None:
     if history.height == 0:
         print("No per-gameweek history yet (early season); skipped enriched build")
         return None
-    enriched = data.prepare_history(output_dir)
+    season = detect_season(data.load_events(output_dir).to_dicts())
+    enriched = data.prepare_history(output_dir).with_columns(
+        pl.lit(season).alias("season")
+    )
     path = output_dir / "enriched.parquet"
     enriched.write_parquet(path)
     return path
