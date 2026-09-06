@@ -440,11 +440,19 @@ latest gameweek in the data. Current ownership and `/fpl-team/{entry_id}` squad
 membership are deliberately not point-in-time, because the FPL API exposes only
 live ownership and visible entry-pick snapshots. The player-detail endpoint is
 keyed by the current-season `element` id, tracks the player across seasons by
-stable `code`, and uses `season` only to choose which season's gameweeks to
-display.
+stable `code`, and resolves `as_of_gw` within the selected `season`. Historical
+seasons default to their own latest gameweek; an explicit cutoff limits that
+season's rows and summary. Earlier season summaries remain complete, and later
+seasons are excluded. A missing history `code` falls back to the live player
+snapshot; without a stable code, only that player's current-season rows are
+available. In the player panel, switching to an older season
+shows its full history, while returning to the live season restores the main
+table's as-of cutoff.
 
-Before GW1, analytical and team-import endpoints return HTTP 409 rather than
-silently serving the previous season. In the deployed app, prefix these routes
+Before GW1, current-season analytical and team-import endpoints return HTTP 409
+rather than silently serving the previous season. Explicit historical player
+detail requests remain available when the live player snapshot supplies a
+matching stable `code`. In the deployed app, prefix these routes
 with `/api` (for example, `/api/players/form`).
 
 ## Testing
