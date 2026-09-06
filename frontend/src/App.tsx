@@ -2880,7 +2880,7 @@ export default function App() {
 
 						{tab !== "defconProb" && (
 							<label htmlFor="window-size" className={labelClass}>
-								Window (Games)
+								Window (Gameweeks)
 								<span className="mt-1 flex items-center gap-2">
 									<input
 										id="window-size"
@@ -2902,7 +2902,7 @@ export default function App() {
 										min={WINDOW_MIN}
 										max={WINDOW_MAX}
 										step={1}
-										aria-label="Window size in games"
+										aria-label="Window size in gameweeks"
 										className={`${fieldClass} w-14`}
 										value={windowSize}
 										onChange={(e) =>

@@ -58,6 +58,48 @@ def test_player_gameweeks_rolls_over_the_window() -> None:
     assert gw3["price"] == pytest.approx(5.0)
 
 
+@pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 30)])
+def test_rolling_window_uses_gameweeks_including_doubles_and_blanks(rounds) -> None:
+    rows = [_row(25, xgi=10.0, defcon=30)]
+    rows += [_row(gw, xgi=0.2 * i, defcon=2 * i) for i, gw in enumerate(rounds, 1)]
+    rows += [_row(31, xgi=100.0, defcon=100)]
+    out = player.player_gameweeks(_frame(rows).reverse(), window=5)
+    closing = out.filter(pl.col("round") == 30)
+    mean_xgi = sum(0.2 * i for i in range(1, len(rounds) + 1)) / len(rounds)
+
+    assert out.height == len(rows)
+    for row in closing.to_dicts():
+        assert row["rolling_xgi90"] == pytest.approx(mean_xgi)
+        assert row["rolling_xg90"] == pytest.approx(mean_xgi / 2)
+        assert row["rolling_xa90"] == pytest.approx(mean_xgi / 2)
+        assert row["rolling_defcon"] == pytest.approx(mean_xgi * 10)
+
+
+def test_one_gameweek_rolling_window_includes_both_double_fixtures() -> None:
+    out = player.player_gameweeks(
+        _frame([_row(1, xgi=5.0), _row(2, xgi=0.3), _row(2, xgi=0.9)]),
+        window=1,
+    )
+
+    assert out["rolling_xgi90"].to_list() == pytest.approx([5.0, 0.6, 0.6])
+
+
+@pytest.mark.parametrize("season", ["2022-23", "2024-25"])
+def test_gameweek_rolling_preserves_all_null_historical_metrics(season: str) -> None:
+    history = _frame([_row(gw, season=season) for gw in (1, 3, 3, 8)]).with_columns(
+        pl.lit(None, dtype=pl.Float64).alias(metric)
+        for metric in (
+            "expected_goals",
+            "expected_assists",
+            "expected_goal_involvements",
+        )
+    )
+    out = player.player_gameweeks(history, window=5)
+
+    for metric in ("rolling_xg90", "rolling_xa90", "rolling_xgi90", "rolling_defcon"):
+        assert out[metric].null_count() == out.height
+
+
 def test_player_gameweeks_nulls_2022_23_expected_stats_before_gw16() -> None:
     rows = [
         _row(14, season="2022-23", xg=0.0, xa=0.0, xgi=0.0),

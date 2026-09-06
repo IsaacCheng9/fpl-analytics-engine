@@ -897,7 +897,7 @@ export function PlayerComparePanel({
 							Compare Players
 						</h2>
 						<p className="mt-1 text-sm text-zinc-500">
-							As Of GW {asOfGw ?? latestGw}, Window {window} Games
+							As Of GW {asOfGw ?? latestGw}, Window {window} Gameweeks
 						</p>
 					</div>
 					<button
@@ -925,7 +925,7 @@ export function PlayerComparePanel({
 						onChange={onRightChange}
 					/>
 					<label className="flex min-w-28 flex-col text-xs font-medium text-zinc-600">
-						Window (Games)
+						Window (Gameweeks)
 						<select
 							className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
 							value={window}

@@ -44,7 +44,8 @@ def compute_form_table(
         history: Enriched per-gameweek history from
             :func:`fpl_analytics_engine.data.prepare_history`.
         as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
-        window: Number of most-recent games to treat as the form window.
+        window: Number of gameweeks ending at ``as_of_gw``. Include every
+            fixture in that range; do not backfill blanks with older games.
 
     Returns:
         One row per player with window and season-to-date per-90 expected
@@ -63,11 +64,7 @@ def compute_form_table(
         )
 
     point_in_time = history.filter(pl.col("round") <= as_of_gw)
-    recent = (
-        point_in_time.sort("kickoff_time")
-        .group_by("element", maintain_order=True)
-        .tail(window)
-    )
+    recent = point_in_time.filter(pl.col("round") > as_of_gw - window)
 
     window_agg = recent.group_by("element").agg(
         pl.len().alias("window_games"),
@@ -108,8 +105,11 @@ def compute_form_table(
     )
 
     return (
-        meta.join(window_agg, on="element")
+        meta.join(window_agg, on="element", how="left")
         .join(season_agg, on="element")
+        .with_columns(
+            pl.col(window_agg.drop("element", "window_defcon").columns).fill_null(0)
+        )
         .with_columns(
             window_xg90=_per_90("window_xg", "window_minutes"),
             window_xa90=_per_90("window_xa", "window_minutes"),

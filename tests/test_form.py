@@ -67,6 +67,42 @@ def test_form_table_is_point_in_time() -> None:
     assert at_gw6["delta_xgi90"] == pytest.approx(0.40)
 
 
+@pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 29)])
+def test_form_window_uses_gameweeks_including_doubles_and_blanks(rounds) -> None:
+    rows = [_game(1, 25, xgi=10.0)]
+    rows += [
+        _game(1, gw, xg=0.4, xa=0.2, xgi=0.6, points=5, defcon_hit=True)
+        for gw in rounds
+    ]
+    rows += [_game(1, 31, xgi=100.0)]
+    row = _player_row(_frame(rows), as_of_gw=30, window=5, element=1)
+
+    assert row["window_games"] == len(rounds)
+    assert row["window_minutes"] == 90 * len(rounds)
+    assert row["window_points"] == 5 * len(rounds)
+    assert row["window_xg90"] == pytest.approx(0.4)
+    assert row["window_xa90"] == pytest.approx(0.2)
+    assert row["window_xgi90"] == pytest.approx(0.6)
+    assert row["window_defcon_hit_rate"] == 1.0
+    assert row["window_start_rate"] == 1.0
+    assert row["season_xgi90"] == pytest.approx(
+        (10.0 + 0.6 * len(rounds)) / (len(rounds) + 1)
+    )
+    assert row["delta_xgi90"] == pytest.approx(0.6 - row["season_xgi90"])
+
+
+def test_form_window_does_not_backfill_an_entirely_blank_window() -> None:
+    row = _player_row(_frame([_game(1, 25, xgi=1.0)]), 30, 5, 1)
+
+    assert row["window_games"] == 0
+    assert row["window_minutes"] == 0
+    assert row["window_xgi90"] is None
+    assert row["delta_xgi90"] is None
+    assert row["window_defcon_hit_rate"] is None
+    assert row["window_start_rate"] is None
+    assert row["season_xgi90"] == 1.0
+
+
 def test_form_table_reports_value_and_start_rate() -> None:
     # Started three of four window games; price closes at 6.0m.
     rows = [_game(1, r, xg=0.4, xa=0.2, xgi=0.6, points=6, value=60) for r in (1, 2, 3)]

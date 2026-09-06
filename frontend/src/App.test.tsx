@@ -1296,6 +1296,51 @@ test("normalises contradictory squad, ownership and shortlist URL state", async 
 	expect(params.get("shortlist_only")).toBe("1");
 });
 
+test.each([
+	["doubles", [26, 27, 28, 29, 30, 30]],
+	["blanks", [26, 28, 29]],
+])("compares GW26-30 without backfilling across %s", async (_label, rounds) => {
+	const gameweeks = [25, ...rounds, 31].map((round) => ({
+		...playerDetail.gameweeks[0],
+		round,
+		minutes: 90,
+		expected_goal_involvements: round === 25 || round === 31 ? 10 : 0.6,
+	}));
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (/\/players\/[12]\?/.test(String(input))) {
+			return Promise.resolve(
+				new Response(JSON.stringify({ ...playerDetail, gameweeks }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(
+		null,
+		"",
+		"/?compare=1&compare_a=1&compare_b=2&compare_window=5&compare_as_of_gw=30",
+	);
+	render(withProviders(<App />));
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await waitFor(() => {
+		expect(within(dialog).getAllByText("GW26-GW30")).toHaveLength(2);
+	});
+	expect(within(dialog).getByLabelText("Window (Gameweeks)")).toHaveValue("5");
+	for (const [label, expected] of [
+		["Window Minutes", String(rounds.length * 90)],
+		["Window xGI", (rounds.length * 0.6).toFixed(2)],
+		["Window xGI Per 90", "0.60"],
+	]) {
+		const row = within(dialog).getByText(label).closest("tr");
+		expect(row).not.toBeNull();
+		for (const cell of within(row as HTMLElement).getAllByRole("cell")) {
+			expect(cell).toHaveTextContent(expected);
+		}
+	}
+});
+
 test("opens the compare panel without arbitrary default players", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
@@ -1371,7 +1416,7 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 		expect(params.get("compare_b")).toBe("2");
 	});
 
-	fireEvent.change(within(dialog).getByLabelText("Window (Games)"), {
+	fireEvent.change(within(dialog).getByLabelText("Window (Gameweeks)"), {
 		target: { value: "2" },
 	});
 	fireEvent.change(within(dialog).getByLabelText("As Of GW"), {
@@ -1490,7 +1535,7 @@ test("initialises the player compare panel from the URL", async () => {
 			within(dialog).getByDisplayValue("Haaland - Man City - FWD"),
 		).toBeInTheDocument();
 	});
-	expect(within(dialog).getByLabelText("Window (Games)")).toHaveValue("3");
+	expect(within(dialog).getByLabelText("Window (Gameweeks)")).toHaveValue("3");
 	expect(within(dialog).getByLabelText("As Of GW")).toHaveValue("20");
 	await waitFor(() => {
 		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
@@ -1818,7 +1863,7 @@ test("persists filter changes and player panel state to the URL", async () => {
 	await waitFor(() => {
 		expect(screen.getByText("Season History")).toBeInTheDocument();
 	});
-	fireEvent.change(screen.getByLabelText("Rolling Window (Games)"), {
+	fireEvent.change(screen.getByLabelText("Rolling Window (Gameweeks)"), {
 		target: { value: "6" },
 	});
 	await waitFor(() => {

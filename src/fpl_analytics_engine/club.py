@@ -181,21 +181,21 @@ def compute_club_form_table(
     Args:
         history: Enriched current-season per-gameweek player history.
         as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
-        window: Number of most-recent club matches to treat as the form window.
+        window: Number of gameweeks ending at ``as_of_gw``. Include every
+            fixture in that range; do not backfill blanks with older games.
 
     Returns:
         One row per club with attacking and defensive per-match metrics for the
         recent window and season-to-date baseline.
     """
-    point_in_time = _compute_club_fixtures(history).filter(pl.col("round") <= as_of_gw)
-    recent = (
-        point_in_time.sort("round", "kickoff_time")
-        .group_by("team", maintain_order=True)
-        .tail(window)
+    point_in_time = (
+        _compute_club_fixtures(history)
+        .filter(pl.col("round") <= as_of_gw)
+        .sort("round", "kickoff_time")
     )
+    recent = point_in_time.filter(pl.col("round") > as_of_gw - window)
 
     window_agg = recent.group_by("team").agg(
-        pl.col("team_name").last(),
         pl.len().alias("window_matches"),
         pl.col("goals_for").sum().alias("window_goals_for"),
         pl.col("goals_against").sum().alias("window_goals_against"),
@@ -203,6 +203,7 @@ def compute_club_form_table(
         pl.col("xgc").sum().alias("window_xgc"),
     )
     season_agg = point_in_time.group_by("team").agg(
+        pl.col("team_name").last(),
         pl.len().alias("season_matches"),
         pl.col("goals_for").sum().alias("season_goals_for"),
         pl.col("goals_against").sum().alias("season_goals_against"),
@@ -211,7 +212,8 @@ def compute_club_form_table(
     )
 
     return (
-        window_agg.join(season_agg, on="team")
+        season_agg.join(window_agg, on="team", how="left")
+        .with_columns(pl.col(window_agg.drop("team").columns).fill_null(0))
         .with_columns(
             window_xg_per_match=_per_match("window_xg", "window_matches"),
             season_xg_per_match=_per_match("season_xg", "season_matches"),
@@ -311,7 +313,7 @@ def club_form_validation_rows(
 
     Args:
         history: Enriched current-season per-gameweek player history.
-        window: Number of recent club matches used for form.
+        window: Number of recent gameweeks used for form.
         horizon: Number of future gameweeks used for realised outcomes.
         gw_range: Gameweeks to evaluate; defaults to ``window`` through the
             latest gameweek with a complete target horizon.
@@ -553,7 +555,7 @@ def backtest_club_form_signals(
 
     Args:
         history: Enriched current-season per-gameweek player history.
-        window: Number of recent club matches used for form.
+        window: Number of recent gameweeks used for form.
         horizon: Number of future gameweeks used for outcomes.
         min_train_rows: Minimum historical rows needed before scoring a
             gameweek.

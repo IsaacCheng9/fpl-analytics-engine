@@ -134,7 +134,7 @@ export function PlayerPanel({
 							</label>
 
 							<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
-								Rolling Window (Games)
+								Rolling Window (Gameweeks)
 								<select
 									className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
 									value={rollingWindow}
