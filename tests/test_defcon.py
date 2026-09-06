@@ -199,6 +199,75 @@ def test_calibrated_count_probabilities_keep_diagnostic_probabilities() -> None:
     assert all(0 <= prob <= 1 for prob in table["prob"].to_list())
 
 
+@pytest.mark.parametrize(
+    "gw_range",
+    [range(1, 7), range(4, 5), range(3, 6, 2), range(5, 2, -2), range(0), range(9, 12)],
+)
+def test_count_backtest_range_only_selects_scored_appearances(gw_range: range) -> None:
+    history = _frame(
+        [_count_game(1, gw, count=8 + gw % 3 * 4) for gw in range(1, 8)]
+        + [_count_game(1, 3, count=8), _count_game(1, 6, count=12)]
+    )
+    full = defcon.backtest_defcon_count_probabilities(
+        history, calibration_bins=1, calibration_prior_strength=2
+    )
+    selected = defcon.backtest_defcon_count_probabilities(
+        history, gw_range, calibration_bins=1, calibration_prior_strength=2
+    )
+    expected = full.filter(pl.col("as_of_gw").is_in(gw_range))
+
+    if expected.is_empty():
+        assert selected.is_empty()
+    else:
+        assert_frame_equal(
+            selected.sort("as_of_gw", "element", "hit"),
+            expected.sort("as_of_gw", "element", "hit"),
+        )
+
+
+def test_count_backtest_bounded_range_ignores_future_counts_and_hits() -> None:
+    history = _frame([_count_game(1, gw, count=8 + gw % 3 * 4) for gw in range(1, 9)])
+    changed = history.with_columns(
+        pl.when(pl.col("round") > 4)
+        .then(0)
+        .otherwise(pl.col("defensive_contribution"))
+        .alias("defensive_contribution"),
+        pl.when(pl.col("round") > 4)
+        .then(~pl.col("defcon_hit"))
+        .otherwise(pl.col("defcon_hit"))
+        .alias("defcon_hit"),
+    )
+    original = defcon.backtest_defcon_count_probabilities(history, range(3, 5))
+    poisoned = defcon.backtest_defcon_count_probabilities(changed, range(3, 5))
+    truncated = defcon.backtest_defcon_count_probabilities(
+        history.filter(pl.col("round") <= 5), range(3, 5)
+    )
+
+    assert_frame_equal(original, truncated)
+    assert_frame_equal(original.drop("hit"), poisoned.drop("hit"))
+    assert original["hit"].to_list() != poisoned["hit"].to_list()
+
+
+@pytest.mark.parametrize("gw_range", [range(3, 6, 2), range(0), range(12, 15)])
+def test_count_backtest_only_builds_history_through_selected_weeks(
+    monkeypatch: pytest.MonkeyPatch, gw_range: range
+) -> None:
+    history = _frame([_count_game(1, gw, count=8) for gw in range(1, 9)])
+    model = defcon._count_and_binary_probabilities
+    calls = []
+
+    def record_predictions(history, as_of_gw, *args):
+        calls.append(as_of_gw)
+        return model(history, as_of_gw, *args)
+
+    monkeypatch.setattr(defcon, "_count_and_binary_probabilities", record_predictions)
+
+    defcon.backtest_defcon_count_probabilities(history, gw_range)
+
+    expected = list(range(1, 6)) if gw_range == range(3, 6, 2) else []
+    assert calls == expected
+
+
 @pytest.mark.parametrize("count_model", [False, True], ids=["binary", "count"])
 @pytest.mark.parametrize("counts", [(12, 8), (12, 12), (8, 8)])
 def test_backtest_scores_each_eligible_double_gameweek_appearance(

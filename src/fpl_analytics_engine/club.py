@@ -483,6 +483,7 @@ def _expanding_predictions(
     baseline_feature: str,
     form_feature: str,
     min_train_rows: int,
+    gw_range: range | None = None,
 ) -> list[dict[str, object]]:
     """Fit baseline and baseline-plus-form models on fully observed prior rows.
 
@@ -492,12 +493,15 @@ def _expanding_predictions(
         baseline_feature: Season-to-date baseline for the target.
         form_feature: Recent club-form signal paired with the baseline.
         min_train_rows: Minimum historical rows before a gameweek is scored.
+        gw_range: Gameweeks to score without restricting training history.
 
     Returns:
         Per-club prediction rows.
     """
     predictions = []
     for as_of_gw in sorted(rows["as_of_gw"].unique().to_list()):
+        if gw_range is not None and as_of_gw not in gw_range:
+            continue
         train = rows.filter(pl.col("target_end_gw") <= as_of_gw).drop_nulls(
             [baseline_feature, form_feature, target]
         )
@@ -551,7 +555,8 @@ def backtest_club_form_signals(
     For each gameweek, the baseline and baseline-plus-form models are trained
     only on rows whose complete target horizon was observable by that
     gameweek. They are then scored against the next horizon's realised xG and
-    xGC per match.
+    xGC per match. Retain all eligible preceding training rows regardless of
+    the scored range.
 
     Args:
         history: Enriched current-season per-gameweek player history.
@@ -559,13 +564,23 @@ def backtest_club_form_signals(
         horizon: Number of future gameweeks used for outcomes.
         min_train_rows: Minimum historical rows needed before scoring a
             gameweek.
-        gw_range: Gameweeks to evaluate.
+        gw_range: Gameweeks to score; defaults to ``window`` through the
+            latest gameweek with a complete target horizon.
 
     Returns:
         One row per scored club/gameweek/target with both predictions and the
         realised target.
     """
-    rows = club_form_validation_rows(history, window, horizon, gw_range)
+    available_gameweeks = range(window, latest_gameweek(history) - horizon + 1)
+    score_gameweeks = [
+        gw for gw in available_gameweeks if gw_range is None or gw in gw_range
+    ]
+    if not score_gameweeks:
+        return pl.DataFrame(schema=VALIDATION_PREDICTION_SCHEMA)
+
+    rows = club_form_validation_rows(
+        history, window, horizon, range(window, max(score_gameweeks) + 1)
+    )
     if rows.height == 0:
         return pl.DataFrame(schema=VALIDATION_PREDICTION_SCHEMA)
 
@@ -576,6 +591,7 @@ def backtest_club_form_signals(
             "season_xg_per_match",
             "attack_form",
             min_train_rows,
+            gw_range,
         ),
         *_expanding_predictions(
             rows,
@@ -583,6 +599,7 @@ def backtest_club_form_signals(
             "season_xgc_per_match",
             "defence_form",
             min_train_rows,
+            gw_range,
         ),
     ]
     return (

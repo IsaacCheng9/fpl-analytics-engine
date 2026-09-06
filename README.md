@@ -227,6 +227,11 @@ the test as-of gameweek. Historical FDR is excluded: the archive contains only
 the end-of-season fixture snapshot, so earlier FDR revisions cannot be
 reproduced honestly.
 
+For both club validation and calibrated DefCon backtests, `gw_range` selects
+which gameweeks are scored, not which earlier observations can be used for
+training or calibration. A restricted run therefore matches the same gameweeks
+from a full run while retaining the point-in-time outcome-availability guards.
+
 With a five-gameweek form window, five-gameweek target horizon, and 40 minimum
 training rows, the rerun scored 460 predictions per target on the 2025-26 archive.
 Adding recent attacking form made future xG prediction worse by 2.8% MAE and
