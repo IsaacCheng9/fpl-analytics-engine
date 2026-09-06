@@ -99,6 +99,11 @@ knowable at that point in the season. The dashboard exposes xGI, xG, and xA as
 separate metric groups, with window, season, delta, and per-price views for each
 enabled metric.
 
+Flag evaluation uses complete, finalised single-season history. A player with no
+fixture in an observed completed gameweek receives zero next-gameweek points;
+unavailable gameweeks and incomplete recorded points remain unknown. Double
+gameweek points are summed across both fixtures.
+
 A five-gameweek window at GW30 covers GW26–30 across player form, comparison,
 rolling player detail, and club form. Double gameweeks include every fixture;
 blanks never pull older fixtures into the window. Game and match counts remain
