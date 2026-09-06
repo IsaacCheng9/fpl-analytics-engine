@@ -2,6 +2,7 @@
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from fpl_analytics_engine import club
 
@@ -294,6 +295,87 @@ def test_backtest_club_form_signals_summarises_baseline_against_form() -> None:
         "future_xgc_per_match",
     }
     by_target = {row["target"]: row for row in summary.to_dicts()}
-    assert by_target["future_xg_per_match"]["n_predictions"] == 4
+    assert by_target["future_xg_per_match"]["n_predictions"] == 6
     assert by_target["future_xg_per_match"]["baseline_mae"] is not None
     assert by_target["future_xg_per_match"]["baseline_plus_form_mae"] is not None
+
+
+@pytest.mark.parametrize("window", [1, 2])
+@pytest.mark.parametrize("horizon", [1, 2])
+@pytest.mark.parametrize(
+    "gw_range",
+    [range(1, 6), range(4, 5), range(3, 6, 2), range(5, 2, -2), range(0), range(9, 12)],
+)
+def test_club_backtest_range_only_selects_scored_outputs(
+    gw_range: range, horizon: int, window: int
+) -> None:
+    history = pl.concat(
+        [
+            _validation_history(),
+            pl.DataFrame(
+                [{**row, "fixture": 40} for row in _fixture_rows(4, 3.2, 0.6)]
+            ),
+        ]
+    )
+    full = club.backtest_club_form_signals(
+        history, window=window, horizon=horizon, min_train_rows=2
+    )
+    selected = club.backtest_club_form_signals(
+        history, window=window, horizon=horizon, min_train_rows=2, gw_range=gw_range
+    )
+
+    assert_frame_equal(
+        selected.sort("target", "as_of_gw", "team"),
+        full.filter(pl.col("as_of_gw").is_in(gw_range)).sort(
+            "target", "as_of_gw", "team"
+        ),
+    )
+
+
+def test_club_backtest_bounded_range_ignores_unfinished_future_targets() -> None:
+    history = _validation_history()
+    changed = history.with_columns(
+        pl.when(pl.col("round") > 4)
+        .then(1000.0)
+        .otherwise(pl.col("expected_goals"))
+        .alias("expected_goals")
+    )
+    original = club.backtest_club_form_signals(
+        history, window=1, horizon=2, min_train_rows=2, gw_range=range(3, 5)
+    ).sort("target", "as_of_gw", "team")
+    poisoned = club.backtest_club_form_signals(
+        changed, window=1, horizon=2, min_train_rows=2, gw_range=range(3, 5)
+    ).sort("target", "as_of_gw", "team")
+    extended = club.backtest_club_form_signals(
+        pl.concat([history, pl.DataFrame(_fixture_rows(7, 1000.0, 500.0))]),
+        window=1,
+        horizon=2,
+        min_train_rows=2,
+        gw_range=range(3, 5),
+    ).sort("target", "as_of_gw", "team")
+
+    assert original.height == 8
+    assert_frame_equal(original, extended)
+    assert_frame_equal(original.drop("actual"), poisoned.drop("actual"))
+    assert original["actual"].to_list() != poisoned["actual"].to_list()
+
+
+@pytest.mark.parametrize("gw_range", [range(3, 5), range(0), range(9, 12)])
+def test_club_backtest_only_builds_history_through_selected_weeks(
+    monkeypatch: pytest.MonkeyPatch, gw_range: range
+) -> None:
+    compute_form = club.compute_club_form_table
+    calls = []
+
+    def record_form(history, as_of_gw, window):
+        calls.append(as_of_gw)
+        return compute_form(history, as_of_gw, window)
+
+    monkeypatch.setattr(club, "compute_club_form_table", record_form)
+
+    club.backtest_club_form_signals(
+        _validation_history(), window=1, horizon=1, min_train_rows=2, gw_range=gw_range
+    )
+
+    expected = list(range(1, 5)) if gw_range == range(3, 5) else []
+    assert calls == expected
