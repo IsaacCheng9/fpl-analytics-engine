@@ -25,12 +25,14 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
 
     Args:
         season_history: One player's rows for a single season.
-        window: Number of most-recent games in the rolling window.
+        window: Number of gameweeks in the rolling window, including all
+            double-gameweek fixtures without backfilling blank gameweeks.
 
     Returns:
         The rows sorted by gameweek, with a ``price`` column, rolling expected
         attacking output per 90, and the rolling mean defensive-contribution
-        count over the trailing ``window`` games.
+        count over the trailing ``window`` gameweeks. Every fixture in a
+        double gameweek shares the same end-of-gameweek rolling figures.
     """
     sort_columns = ["round"]
     if "kickoff_time" in season_history.columns:
@@ -60,23 +62,23 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
         )
         .with_columns(
             pl.col("expected_goals")
-            .rolling_sum(window, min_samples=1)
+            .rolling_sum_by("round", window_size=f"{window}i", min_samples=1)
             .alias("_rolling_xg"),
             pl.col("expected_assists")
-            .rolling_sum(window, min_samples=1)
+            .rolling_sum_by("round", window_size=f"{window}i", min_samples=1)
             .alias("_rolling_xa"),
             pl.col("expected_goal_involvements")
-            .rolling_sum(window, min_samples=1)
+            .rolling_sum_by("round", window_size=f"{window}i", min_samples=1)
             .alias("_rolling_xgi"),
             pl.col("_expected_minutes")
-            .rolling_sum(window, min_samples=1)
+            .rolling_sum_by("round", window_size=f"{window}i", min_samples=1)
             .alias("_rolling_expected_min"),
             # Mean defensive-contribution count per game - a continuous trend
             # that stays informative below the points threshold, unlike a
             # hit-rate that is flat at 0 for most attacking players.
             pl.col("defensive_contribution")
             .cast(pl.Float64)
-            .rolling_mean(window, min_samples=1)
+            .rolling_mean_by("round", window_size=f"{window}i", min_samples=1)
             .alias("rolling_defcon"),
         )
         .with_columns(

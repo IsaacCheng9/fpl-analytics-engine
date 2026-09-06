@@ -37,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--window",
         type=int,
         default=club.DEFAULT_WINDOW,
-        help="Recent club-match window used for form.",
+        help="Recent gameweek window used for form, including double fixtures.",
     )
     parser.add_argument(
         "--horizon",

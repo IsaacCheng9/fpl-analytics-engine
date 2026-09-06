@@ -543,6 +543,45 @@ def _detail_rows() -> pl.DataFrame:
     return pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
 
 
+@pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 30)])
+def test_form_and_detail_share_the_comparison_gameweek_window(
+    client: TestClient, rounds: tuple[int, ...]
+) -> None:
+    records = [_game(1, 25, xgi=10.0)]
+    records += [_game(1, gw, xgi=0.6) for gw in rounds]
+    records += [_game(1, 31, xgi=100.0)]
+    history = pl.DataFrame(records).with_columns(
+        pl.lit("2025-26").alias("season"),
+        pl.lit(500).alias("code"),
+    )
+    api.app.dependency_overrides[api.get_history] = lambda: history
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: history
+    params = {"as_of_gw": 30, "window": 5}
+
+    form_response = client.get("/players/form", params={**params, "min_delta": -1000})
+    detail_response = client.get("/players/1", params=params)
+
+    assert form_response.status_code == detail_response.status_code == 200
+    form_row = form_response.json()[0]
+    gameweeks = detail_response.json()["gameweeks"]
+    assert all(row["round"] <= 30 for row in gameweeks)
+    selected = [row for row in gameweeks if 26 <= row["round"] <= 30]
+    comparison_xgi90 = (
+        sum(row["expected_goal_involvements"] for row in selected)
+        / sum(row["minutes"] for row in selected)
+        * 90
+    )
+    assert len(selected) == form_row["window_games"] == len(rounds)
+    assert comparison_xgi90 == pytest.approx(0.6)
+    assert form_row["window_xgi90"] == pytest.approx(comparison_xgi90)
+    assert form_row["delta_xgi90"] == pytest.approx(
+        comparison_xgi90 - form_row["season_xgi90"]
+    )
+    for row in selected:
+        if row["round"] == 30:
+            assert row["rolling_xgi90"] == pytest.approx(comparison_xgi90)
+
+
 def test_player_detail_returns_gameweeks_and_cross_season(client: TestClient) -> None:
     api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
 

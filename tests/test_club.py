@@ -140,6 +140,47 @@ def test_compute_club_form_table_compares_window_to_baseline() -> None:
     assert out["defence_form"] == pytest.approx(0.25)
 
 
+@pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 29)])
+def test_club_window_uses_gameweeks_including_doubles_and_blanks(rounds) -> None:
+    rows = _fixture_rows(25, 10.0, 10.0) + _fixture_rows(31, 100.0, 100.0)
+    for fixture, gw in enumerate(rounds, 100):
+        rows += [
+            {**row, "fixture": fixture}
+            for row in _fixture_rows(gw, home_xg=2.0, away_xg=0.5)
+        ]
+
+    row = (
+        club.compute_club_form_table(pl.DataFrame(rows), as_of_gw=30, window=5)
+        .filter(pl.col("team") == 1)
+        .row(0, named=True)
+    )
+
+    assert row["window_matches"] == len(rounds)
+    assert row["season_matches"] == len(rounds) + 1
+    assert row["window_xg_per_match"] == pytest.approx(2.0)
+    assert row["window_xgc_per_match"] == pytest.approx(0.5)
+    assert row["season_xg_per_match"] == pytest.approx(
+        (10 + 2 * len(rounds)) / (len(rounds) + 1)
+    )
+    assert row["attack_form"] == pytest.approx(2.0 - row["season_xg_per_match"])
+    assert row["defence_form"] == pytest.approx(row["season_xgc_per_match"] - 0.5)
+
+
+def test_club_window_does_not_backfill_an_entirely_blank_window() -> None:
+    row = (
+        club.compute_club_form_table(
+            pl.DataFrame(_fixture_rows(25, 1.0, 0.5)), as_of_gw=30, window=5
+        )
+        .filter(pl.col("team") == 1)
+        .row(0, named=True)
+    )
+
+    assert row["window_matches"] == 0
+    assert row["window_xg_per_match"] is None
+    assert row["attack_form"] is None
+    assert row["season_xg_per_match"] == 1.0
+
+
 def _validation_history() -> pl.DataFrame:
     rows = []
     for round_, arsenal_xg, chelsea_xg in [
