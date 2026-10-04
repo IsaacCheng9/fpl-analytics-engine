@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
 	type FplTeamPick,
@@ -24,6 +25,9 @@ import {
 	DEFCON_PROB_HEAT_KEYS,
 	FORM_HEAT_KEYS,
 } from "./columns";
+import { ActiveFilterChips } from "./components/ActiveFilterChips";
+import { AttackingThreatFilterFields } from "./components/AttackingThreatFilterFields";
+import { ClubColumnChooser } from "./components/ClubColumnChooser";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
@@ -32,6 +36,8 @@ import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
 import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
+import { TransferFilterFields } from "./components/TransferFilterFields";
+import { WindowSizeControl } from "./components/WindowSizeControl";
 import {
 	filterAttackingThreatCandidates,
 	filterOwnedPlayers,
@@ -50,9 +56,7 @@ import {
 	ATTACKING_THREAT_PERIODS,
 	type AttackingMetric,
 	type AttackingThreatPeriod,
-	CLUB_COLUMN_LABELS,
 	type ClubColumnGroup,
-	clampWindowSize,
 	clubColumnVisibilityMatchDefault,
 	DEFAULT_AS_OF_GW,
 	DEFAULT_ATTACKING_METRICS,
@@ -79,24 +83,16 @@ import {
 	metricsMatchDefault,
 	type OwnershipFilter,
 	POSITIONS,
-	parseOptionalInputNumber,
 	type ShortlistablePlayer,
 	TAB_LABELS,
 	TABS,
 	type TransferFilters,
 	transferFiltersMatchDefault,
 	visibleAttackingThreatFiltersMatchDefault,
-	WINDOW_MAX,
 	WINDOW_MIN,
 } from "./state";
+import { inputClass, labelClass } from "./styles";
 import { useUrlState } from "./urlState";
-
-const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
-const fieldClass =
-	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
-// Most controls sit below a label, so the shared input class adds the gap.
-const inputClass = `mt-1 ${fieldClass}`;
-const transferInputClass = `${inputClass} w-[5.5rem]`;
 
 export default function App() {
 	const [tablePageSize, setTablePageSize] = useState(25);
@@ -360,8 +356,6 @@ export default function App() {
 	const windowSize = windowSizeChoice ?? defaultWindowSize(gameweeksPlayed);
 	const minGames = minGamesChoice ?? defaultMinGames(gameweeksPlayed);
 	const hasPlayerSearch = playerSearch.trim() !== "";
-	const windowFillPct =
-		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
 	const isSquadViewActive =
 		isPlayerTab(tab) && showSquadView && fplTeamId !== null;
 	const fplTeamQuery = useQuery({
@@ -1011,6 +1005,33 @@ export default function App() {
 		? "No Clubs Match These Filters"
 		: "No Clubs Available";
 
+	// The player tabs share every table behaviour except their rows and columns.
+	function renderPlayerTable<T extends ShortlistablePlayer>(
+		rows: T[],
+		columns: ColumnDef<T>[],
+	) {
+		return (
+			<DataTable
+				data={rows}
+				paginate
+				initialPageSize={tablePageSize}
+				onPageSizeChange={setTablePageSize}
+				columns={columns}
+				onRowClick={(row) => openPlayerDetail(row.element)}
+				rowClassName={playerRowClassName}
+				rowStickyClassName={playerStickyClassName}
+				renderRowActions={renderShortlistAction}
+				rowActionsHeader={"\u2605"}
+				rowActionsHeaderLabel="Shortlist"
+				rowActionsHeaderTooltip="Add or remove players from the shortlist"
+				stickyDataColumns={4}
+				emptyTitle={playerEmptyTitle}
+				emptyDescription={playerEmptyDescription}
+				emptyAction={clearActiveFiltersButton}
+			/>
+		);
+	}
+
 	if (meta.isPending) {
 		return <SeasonStatus state="loading" />;
 	}
@@ -1120,62 +1141,12 @@ export default function App() {
 						</label>
 
 						{tab === "clubs" && (
-							<details className="order-last min-w-0 basis-full border-t border-zinc-100 pt-3 text-xs">
-								<summary className="w-fit cursor-pointer font-medium text-zinc-600">
-									Columns ({clubColumns.length})
-								</summary>
-								<div className="mt-3 flex flex-wrap items-start gap-x-10 gap-y-4">
-									{(
-										[
-											[
-												"Expected & Context",
-												["matches", "xg", "xgc", "fdr", "form"],
-											],
-											["Actual Goals", ["goals", "ga"]],
-											[
-												"Over/Underperformance",
-												[
-													"finishing_total",
-													"finishing_rate",
-													"concession_total",
-													"concession_rate",
-												],
-											],
-										] satisfies [string, ClubColumnGroup[]][]
-									).map(([title, metrics]) => (
-										<fieldset key={title} className="min-w-0 max-w-full">
-											<legend className="mb-2 font-medium text-zinc-500">
-												{title}
-											</legend>
-											<div className="flex flex-wrap gap-x-4 gap-y-2">
-												{metrics.map((metric) => (
-													<label
-														key={metric}
-														className="flex items-center gap-1.5 text-zinc-900"
-													>
-														<input
-															type="checkbox"
-															className="accent-blue-600"
-															checked={clubColumnVisibility[metric]}
-															onChange={() => toggleClubColumnGroup(metric)}
-														/>
-														{CLUB_COLUMN_LABELS[metric]}
-													</label>
-												))}
-											</div>
-										</fieldset>
-									))}
-									<button
-										type="button"
-										className="text-xs text-zinc-600 underline underline-offset-2"
-										onClick={() =>
-											setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })
-										}
-									>
-										Reset Columns
-									</button>
-								</div>
-							</details>
+							<ClubColumnChooser
+								visibility={clubColumnVisibility}
+								columnCount={clubColumns.length}
+								onToggle={toggleClubColumnGroup}
+								onReset={() => setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })}
+							/>
 						)}
 
 						{tab === "form" && (
@@ -1235,38 +1206,7 @@ export default function App() {
 						)}
 
 						{tab !== "defconProb" && (
-							<label htmlFor="window-size" className={labelClass}>
-								Window (Gameweeks)
-								<span className="mt-1 flex items-center gap-2">
-									<input
-										id="window-size"
-										type="range"
-										min={WINDOW_MIN}
-										max={WINDOW_MAX}
-										step={1}
-										value={windowSize}
-										onChange={(e) =>
-											setWindowSize(clampWindowSize(Number(e.target.value)))
-										}
-										className="range-slider w-32"
-										style={{
-											background: `linear-gradient(to right, #18181b 0%, #18181b ${windowFillPct}%, #e4e4e7 ${windowFillPct}%, #e4e4e7 100%)`,
-										}}
-									/>
-									<input
-										type="number"
-										min={WINDOW_MIN}
-										max={WINDOW_MAX}
-										step={1}
-										aria-label="Window size in gameweeks"
-										className={`${fieldClass} w-14`}
-										value={windowSize}
-										onChange={(e) =>
-											setWindowSize(clampWindowSize(Number(e.target.value)))
-										}
-									/>
-								</span>
-							</label>
+							<WindowSizeControl value={windowSize} onChange={setWindowSize} />
 						)}
 
 						<div className={labelClass}>
@@ -1356,239 +1296,34 @@ export default function App() {
 					{tab === "form" || showTransferFilters ? (
 						<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
 							{tab === "form" ? (
-								<fieldset className="min-w-0 border-0 p-0">
-									<legend className="sr-only">Attacking Threat Filters</legend>
-									<div className="mb-2 flex items-center gap-2">
-										<span className="font-medium text-xs text-zinc-600">
-											Attacking Threat Filters
-										</span>
-										{hasActiveAttackingThreatFilters ? (
-											<button
-												type="button"
-												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-												onClick={resetAttackingThreatFilters}
-											>
-												Reset Threat Filters
-											</button>
-										) : null}
-									</div>
-									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
-										{ATTACKING_METRIC_COLUMN_ORDER.filter(
-											(metric) => attackingMetrics[metric],
-										).flatMap((metric) =>
-											ATTACKING_THREAT_PERIODS.map((period) => (
-												<label
-													key={`${metric}-${period}`}
-													className={labelClass}
-												>
-													{`Min ${ATTACKING_THREAT_PERIOD_LABELS[period]} ${ATTACKING_METRIC_LABELS[metric]}/90`}
-													<input
-														type="number"
-														min={0}
-														step={0.05}
-														placeholder="Any"
-														className={`${inputClass} w-28`}
-														value={attackingThreatFilters[metric][period] ?? ""}
-														onChange={(e) =>
-															updateAttackingThreatFilter(
-																metric,
-																period,
-																parseOptionalInputNumber(e.target.value, {
-																	min: 0,
-																}),
-															)
-														}
-													/>
-												</label>
-											)),
-										)}
-									</div>
-								</fieldset>
+								<AttackingThreatFilterFields
+									filters={attackingThreatFilters}
+									visibleMetrics={attackingMetrics}
+									hasActiveFilters={hasActiveAttackingThreatFilters}
+									onChange={updateAttackingThreatFilter}
+									onReset={resetAttackingThreatFilters}
+								/>
 							) : null}
 							{showTransferFilters ? (
-								<fieldset className="min-w-0 border-0 p-0">
-									<legend className="sr-only">Transfer Filters</legend>
-									<div className="mb-2 flex items-center gap-2">
-										<span className="font-medium text-xs text-zinc-600">
-											Transfer Filters
-										</span>
-										{hasActiveTransferFilters ? (
-											<button
-												type="button"
-												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-												onClick={resetTransferFilters}
-											>
-												Reset Transfer Filters
-											</button>
-										) : null}
-									</div>
-									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
-										<label className={labelClass}>
-											Max Price
-											<input
-												type="number"
-												min={0}
-												step={0.1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxPrice ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxPrice",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Max FDR
-											<input
-												type="number"
-												min={1}
-												max={5}
-												step={0.1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxFdr ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxFdr",
-														parseOptionalInputNumber(e.target.value, {
-															min: 1,
-															max: 5,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										{tab !== "defconProb" && (
-											<label className={labelClass}>
-												Min Minutes
-												<input
-													type="number"
-													min={0}
-													className={transferInputClass}
-													value={minMinutes}
-													onChange={(e) =>
-														setMinMinutes(Number(e.target.value))
-													}
-												/>
-											</label>
-										)}
-
-										<label className={labelClass}>
-											Min Mins/App
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minMinsPerAppearance ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minMinsPerAppearance",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Min Start %
-											<input
-												type="number"
-												min={0}
-												max={100}
-												step={5}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minStartPct ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minStartPct",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-															max: 100,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Min Owned %
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minOwnership ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minOwnership",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Max Owned %
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxOwnership ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxOwnership",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-									</div>
-								</fieldset>
+								<TransferFilterFields
+									filters={transferFilters}
+									minMinutes={minMinutes}
+									showMinMinutes={tab !== "defconProb"}
+									hasActiveFilters={hasActiveTransferFilters}
+									onFilterChange={updateTransferFilter}
+									onMinMinutesChange={setMinMinutes}
+									onReset={resetTransferFilters}
+								/>
 							) : null}
 						</div>
 					) : null}
 				</div>
 
 				{hasActiveFilters ? (
-					<div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-						<span className="mr-1 font-medium text-xs text-zinc-500">
-							Active Filters
-						</span>
-						{activeFilterChips.map((chip) => (
-							<button
-								key={chip.id}
-								type="button"
-								className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-zinc-300 hover:bg-white"
-								onClick={chip.onClear}
-							>
-								<span>{chip.label}</span>
-								<span aria-hidden="true" className="text-zinc-400">
-									x
-								</span>
-								<span className="sr-only">Clear {chip.label}</span>
-							</button>
-						))}
-						<div className="ml-auto">{clearActiveFiltersButton}</div>
-					</div>
+					<ActiveFilterChips
+						chips={activeFilterChips}
+						clearAllButton={clearActiveFiltersButton}
+					/>
 				) : null}
 
 				{windowCoversSeason ? (
@@ -1789,63 +1524,12 @@ export default function App() {
 				) : tab === "form" ? (
 					<>
 						<FormScatter players={visibleFormRows} />
-						<DataTable
-							data={visibleFormRows}
-							paginate
-							initialPageSize={tablePageSize}
-							onPageSizeChange={setTablePageSize}
-							columns={formColumns}
-							onRowClick={(row) => openPlayerDetail(row.element)}
-							rowClassName={playerRowClassName}
-							rowStickyClassName={playerStickyClassName}
-							renderRowActions={renderShortlistAction}
-							rowActionsHeader={"\u2605"}
-							rowActionsHeaderLabel="Shortlist"
-							rowActionsHeaderTooltip="Add or remove players from the shortlist"
-							stickyDataColumns={4}
-							emptyTitle={playerEmptyTitle}
-							emptyDescription={playerEmptyDescription}
-							emptyAction={clearActiveFiltersButton}
-						/>
+						{renderPlayerTable(visibleFormRows, formColumns)}
 					</>
 				) : tab === "defcon" ? (
-					<DataTable
-						data={visibleDefconRows}
-						paginate
-						initialPageSize={tablePageSize}
-						onPageSizeChange={setTablePageSize}
-						columns={defconColumns}
-						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={playerRowClassName}
-						rowStickyClassName={playerStickyClassName}
-						renderRowActions={renderShortlistAction}
-						rowActionsHeader={"\u2605"}
-						rowActionsHeaderLabel="Shortlist"
-						rowActionsHeaderTooltip="Add or remove players from the shortlist"
-						stickyDataColumns={4}
-						emptyTitle={playerEmptyTitle}
-						emptyDescription={playerEmptyDescription}
-						emptyAction={clearActiveFiltersButton}
-					/>
+					renderPlayerTable(visibleDefconRows, defconColumns)
 				) : tab === "defconProb" ? (
-					<DataTable
-						data={visibleDefconProbRows}
-						paginate
-						initialPageSize={tablePageSize}
-						onPageSizeChange={setTablePageSize}
-						columns={defconProbColumns}
-						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={playerRowClassName}
-						rowStickyClassName={playerStickyClassName}
-						renderRowActions={renderShortlistAction}
-						rowActionsHeader={"\u2605"}
-						rowActionsHeaderLabel="Shortlist"
-						rowActionsHeaderTooltip="Add or remove players from the shortlist"
-						stickyDataColumns={4}
-						emptyTitle={playerEmptyTitle}
-						emptyDescription={playerEmptyDescription}
-						emptyAction={clearActiveFiltersButton}
-					/>
+					renderPlayerTable(visibleDefconProbRows, defconProbColumns)
 				) : (
 					<>
 						<p className="mb-2 text-sm text-zinc-500">
