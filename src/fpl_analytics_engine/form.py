@@ -221,7 +221,15 @@ def flag_players(
     )
     if position is not None:
         flagged = flagged.filter(pl.col("position") == position)
-    flagged = flagged.sort("delta_xgi90", descending=True, nulls_last=True)
+    # Break ties on recent threat, then element, so equal deltas (e.g. a window
+    # covering the whole season) still rank deterministically.
+    flagged = flagged.sort(
+        "delta_xgi90",
+        "window_xgi90",
+        "element",
+        descending=[True, True, False],
+        nulls_last=True,
+    )
     if top_k is not None:
         flagged = flagged.head(top_k)
     return flagged
@@ -253,7 +261,13 @@ def flag_defcon(
     )
     if position is not None:
         flagged = flagged.filter(pl.col("position") == position)
-    flagged = flagged.sort("window_defcon_hit_rate", descending=True, nulls_last=True)
+    flagged = flagged.sort(
+        "window_defcon_hit_rate",
+        "window_defcon",
+        "element",
+        descending=[True, True, False],
+        nulls_last=True,
+    )
     if top_k is not None:
         flagged = flagged.head(top_k)
     return flagged

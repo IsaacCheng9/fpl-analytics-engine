@@ -235,6 +235,38 @@ def test_flag_players_ranks_and_filters() -> None:
     assert 2 not in elements  # declining player has a negative delta
 
 
+def test_flag_players_breaks_delta_ties_by_window_threat_then_element() -> None:
+    table = pl.DataFrame(
+        {
+            "element": [3, 1, 2, 4],
+            "position": ["MID"] * 4,
+            "window_minutes": [270] * 4,
+            "delta_xgi90": [0.0, 0.0, 0.0, 0.1],
+            "window_xgi90": [0.2, 0.5, 0.5, None],
+        }
+    )
+
+    flagged = form.flag_players(table, min_window_minutes=0, min_delta_xgi90=-1.0)
+
+    assert flagged["element"].to_list() == [4, 1, 2, 3]
+
+
+def test_flag_defcon_breaks_hit_rate_ties_by_window_defcon_then_element() -> None:
+    table = pl.DataFrame(
+        {
+            "element": [3, 1, 2],
+            "position": ["DEF"] * 3,
+            "window_minutes": [270] * 3,
+            "window_defcon_hit_rate": [0.5, 0.5, 0.5],
+            "window_defcon": [9.0, 12.0, 12.0],
+        }
+    )
+
+    flagged = form.flag_defcon(table)
+
+    assert flagged["element"].to_list() == [1, 2, 3]
+
+
 def test_defcon_hit_rate_by_position() -> None:
     rows = [
         _game(1, 1, defcon_hit=True, position="DEF"),

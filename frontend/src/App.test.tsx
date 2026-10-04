@@ -2195,3 +2195,95 @@ test("persists filter changes and player panel state to the URL", async () => {
 		expect(params.get("season")).toBeNull();
 	});
 });
+
+function mockEarlySeasonFetch(
+	overrides: (url: string) => unknown = () => undefined,
+) {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		const body = url === "/api/" ? { ...meta, latest_gw: 4 } : overrides(url);
+		if (body === undefined) {
+			return mockApiFetch(input);
+		}
+		return Promise.resolve(
+			new Response(JSON.stringify(body), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			}),
+		);
+	});
+}
+
+test("limits the default window and min games to gameweeks played", async () => {
+	mockEarlySeasonFetch();
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+	const formCalls = vi
+		.mocked(fetch)
+		.mock.calls.map(([input]) => String(input))
+		.filter((url) => url.includes("/players/form"));
+	expect(formCalls.length).toBeGreaterThan(0);
+	expect(formCalls.every((url) => url.includes("window=3"))).toBe(true);
+	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(3);
+	expect(new URLSearchParams(window.location.search).get("window")).toBeNull();
+	expect(
+		screen.queryByText(/covers every gameweek up to GW4/),
+	).not.toBeInTheDocument();
+
+	fireEvent.click(screen.getByRole("button", { name: "DefCon Probability" }));
+
+	await waitFor(() => {
+		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+		expect(
+			calls.some(
+				(url) =>
+					url.includes("/players/defcon-probability?") &&
+					url.includes("min_games=3"),
+			),
+		).toBe(true);
+	});
+	expect(screen.getByLabelText("Min Games")).toHaveValue(3);
+	expect(
+		new URLSearchParams(window.location.search).get("min_games"),
+	).toBeNull();
+});
+
+test("explains when an explicit window covers every gameweek played", async () => {
+	window.history.replaceState(null, "", "/?window=5");
+	mockEarlySeasonFetch();
+
+	render(withProviders(<App />));
+
+	expect(
+		await screen.findByText(/covers every gameweek up to GW4/),
+	).toHaveTextContent("Use a window of 3 or fewer to compare them.");
+
+	fireEvent.click(screen.getByRole("button", { name: /Clear Window 5/ }));
+
+	await waitFor(() => {
+		expect(
+			screen.queryByText(/covers every gameweek up to GW4/),
+		).not.toBeInTheDocument();
+	});
+	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(3);
+	expect(new URLSearchParams(window.location.search).get("window")).toBeNull();
+});
+
+test("explains an empty DefCon probability table when min games exceeds gameweeks played", async () => {
+	window.history.replaceState(null, "", "/?tab=defcon-prob&min_games=6");
+	mockEarlySeasonFetch((url) =>
+		url.includes("/players/defcon-probability?") ? [] : undefined,
+	);
+
+	render(withProviders(<App />));
+
+	expect(
+		await screen.findAllByText(
+			"Min Games 6 exceeds the 4 gameweeks played up to GW4. Lower it to see players.",
+		),
+	).not.toHaveLength(0);
+});
