@@ -139,6 +139,14 @@ def test_compute_club_form_table_compares_window_to_baseline() -> None:
     assert out["window_xgc_per_match"] == pytest.approx(0.75)
     assert out["season_xgc_per_match"] == pytest.approx(1.0)
     assert out["defence_form"] == pytest.approx(0.25)
+    assert out["window_finishing_delta_total"] == pytest.approx(0.5)
+    assert out["season_finishing_delta_total"] == pytest.approx(2.0)
+    assert out["window_finishing_delta"] == pytest.approx(0.25)
+    assert out["season_finishing_delta"] == pytest.approx(2 / 3)
+    assert out["window_concession_delta_total"] == pytest.approx(0.5)
+    assert out["season_concession_delta_total"] == pytest.approx(0.0)
+    assert out["window_concession_delta"] == pytest.approx(0.25)
+    assert out["season_concession_delta"] == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 29)])
@@ -165,6 +173,13 @@ def test_club_window_uses_gameweeks_including_doubles_and_blanks(rounds) -> None
     )
     assert row["attack_form"] == pytest.approx(2.0 - row["season_xg_per_match"])
     assert row["defence_form"] == pytest.approx(row["season_xgc_per_match"] - 0.5)
+    for period in ("window", "season"):
+        for metric in ("finishing", "concession"):
+            assert row[f"{period}_{metric}_delta_total"] == pytest.approx(
+                row[f"{period}_{metric}_delta"] * row[f"{period}_matches"]
+            )
+    assert row["window_finishing_delta_total"] == pytest.approx(0.0)
+    assert row["season_finishing_delta_total"] == pytest.approx(-8.0)
 
 
 def test_club_window_does_not_backfill_an_entirely_blank_window() -> None:
@@ -178,6 +193,11 @@ def test_club_window_does_not_backfill_an_entirely_blank_window() -> None:
 
     assert row["window_matches"] == 0
     assert row["window_xg_per_match"] is None
+    for metric in ("finishing", "concession"):
+        assert row[f"window_{metric}_delta"] is None
+        assert row[f"window_{metric}_delta_total"] == 0.0
+    assert row["season_finishing_delta_total"] == 1.0
+    assert row["season_concession_delta_total"] == 0.5
     assert row["attack_form"] is None
     assert row["season_xg_per_match"] == 1.0
 

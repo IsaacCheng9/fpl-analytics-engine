@@ -94,7 +94,13 @@ class ClubForm(BaseModel):
     season_goals_against_per_match: float | None
     delta_goals_against_per_match: float | None
     window_finishing_delta: float | None
+    season_finishing_delta: float | None
     window_concession_delta: float | None
+    season_concession_delta: float | None
+    window_finishing_delta_total: float | None
+    season_finishing_delta_total: float | None
+    window_concession_delta_total: float | None
+    season_concession_delta_total: float | None
     attack_form: float | None
     defence_form: float | None
     upcoming_fixtures: int | None
