@@ -1090,9 +1090,10 @@ function heatMeta<T>(
 	opts: HeatCellOptions = {},
 ): ColumnDef<T>["meta"] {
 	const scale = heatScale(range, opts);
+	const numericMeta = { ...meta, numeric: true };
 	return scale === null
-		? meta
-		: { ...meta, cellStyle: heatCellStyle<T>(scale) };
+		? numericMeta
+		: { ...numericMeta, cellStyle: heatCellStyle<T>(scale) };
 }
 
 function buildFormMetricColumns(
@@ -1145,6 +1146,7 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 			accessorKey: "price",
 			header: "Price",
 			cell: (info) => fmtPrice(info.getValue<number | null>()),
+			meta: { numeric: true },
 		},
 		{
 			accessorKey: "avg_fdr",
