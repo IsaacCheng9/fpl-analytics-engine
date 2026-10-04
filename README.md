@@ -35,7 +35,9 @@ where the current squad looks weak for the next gameweek.
   Brier score and a calibration table for the probability model
 - **Model evidence view** – surfaces the DefCon probability backtest and the
   corrected club-form validation inside the dashboard, including negative
-  results where recent form did not beat a season-to-date baseline
+  results where recent form did not beat a season-to-date baseline; it shows
+  the last complete season until the live season reaches GW19, with a season
+  selector for any season from 2025-26
 - **Season archival** – snapshots preseason players and fixtures as soon as the
   FPL game rolls over, then adds current-season per-gameweek detail after GW1
 - **Historical backfill** – adapts the vaastav community archive (2022-23

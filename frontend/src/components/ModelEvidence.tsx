@@ -1,5 +1,10 @@
 import type { ClubFormValidation, DefconProbabilityValidation } from "../api";
+import {
+	EVIDENCE_MIN_LIVE_GW,
+	EVIDENCE_START_SEASON,
+} from "../lib/evidenceSeason";
 import { fmtNum } from "../lib/format";
+import { fieldClass, labelClass } from "../styles";
 import { InfoTooltip } from "./InfoTooltip";
 
 type Tone = "good" | "bad" | "neutral";
@@ -95,26 +100,64 @@ function EmptyTableRow({
 export function ModelEvidence({
 	defconValidation,
 	clubValidation,
+	season,
+	seasons,
+	liveSeason,
+	isLoadingSeason = false,
+	onSeasonChange,
 }: {
 	defconValidation: DefconProbabilityValidation | undefined;
 	clubValidation: ClubFormValidation[];
+	season: string;
+	seasons: string[];
+	liveSeason: string;
+	isLoadingSeason?: boolean;
+	onSeasonChange: (season: string) => void;
 }) {
 	const clubRows = [...clubValidation].sort((left, right) =>
 		targetLabel(left.target).localeCompare(targetLabel(right.target)),
 	);
+	// Dim the previous season's results while a newly selected season loads.
+	const resultSectionClass = `rounded-lg border border-zinc-200 bg-white p-4 ${
+		isLoadingSeason ? "opacity-60" : ""
+	}`;
 
 	return (
 		<div className="space-y-4">
 			<section className="rounded-lg border border-zinc-200 bg-white p-4">
-				<h2 className="font-semibold text-lg">Backtested Evidence</h2>
-				<p className="mt-1 max-w-3xl text-sm text-zinc-500">
-					Historic as-of gameweeks are replayed, then scored against what
-					happened next. This keeps the scouting signals accountable to the same
-					point-in-time rules used by the transfer tables.
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<div>
+						<h2 className="font-semibold text-lg">Backtested Evidence</h2>
+						<p className="mt-1 max-w-3xl text-sm text-zinc-500">
+							Historic as-of gameweeks are replayed, then scored against what
+							happened next. This keeps the scouting signals accountable to the
+							same point-in-time rules used by the transfer tables.
+						</p>
+					</div>
+					<label className={`${labelClass} w-40`}>
+						Season
+						<select
+							className={`mt-1 ${fieldClass}`}
+							value={season}
+							onChange={(event) => onSeasonChange(event.target.value)}
+						>
+							{seasons.map((option) => (
+								<option key={option} value={option}>
+									{option === liveSeason ? `${option} (Live)` : option}
+								</option>
+							))}
+						</select>
+					</label>
+				</div>
+				<p className="mt-2 max-w-3xl text-xs text-zinc-500">
+					Defaults to the last complete season until the live season reaches GW
+					{EVIDENCE_MIN_LIVE_GW} (halfway), because earlier samples are too
+					small to judge the models. Evidence starts in {EVIDENCE_START_SEASON},
+					when DefCon was introduced.
 				</p>
 			</section>
 
-			<section className="rounded-lg border border-zinc-200 bg-white p-4">
+			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">DefCon Probability Model</h3>
 					<p className="mt-1 text-sm text-zinc-500">
@@ -186,7 +229,7 @@ export function ModelEvidence({
 				</div>
 			</section>
 
-			<section className="rounded-lg border border-zinc-200 bg-white p-4">
+			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">Recent Club Form</h3>
 					<p className="mt-1 text-sm text-zinc-500">

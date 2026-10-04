@@ -254,11 +254,13 @@ export interface ClubFormValidationParams {
 	window?: number;
 	horizon?: number;
 	minTrainRows?: number;
+	season?: string;
 }
 
 export interface DefconProbabilityValidationParams {
 	bins?: number;
 	minMinutes?: number;
+	season?: string;
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -340,6 +342,9 @@ export function fetchClubFormValidation(
 	if (params.minTrainRows !== undefined) {
 		search.set("min_train_rows", String(params.minTrainRows));
 	}
+	if (params.season) {
+		search.set("season", params.season);
+	}
 	const query = search.toString();
 	return getJson<ClubFormValidation[]>(
 		`/clubs/form-validation${query ? `?${query}` : ""}`,
@@ -355,6 +360,9 @@ export function fetchDefconProbabilityValidation(
 	}
 	if (params.minMinutes !== undefined) {
 		search.set("min_minutes", String(params.minMinutes));
+	}
+	if (params.season) {
+		search.set("season", params.season);
 	}
 	const query = search.toString();
 	return getJson<DefconProbabilityValidation>(

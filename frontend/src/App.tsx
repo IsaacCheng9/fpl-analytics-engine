@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -38,6 +38,7 @@ import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
 import { TransferFilterFields } from "./components/TransferFilterFields";
 import { WindowSizeControl } from "./components/WindowSizeControl";
+import { defaultEvidenceSeason, evidenceSeasons } from "./lib/evidenceSeason";
 import {
 	filterAttackingThreatCandidates,
 	filterOwnedPlayers,
@@ -159,6 +160,10 @@ export default function App() {
 	const [fplTeamInput, setFplTeamInput] = useState(
 		urlState.fplTeamId?.toString() ?? "",
 	);
+	// Null follows the default season, which moves to the live season at GW19.
+	const [evidenceSeasonChoice, setEvidenceSeasonChoice] = useState<
+		string | null
+	>(null);
 
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
@@ -421,15 +426,22 @@ export default function App() {
 		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
 		enabled: analyticsReady && tab === "clubs",
 	});
+	const liveSeason = meta.data?.season ?? "";
+	const evidenceSeason =
+		evidenceSeasonChoice ?? defaultEvidenceSeason(liveSeason, latestGw);
+	// Keep the previous season on screen while a newly selected one loads, so
+	// the season selector stays put.
 	const defconValidationQuery = useQuery({
-		queryKey: ["defconValidation"],
-		queryFn: () => fetchDefconProbabilityValidation(),
+		queryKey: ["defconValidation", evidenceSeason],
+		queryFn: () => fetchDefconProbabilityValidation({ season: evidenceSeason }),
 		enabled: analyticsReady && tab === "evidence",
+		placeholderData: keepPreviousData,
 	});
 	const clubValidationQuery = useQuery({
-		queryKey: ["clubValidation"],
-		queryFn: () => fetchClubFormValidation(),
+		queryKey: ["clubValidation", evidenceSeason],
+		queryFn: () => fetchClubFormValidation({ season: evidenceSeason }),
 		enabled: analyticsReady && tab === "evidence",
+		placeholderData: keepPreviousData,
 	});
 	const squadFormQuery = useQuery({
 		queryKey: ["squadForm", windowSize, asOfGw],
@@ -1489,6 +1501,14 @@ export default function App() {
 						<ModelEvidence
 							defconValidation={defconValidationQuery.data}
 							clubValidation={clubValidationQuery.data ?? []}
+							season={evidenceSeason}
+							seasons={evidenceSeasons(liveSeason)}
+							liveSeason={liveSeason}
+							isLoadingSeason={
+								defconValidationQuery.isPlaceholderData ||
+								clubValidationQuery.isPlaceholderData
+							}
+							onSeasonChange={setEvidenceSeasonChoice}
 						/>
 					)
 				) : isSquadViewActive ? (
