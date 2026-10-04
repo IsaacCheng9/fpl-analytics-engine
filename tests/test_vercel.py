@@ -211,3 +211,51 @@ def test_vercel_frontend_rejects_invalid_paths(tmp_path: Path) -> None:
     response = client.get("/%00")
 
     assert response.status_code == 404
+
+
+def test_vercel_api_reads_are_cdn_cacheable(client: TestClient) -> None:
+    response = client.get("/api/")
+
+    assert response.headers[vercel_entrypoint.CDN_CACHE_HEADER] == (
+        vercel_entrypoint.CDN_CACHE_CONTROL
+    )
+
+
+def test_vercel_api_errors_are_not_cdn_cacheable(client: TestClient) -> None:
+    response = client.get("/api/players/form", params={"window": 0})
+
+    assert response.status_code == 422
+    assert vercel_entrypoint.CDN_CACHE_HEADER not in response.headers
+
+
+def test_vercel_live_team_imports_are_not_cdn_cacheable(client: TestClient) -> None:
+    pick = {
+        "element": 1,
+        "position": 1,
+        "multiplier": 2,
+        "is_captain": True,
+        "is_vice_captain": False,
+    }
+
+    def fetch_picks(entry_id: int, event: int) -> dict:
+        return {"picks": [pick]}
+
+    overrides = backend_api.app.dependency_overrides
+    overrides[backend_api.get_entry_picks_fetcher] = lambda: fetch_picks
+
+    response = client.get("/api/fpl-team/123")
+
+    assert response.status_code == 200
+    assert vercel_entrypoint.CDN_CACHE_HEADER not in response.headers
+
+
+def test_vercel_frontend_is_not_cdn_cacheable(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("Frontend", encoding="utf-8")
+    client = TestClient(vercel_entrypoint.create_app(dist))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert vercel_entrypoint.CDN_CACHE_HEADER not in response.headers

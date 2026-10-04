@@ -1,8 +1,9 @@
 """Expose the production FastAPI app for Vercel."""
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -10,12 +11,36 @@ from fpl_analytics_engine.api import app as api_app
 
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "frontend" / "dist"
+# Snapshots only change on redeploy and Vercel keys its CDN cache by deployment,
+# so analytical API responses can be cached at the edge without going stale.
+# The targeted header leaves browser caching unchanged.
+CDN_CACHE_HEADER = "Vercel-CDN-Cache-Control"
+CDN_CACHE_CONTROL = "public, max-age=86400"
+# Team imports fetch live FPL data, so they are never cached at the edge.
+UNCACHED_API_PREFIXES = ("/api/fpl-team/",)
 
 
 def create_app(dist: Path = DIST) -> FastAPI:
     """Create the Vercel ASGI app."""
     dist = dist.resolve()
     vercel_app = FastAPI()
+
+    @vercel_app.middleware("http")
+    async def cache_api_responses(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Mark successful snapshot-backed API reads as CDN-cacheable."""
+        response = await call_next(request)
+        path = request.url.path
+        if (
+            request.method == "GET"
+            and response.status_code == 200
+            and path.startswith("/api/")
+            and not path.startswith(UNCACHED_API_PREFIXES)
+        ):
+            response.headers[CDN_CACHE_HEADER] = CDN_CACHE_CONTROL
+        return response
+
     vercel_app.mount("/api", api_app)
 
     index = (dist / "index.html").resolve()
