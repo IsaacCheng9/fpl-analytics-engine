@@ -30,8 +30,9 @@ import {
 } from "./state";
 
 // Sequential shades more-is-better metrics, diverging centres changes on zero,
-// fdr uses the fixed 1-5 rating, and none leaves context columns unshaded.
-type HeatScaleKind = "sequential" | "diverging" | "fdr" | "none";
+// and fdr uses the fixed 1-5 rating. Context columns skip heatMeta entirely
+// and stay unshaded.
+type HeatScaleKind = "sequential" | "diverging" | "fdr";
 type HeatCellOptions = {
 	lowerIsBetter?: boolean;
 	scale?: HeatScaleKind;
@@ -54,39 +55,22 @@ export const FORM_HEAT_KEYS = [
 	"window_xa90_per_million",
 	"window_xgi90_per_million",
 	"season_points_per_million",
-	"window_minutes",
-	"window_start_rate",
-	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_ownership",
 ];
 export const DEFCON_HEAT_KEYS = [
-	"window_minutes",
-	"window_games",
-	"window_defcon_hits",
 	"window_defcon_hit_rate",
 	"window_defcon",
 	"season_points_per_million",
-	"window_start_rate",
-	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_ownership",
 ];
 export const DEFCON_PROB_HEAT_KEYS = [
-	"window_minutes",
-	"games",
-	"hits",
 	"raw_rate",
 	"prob",
 	"window_defcon",
 	"season_points_per_million",
-	"window_start_rate",
-	"window_mins_per_appearance",
 	"avg_fdr",
-	"current_ownership",
 ];
 export const CLUB_HEAT_KEYS = [
-	"window_matches",
 	"window_xg_per_match",
 	"season_xg_per_match",
 	"delta_xg_per_match",
@@ -144,8 +128,8 @@ function HeatCell({
 	return <span>{text}</span>;
 }
 
-// Build the text renderer for a heat-shaded cell.
-function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
+// Build the text renderer for a numeric cell; heatMeta owns any shading.
+function heatCell<T>(opts: HeatCellOptions = {}) {
 	const format = opts.format ?? ((value: number | null) => fmtNum(value));
 	return (info: CellContext<T, unknown>) => {
 		const value = info.getValue<number | null>();
@@ -153,7 +137,7 @@ function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
 	};
 }
 
-function heatScale(range: Range, opts: HeatCellOptions): HeatScale | null {
+function heatScale(range: Range, opts: HeatCellOptions): HeatScale {
 	const lowerIsBetter = opts.lowerIsBetter ?? false;
 	switch (opts.scale ?? "sequential") {
 		case "sequential":
@@ -162,8 +146,6 @@ function heatScale(range: Range, opts: HeatCellOptions): HeatScale | null {
 			return divergingScale(range, lowerIsBetter);
 		case "fdr":
 			return FDR_SCALE;
-		case "none":
-			return null;
 	}
 }
 
@@ -181,11 +163,11 @@ function heatMeta<T>(
 	range: Range,
 	opts: HeatCellOptions = {},
 ): ColumnDef<T>["meta"] {
-	const scale = heatScale(range, opts);
-	const numericMeta = { ...meta, numeric: true };
-	return scale === null
-		? numericMeta
-		: { ...numericMeta, cellStyle: heatCellStyle<T>(scale) };
+	return {
+		...meta,
+		numeric: true,
+		cellStyle: heatCellStyle<T>(heatScale(range, opts)),
+	};
 }
 
 function buildFormMetricColumns(
@@ -217,7 +199,7 @@ function buildFormMetricColumns(
 		return {
 			accessorKey: key,
 			header,
-			cell: heatCell<FormPlayer>(ranges[key], formatter),
+			cell: heatCell<FormPlayer>(formatter),
 			meta: heatMeta<FormPlayer>(
 				{
 					tooltip,
@@ -243,7 +225,7 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 		{
 			accessorKey: "avg_fdr",
 			header: "FDR (Next 5)",
-			cell: heatCell<T>(ranges.avg_fdr, {
+			cell: heatCell<T>({
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
@@ -259,18 +241,15 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 		{
 			accessorKey: "current_ownership",
 			header: "Owned %",
-			cell: heatCell<T>(ranges.current_ownership, {
+			cell: heatCell<T>({
 				lowerIsBetter: true,
 				format: (v) => fmtPctPoints(v, 1),
 			}),
-			meta: heatMeta<T>(
-				{
-					tooltip:
-						"Current ownership percentage; a live snapshot, not point-in-time",
-				},
-				ranges.current_ownership,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip:
+					"Current ownership percentage; a live snapshot, not point-in-time",
+				numeric: true,
+			},
 		},
 	];
 }
@@ -287,39 +266,34 @@ export function buildFormColumns(
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			cell: heatCell<FormPlayer>(ranges.window_minutes, {
+			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Total minutes played across the window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Total minutes played across the window",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
 			header: "Mins Per App",
-			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
+			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<FormPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_start_rate",
 			header: "Start %",
-			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Share of window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
+			cell: heatCell<FormPlayer>({ format: fmtPct }),
+			meta: {
+				tooltip: "Share of window games the player started",
+				numeric: true,
+			},
 		},
 		...ATTACKING_METRIC_COLUMN_ORDER.filter(
 			(metric) => visibleMetrics[metric],
@@ -327,7 +301,7 @@ export function buildFormColumns(
 		{
 			accessorKey: "season_points_per_million",
 			header: "Points Per £m",
-			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
+			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 1),
 			}),
 			meta: heatMeta<FormPlayer>(
@@ -349,70 +323,60 @@ export function buildDefconColumns(
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			cell: heatCell<DefconPlayer>(ranges.window_minutes, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Total minutes played across the window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Total minutes played across the window",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
 			header: "Mins Per App",
-			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the window; 0-minute games are excluded",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_start_rate",
 			header: "Start %",
-			cell: heatCell<DefconPlayer>(ranges.window_start_rate, {
+			cell: heatCell<DefconPlayer>({
 				format: fmtPct,
 			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Share of window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Share of window games the player started",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_games",
 			header: "Games",
-			cell: heatCell<DefconPlayer>(ranges.window_games, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Eligible games in the window" },
-				ranges.window_games,
-				{ scale: "none" },
-			),
+			meta: { tooltip: "Eligible games in the window", numeric: true },
 		},
 		{
 			accessorKey: "window_defcon_hits",
 			header: "Hits",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon_hits, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Window games clearing the DefCon threshold" },
-				ranges.window_defcon_hits,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Window games clearing the DefCon threshold",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_defcon_hit_rate",
 			header: "Hit Rate",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
+			cell: heatCell<DefconPlayer>({
 				format: fmtPct,
 			}),
 			meta: heatMeta<DefconPlayer>(
@@ -423,7 +387,7 @@ export function buildDefconColumns(
 		{
 			accessorKey: "window_defcon",
 			header: "Avg DefCon",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 1),
 			}),
 			meta: heatMeta<DefconPlayer>(
@@ -437,7 +401,7 @@ export function buildDefconColumns(
 		{
 			accessorKey: "season_points_per_million",
 			header: "Points Per £m",
-			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
+			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 1),
 			}),
 			meta: heatMeta<DefconPlayer>(
@@ -459,71 +423,61 @@ export function buildDefconProbColumns(
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_minutes, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Total minutes played across the recent window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Total minutes played across the recent window",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_mins_per_appearance",
 			header: "Mins Per App",
-			cell: heatCell<DefconProbabilityPlayer>(
-				ranges.window_mins_per_appearance,
-				{ format: (v) => fmtNum(v, 0) },
-			),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the recent window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
+			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 0) }),
+			meta: {
+				tooltip:
+					"Average minutes per appearance in the recent window; 0-minute games are excluded",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "window_start_rate",
 			header: "Start %",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_start_rate, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: fmtPct,
 			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Share of recent window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Share of recent window games the player started",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "games",
 			header: "Games",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.games, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Eligible appearances up to this gameweek" },
-				ranges.games,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Eligible appearances up to this gameweek",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "hits",
 			header: "Hits",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.hits, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Appearances clearing the DefCon threshold" },
-				ranges.hits,
-				{ scale: "none" },
-			),
+			meta: {
+				tooltip: "Appearances clearing the DefCon threshold",
+				numeric: true,
+			},
 		},
 		{
 			accessorKey: "raw_rate",
 			header: "Raw Rate",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.raw_rate, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: fmtPct,
 			}),
 			meta: heatMeta<DefconProbabilityPlayer>(
@@ -534,7 +488,7 @@ export function buildDefconProbColumns(
 		{
 			accessorKey: "prob",
 			header: "P(Hit | 60+ Mins)",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
+			cell: heatCell<DefconProbabilityPlayer>({ format: fmtPct }),
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{
 					tooltip:
@@ -546,7 +500,7 @@ export function buildDefconProbColumns(
 		{
 			accessorKey: "window_defcon",
 			header: "Avg DefCon",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_defcon, {
+			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 1),
 			}),
 			meta: heatMeta<DefconProbabilityPlayer>(
@@ -560,10 +514,7 @@ export function buildDefconProbColumns(
 		{
 			accessorKey: "season_points_per_million",
 			header: "Points Per £m",
-			cell: heatCell<DefconProbabilityPlayer>(
-				ranges.season_points_per_million,
-				{ format: (v) => fmtNum(v, 1) },
-			),
+			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 1) }),
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Total season points divided by price" },
 				ranges.season_points_per_million,
@@ -594,7 +545,7 @@ export function buildClubColumns(
 				return value == null ? null : defensive ? -value : value;
 			},
 			header: `${label} ${metric} +/- ${total ? "Total" : "Per Match"}`,
-			cell: heatCell<ClubForm>(range, { format: fmtDelta }),
+			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
 				{
 					tooltip: `${metric} over/underperformance: ${defensive ? "xGC minus goals conceded" : "goals scored minus xG"}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${defensive ? "fewer goals conceded" : "more goals scored"} than expected; negative means underperformance. Descriptive, not a prediction.`,
@@ -610,19 +561,15 @@ export function buildClubColumns(
 		{
 			accessorKey: "window_matches",
 			header: "Matches",
-			cell: heatCell<ClubForm>(ranges.window_matches, {
+			cell: heatCell<ClubForm>({
 				format: (v) => fmtNum(v, 0),
 			}),
-			meta: heatMeta<ClubForm>(
-				{ tooltip: "Club matches in the recent window" },
-				ranges.window_matches,
-				{ scale: "none" },
-			),
+			meta: { tooltip: "Club matches in the recent window", numeric: true },
 		},
 		{
 			accessorKey: "window_xg_per_match",
 			header: "Window xG",
-			cell: heatCell<ClubForm>(ranges.window_xg_per_match),
+			cell: heatCell<ClubForm>(),
 			meta: heatMeta<ClubForm>(
 				{ tooltip: "Expected goals per match over the recent window" },
 				ranges.window_xg_per_match,
@@ -631,7 +578,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "season_xg_per_match",
 			header: "Season xG",
-			cell: heatCell<ClubForm>(ranges.season_xg_per_match),
+			cell: heatCell<ClubForm>(),
 			meta: heatMeta<ClubForm>(
 				{ tooltip: "Expected goals per match, season to date" },
 				ranges.season_xg_per_match,
@@ -640,7 +587,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "delta_xg_per_match",
 			header: "Delta xG",
-			cell: heatCell<ClubForm>(ranges.delta_xg_per_match, {
+			cell: heatCell<ClubForm>({
 				format: fmtDelta,
 			}),
 			meta: heatMeta<ClubForm>(
@@ -661,7 +608,7 @@ export function buildClubColumns(
 					{
 						accessorKey: "window_goals_for_per_match",
 						header: "Window Goals",
-						cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
+						cell: heatCell<ClubForm>(),
 						meta: heatMeta<ClubForm>(
 							{
 								tooltip: "Goals scored per match over the recent window",
@@ -672,7 +619,7 @@ export function buildClubColumns(
 					{
 						accessorKey: "delta_goals_for_per_match",
 						header: "Delta Goals",
-						cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
+						cell: heatCell<ClubForm>({
 							format: fmtDelta,
 						}),
 						meta: heatMeta<ClubForm>(
@@ -689,7 +636,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "attack_form",
 			header: "Attack Form",
-			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
+			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
 				{
 					tooltip: "Recent xG per match improvement versus the season baseline",
@@ -701,7 +648,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "window_xgc_per_match",
 			header: "Window xGC",
-			cell: heatCell<ClubForm>(ranges.window_xgc_per_match, {
+			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
 			}),
 			meta: heatMeta<ClubForm>(
@@ -715,7 +662,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "season_xgc_per_match",
 			header: "Season xGC",
-			cell: heatCell<ClubForm>(ranges.season_xgc_per_match, {
+			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
 			}),
 			meta: heatMeta<ClubForm>(
@@ -727,7 +674,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "delta_xgc_per_match",
 			header: "Delta xGC",
-			cell: heatCell<ClubForm>(ranges.delta_xgc_per_match, {
+			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
 				format: fmtDelta,
 			}),
@@ -749,7 +696,7 @@ export function buildClubColumns(
 					{
 						accessorKey: "window_goals_against_per_match",
 						header: "Window Goals Conceded",
-						cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
+						cell: heatCell<ClubForm>({
 							lowerIsBetter: true,
 						}),
 						meta: heatMeta<ClubForm>(
@@ -763,7 +710,7 @@ export function buildClubColumns(
 					{
 						accessorKey: "delta_goals_against_per_match",
 						header: "Delta Goals Conceded",
-						cell: heatCell<ClubForm>(ranges.delta_goals_against_per_match, {
+						cell: heatCell<ClubForm>({
 							lowerIsBetter: true,
 							format: fmtDelta,
 						}),
@@ -781,7 +728,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "defence_form",
 			header: "Defence Form",
-			cell: heatCell<ClubForm>(ranges.defence_form, { format: fmtDelta }),
+			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
 				{
 					tooltip:
@@ -794,7 +741,7 @@ export function buildClubColumns(
 		{
 			accessorKey: "avg_fdr",
 			header: "FDR (Next 5)",
-			cell: heatCell<ClubForm>(ranges.avg_fdr, {
+			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
