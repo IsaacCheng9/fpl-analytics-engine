@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { fetchMeta, fetchPlayerDetail, type PlayerGameweek } from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
+import { rollingChartRows } from "../lib/playerTrends";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 
@@ -22,12 +23,10 @@ function Chart({
 	data,
 	dataKey,
 	title,
-	domain,
 }: {
 	data: PlayerGameweek[];
 	dataKey: keyof PlayerGameweek;
 	title: string;
-	domain?: [number, number];
 }) {
 	return (
 		<div>
@@ -38,18 +37,29 @@ function Chart({
 					margin={{ top: 4, right: 8, bottom: 4, left: -8 }}
 				>
 					<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-					<XAxis dataKey="round" tick={{ fontSize: 11 }} />
-					<YAxis tick={{ fontSize: 11 }} domain={domain} />
+					{/* A numeric axis keeps blank gameweeks as visible gaps. */}
+					<XAxis
+						dataKey="round"
+						type="number"
+						domain={["dataMin", "dataMax"]}
+						allowDecimals={false}
+						tick={{ fontSize: 11 }}
+					/>
+					<YAxis tick={{ fontSize: 11 }} />
 					<Tooltip
+						labelFormatter={(round) => `GW ${round}`}
 						formatter={(value) =>
 							typeof value === "number" ? value.toFixed(2) : value
 						}
 					/>
+					{/* Straight segments avoid implying trends between gameweeks. */}
 					<Line
-						type="monotone"
+						type="linear"
 						dataKey={dataKey}
+						name="Rolling"
 						stroke="#2563eb"
-						dot={false}
+						dot={{ r: 2.5, fill: "#2563eb" }}
+						activeDot={{ r: 4 }}
 						connectNulls
 						isAnimationActive={false}
 					/>
@@ -102,6 +112,7 @@ export function PlayerPanel({
 	)
 		.sort()
 		.reverse();
+	const chartRows = detail ? rollingChartRows(detail.gameweeks) : [];
 
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
@@ -185,22 +196,22 @@ export function PlayerPanel({
 					<>
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<Chart
-								data={detail.gameweeks}
+								data={chartRows}
 								dataKey="rolling_xg90"
 								title="Rolling xG Per 90"
 							/>
 							<Chart
-								data={detail.gameweeks}
+								data={chartRows}
 								dataKey="rolling_xa90"
 								title="Rolling xA Per 90"
 							/>
 							<Chart
-								data={detail.gameweeks}
+								data={chartRows}
 								dataKey="rolling_xgi90"
 								title="Rolling xGI Per 90"
 							/>
 							<Chart
-								data={detail.gameweeks}
+								data={chartRows}
 								dataKey="rolling_defcon"
 								title="Rolling DefCon (Mean Per Game)"
 							/>
