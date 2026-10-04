@@ -4,6 +4,8 @@
 [![Test](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml)
 [![Frontend](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml)
 
+**Live dashboard:** [fpl-analytics-engine.vercel.app](https://fpl-analytics-engine.vercel.app)
+
 A Fantasy Premier League analytics engine that surfaces players whose recent
 underlying output has pulled away from their season baseline, and estimates how
 likely each player is to earn a defensive-contribution point. Every metric is
@@ -365,7 +367,8 @@ The refresh command archives the current live FPL season into the detected
 `data/<season>/` folder, backfills historical seasons from the vaastav archive,
 canonicalises the current season's `enriched.parquet`, runs data-health
 validation, and finishes with the real-data smoke check. Use it before pushing
-updated `data/` snapshots during the season.
+updated `data/` snapshots during the season. The deployed dashboard serves the
+committed snapshots, so a refresh goes live on the next deployment.
 
 Refreshes run against a temporary copy and publish only after every selected
 step passes. Failed downloads, enrichment, validation or smoke checks leave the
@@ -459,14 +462,6 @@ bun run dev
 ```
 
 The dashboard is then served at [http://localhost:5173](http://localhost:5173).
-
-### Deploying To Vercel
-
-Import the repository into Vercel with the project root set to the repository
-root. The checked-in `vercel.json` builds the dashboard, and one FastAPI
-deployment serves it alongside the API under `/api`. The deployed API reads the
-committed `data/` snapshots, so refreshed data reaches the dashboard on the next
-deployment.
 
 ## API Endpoints
 
