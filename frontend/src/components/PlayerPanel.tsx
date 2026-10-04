@@ -36,7 +36,19 @@ function Chart({
 }) {
 	return (
 		<div>
-			<h4 className="mb-1 font-medium text-sm text-zinc-700">{title}</h4>
+			<div className="mb-1 flex items-baseline justify-between gap-2">
+				<h4 className="font-medium text-sm text-zinc-700">{title}</h4>
+				{/* Label the reference line outside the plot so data never covers it. */}
+				{seasonAverage == null ? null : (
+					<span className="flex items-center gap-1.5 text-xs text-zinc-500">
+						<span
+							aria-hidden="true"
+							className="w-4 border-zinc-400 border-t border-dashed"
+						/>
+						Season {seasonAverage.toFixed(2)}
+					</span>
+				)}
+			</div>
 			<ResponsiveContainer width="100%" height={180}>
 				<LineChart
 					data={data}
@@ -64,12 +76,6 @@ function Chart({
 							stroke="#a1a1aa"
 							strokeDasharray="4 4"
 							ifOverflow="extendDomain"
-							label={{
-								value: `Season ${seasonAverage.toFixed(2)}`,
-								position: "insideTopRight",
-								fontSize: 10,
-								fill: "#71717a",
-							}}
 						/>
 					)}
 					{/* Straight segments avoid implying trends between gameweeks. */}

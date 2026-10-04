@@ -544,13 +544,6 @@ function buildCompareRows(
 		right.defconProb?.prob,
 		{ format: fmtPct },
 	);
-	addNumber(
-		"DefCon",
-		"Probability Std",
-		left.defconProb?.prob_std,
-		right.defconProb?.prob_std,
-		{ lowerIsBetter: true },
-	);
 
 	addNumber(
 		"Club Form",
