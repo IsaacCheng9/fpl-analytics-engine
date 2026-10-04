@@ -349,3 +349,59 @@ test("retries a failed player request without changing the selection", async () 
 	await screen.findByRole("heading", { name: `${previousSeason} by Gameweek` });
 	expect(screen.getByLabelText("Season")).toHaveValue(previousSeason);
 });
+
+test("labels each chart's season average beside its title", async () => {
+	vi.mocked(fetch).mockImplementation(async (input) => {
+		const response = await mockApiFetch(input);
+		if (new URL(String(input), "http://test").pathname === "/api/") {
+			return response;
+		}
+		const detail = (await response.json()) as PlayerDetail;
+		const gameweek = {
+			round: 1,
+			kickoff_time: null,
+			minutes: 90,
+			total_points: 2,
+			price: 10,
+			expected_goals: 0.3,
+			expected_assists: 0.2,
+			expected_goal_involvements: 0.5,
+			defensive_contribution: 6,
+			defcon_hit: false,
+			rolling_xg90: 0.3,
+			rolling_xa90: 0.2,
+			rolling_xgi90: 0.5,
+			rolling_defcon: 6,
+		};
+		return new Response(
+			JSON.stringify({
+				...detail,
+				gameweeks: [
+					gameweek,
+					{ ...gameweek, round: 2, defensive_contribution: 10 },
+				],
+				seasons: [
+					{
+						season: currentSeason,
+						games: 2,
+						minutes: 180,
+						points: 4,
+						xg90: 0.32,
+						xa90: 0.21,
+						xgi90: 0.53,
+						points_per_million: 0.4,
+						defcon_hit_rate: 0,
+					},
+				],
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	});
+
+	renderPanel();
+
+	expect(await screen.findByText("Season 0.32")).toBeInTheDocument();
+	expect(screen.getByText("Season 0.21")).toBeInTheDocument();
+	expect(screen.getByText("Season 0.53")).toBeInTheDocument();
+	expect(screen.getByText("Season 8.00")).toBeInTheDocument();
+});
