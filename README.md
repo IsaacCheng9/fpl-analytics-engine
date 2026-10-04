@@ -218,6 +218,18 @@ next-five-gameweek FDR. Actual goals and goals conceded are available as
 optional context, but expected data stays the default signal because finishing
 and concession outcomes are noisier.
 
+Window and season overperformance columns show both total and per-match
+differences. Attacking overperformance is goals scored minus xG; defensive
+overperformance is xGC minus goals conceded. Positive values indicate more
+goals scored or fewer conceded than expected, while negative values indicate
+underperformance. These describe realised outcomes, not a predicted uplift.
+
+The collapsible Columns panel controls expected metrics, match counts, FDR,
+actual goals, form summaries and separate total/per-match overperformance
+groups. By default, the table shows Club, Matches, window/season/delta xG and
+xGC, and FDR. Column selections persist in shareable URLs; Reset Columns
+restores this compact view.
+
 #### Validation Backtest Results (2025-26 Season)
 
 The corrected validation compares a point-in-time season-to-date baseline with
