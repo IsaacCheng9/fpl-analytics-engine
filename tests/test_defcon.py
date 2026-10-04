@@ -109,6 +109,21 @@ def test_flag_defcon_probabilities_filters_and_ranks() -> None:
     assert top["element"][0] == 2
 
 
+def test_flag_defcon_probabilities_breaks_ties_by_games_then_element() -> None:
+    probs = pl.DataFrame(
+        {
+            "element": [3, 1, 2],
+            "position": ["DEF"] * 3,
+            "games": [2, 4, 4],
+            "prob": [0.4, 0.4, 0.4],
+        }
+    )
+
+    ranked = defcon.flag_defcon_probabilities(probs)
+
+    assert ranked["element"].to_list() == [1, 2, 3]
+
+
 def _count_game(
     element: int,
     round_: int,

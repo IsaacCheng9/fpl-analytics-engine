@@ -275,7 +275,7 @@ def compute_club_form_table(
             pl.col("delta_xg_per_match").alias("attack_form"),
             (-pl.col("delta_xgc_per_match")).alias("defence_form"),
         )
-        .sort("attack_form", descending=True, nulls_last=True)
+        .sort("attack_form", "team_name", descending=[True, False], nulls_last=True)
     )
 
 

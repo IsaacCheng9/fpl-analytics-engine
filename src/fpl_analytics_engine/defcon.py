@@ -191,7 +191,9 @@ def flag_defcon_probabilities(
     ranked = probabilities.filter(pl.col("games") >= min_games)
     if position is not None:
         ranked = ranked.filter(pl.col("position") == position)
-    ranked = ranked.sort("prob", descending=True, nulls_last=True)
+    ranked = ranked.sort(
+        "prob", "games", "element", descending=[True, True, False], nulls_last=True
+    )
     if top_k is not None:
         ranked = ranked.head(top_k)
     return ranked

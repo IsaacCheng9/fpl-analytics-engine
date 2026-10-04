@@ -149,6 +149,16 @@ def test_compute_club_form_table_compares_window_to_baseline() -> None:
     assert out["season_concession_delta"] == pytest.approx(0.0)
 
 
+def test_club_form_table_breaks_attack_form_ties_by_club_name() -> None:
+    rows = _fixture_rows(1, 1.0, 1.0)
+
+    # A window covering the whole season gives every club zero attack form.
+    out = club.compute_club_form_table(pl.DataFrame(rows), as_of_gw=1, window=2)
+
+    assert out["attack_form"].to_list() == [0.0, 0.0]
+    assert out["team_name"].to_list() == ["Arsenal", "Chelsea"]
+
+
 @pytest.mark.parametrize("rounds", [(26, 27, 28, 29, 30, 30), (26, 28, 29)])
 def test_club_window_uses_gameweeks_including_doubles_and_blanks(rounds) -> None:
     rows = _fixture_rows(25, 10.0, 10.0) + _fixture_rows(31, 100.0, 100.0)
