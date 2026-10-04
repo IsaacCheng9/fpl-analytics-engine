@@ -219,15 +219,13 @@ or modifying data:
 ```bash
 uv run --frozen python - <<'PY'
 import json
-from pathlib import Path
 from fastapi.testclient import TestClient
-from fpl_analytics_engine import api, data
+from fpl_analytics_engine import api
 
-history = data.load_enriched(Path("data/2025-26"))
-api.app.dependency_overrides[api.get_history] = lambda: history
 with TestClient(api.app) as client:
     response = client.get(
-        "/players/defcon-probability-validation?min_minutes=60&bins=10"
+        "/players/defcon-probability-validation"
+        "?season=2025-26&min_minutes=60&bins=10"
     )
     response.raise_for_status()
     print(json.dumps(response.json(), indent=2))
@@ -486,9 +484,9 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 | `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes` |
+| `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes`, `season` |
 | `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /clubs/form-validation` | Backtest a season baseline versus baseline plus recent club form | `window`, `horizon`, `min_train_rows` |
+| `GET /clubs/form-validation` | Backtest a season baseline versus baseline plus recent club form | `window`, `horizon`, `min_train_rows`, `season` |
 | `GET /players/{element}` | Point-in-time player gameweeks and cross-season summaries | Path: `element`; query: `window`, `season`, `as_of_gw` |
 
 The analytical table endpoints accept `as_of_gw` to evaluate the point-in-time
@@ -509,7 +507,9 @@ table's as-of cutoff.
 Before GW1, current-season analytical and team-import endpoints return HTTP 409
 rather than silently serving the previous season. Explicit historical player
 detail requests remain available when the live player snapshot supplies a
-matching stable `code`. In the deployed app, prefix these routes
+matching stable `code`. The two validation endpoints accept an archived
+`season` (2025-26 or later, since earlier archives lack DefCon and per-fixture
+club data) and otherwise backtest the live season. In the deployed app, prefix these routes
 with `/api` (for example, `/api/players/form`).
 
 ### Current Squad Context
