@@ -48,8 +48,8 @@ where the current squad looks weak for the next gameweek.
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
   Form, and Model Evidence views, URL-backed controls, active filter chips,
-  presets, heat-shaded metrics, sticky player context columns, and a collapsible
-  form-versus-baseline scatter plot in Attacking Form
+  presets, colour-coded signal columns, sticky player context columns, and a
+  collapsible form-versus-baseline scatter plot in Attacking Form
 - **Table pagination** – shows 25 rows per page in the player and club tables,
   with 10, 25, 50, 100, or all rows available. Sorting and filtering apply to the
   full result set, and the scatter plot retains all matching players
@@ -62,8 +62,8 @@ where the current squad looks weak for the next gameweek.
   next-gameweek squad inspection view with next fixture, FDR, minutes, threat,
   `P(Hit | 60+ Mins)`, ownership, and transparent risk/hold flags
 - **Player detail view** – click any table row to inspect a player's
-  selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
-  and cross-season history keyed by stable FPL `code`
+  selected-season gameweeks, rolling xG/xA/xGI per 90 and DefCon counts against
+  their season averages, and cross-season history keyed by stable FPL `code`
 - **Club form context** – compares each club's recent attacking and defensive
   output with its season baseline, then shows that form next to upcoming FDR
 
@@ -109,6 +109,13 @@ rolling player detail, and club form. Double gameweeks include every fixture;
 blanks never pull older fixtures into the window. Game and match counts remain
 fixture counts, and per-match rates use the number of fixtures actually present.
 
+The dashboard's default window is one gameweek shorter than the gameweeks
+played, capped at five, so recent form still differs from the season baseline
+early in the season. A window covering every gameweek played makes the two
+figures identical and every delta zero, and the dashboard flags this when such a
+window is chosen. DefCon Probability's minimum-games default follows the same
+rule.
+
 Expected-stat rates use only minutes with an available observation for that
 statistic. For 2022-23, this excludes GW1–15 from expected-stat totals and
 denominators without removing those games from minutes or points totals. Rates
@@ -138,6 +145,18 @@ solver: it shows the current squad as one list, with the current next fixture
 and FDR, recent and season threat, minutes, start rate, `P(Hit | 60+ Mins)`,
 ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
 `Low Threat`, `Rising Threat`, `DefCon Upside`, and `Good Hold`.
+
+### Table Colours
+
+Shading marks signal columns only. Changes, form scores, and over- or
+underperformance use a red–white–green scale centred on zero: green is
+favourable, red is unfavourable, and values near zero stay white. For goals
+conceded and xGC, lower values count as favourable. Columns where more is
+better, such as xGI per 90 or `P(Hit | 60+ Mins)`, use a single green that
+strengthens with the value. These scales use the league-wide results, so a
+player's colour does not change as filters narrow the table. FDR uses its fixed
+1–5 rating with 3 as neutral, while context columns – price, ownership, playing
+time, games, and hit counts – stay unshaded.
 
 ### Defensive Contribution (DefCon)
 
@@ -451,6 +470,11 @@ The repository includes a Vercel configuration for a single-project deployment:
   paths
 - `vercel.json` builds the frontend and sets `PYTHONPATH=src` so Vercel's
   Python runtime can import the packaged app from the `src/` layout
+- `vercel.json` also runs the API in London (`lhr1`) and gives the
+  content-hashed frontend assets a long-lived immutable cache header
+- Successful API reads are cached on Vercel's CDN for a day. Vercel keys that
+  cache by deployment, so refreshed snapshots appear on the next deploy without
+  a manual purge. FPL team imports fetch live data and are never cached
 - `data/` is committed so the deployed API can read the same Parquet snapshots
   as local development
 
