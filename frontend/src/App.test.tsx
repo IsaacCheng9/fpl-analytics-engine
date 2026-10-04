@@ -2215,7 +2215,13 @@ function mockEarlySeasonFetch(
 }
 
 test("limits the default window and min games to gameweeks played", async () => {
-	mockEarlySeasonFetch();
+	mockEarlySeasonFetch((url) =>
+		url.includes("/players/defcon-probability?")
+			? probRows.map((row) =>
+					row.web_name === "Saka" ? { ...row, games: 2 } : row,
+				)
+			: undefined,
+	);
 
 	render(withProviders(<App />));
 
@@ -2236,17 +2242,16 @@ test("limits the default window and min games to gameweeks played", async () => 
 
 	fireEvent.click(screen.getByRole("button", { name: "DefCon Probability" }));
 
+	expect(await screen.findByLabelText("Min Games")).toHaveValue(3);
 	await waitFor(() => {
-		const calls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
 		expect(
-			calls.some(
-				(url) =>
-					url.includes("/players/defcon-probability?") &&
-					url.includes("min_games=3"),
-			),
-		).toBe(true);
+			within(screen.getByRole("table")).getByText("Mbeumo"),
+		).toBeInTheDocument();
 	});
-	expect(screen.getByLabelText("Min Games")).toHaveValue(3);
+	// Saka's two games fall below the automatic three-game floor.
+	expect(
+		within(screen.getByRole("table")).queryByText("Saka"),
+	).not.toBeInTheDocument();
 	expect(
 		new URLSearchParams(window.location.search).get("min_games"),
 	).toBeNull();
@@ -2286,4 +2291,45 @@ test("explains an empty DefCon probability table when min games exceeds gameweek
 			"Min Games 6 exceeds the 4 gameweeks played up to GW4. Lower it to see players.",
 		),
 	).not.toHaveLength(0);
+});
+
+test("fetches each player table once and filters position in the browser", async () => {
+	render(withProviders(<App />));
+	const table = await screen.findByRole("table");
+	await waitFor(() => {
+		expect(within(table).getByText("Haaland")).toBeInTheDocument();
+	});
+	const formCalls = () =>
+		vi
+			.mocked(fetch)
+			.mock.calls.map(([input]) => String(input))
+			.filter((url) => url.includes("/players/form"));
+	expect(formCalls()).toHaveLength(1);
+	expect(formCalls()[0]).not.toContain("position=");
+
+	fireEvent.change(screen.getByLabelText("Position"), {
+		target: { value: "FWD" },
+	});
+
+	await waitFor(() => {
+		expect(within(table).queryByText("Mbeumo")).not.toBeInTheDocument();
+	});
+	expect(within(table).getByText("Haaland")).toBeInTheDocument();
+	expect(formCalls()).toHaveLength(1);
+});
+
+test("restores dashboard state and the team ID draft on back navigation", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	window.history.replaceState(null, "", "/?tab=defcon&window=4&fpl_team=123");
+	fireEvent(window, new PopStateEvent("popstate"));
+
+	expect(
+		await screen.findByRole("button", { name: "DefCon Form" }),
+	).toHaveClass("bg-zinc-900");
+	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(4);
+	expect(screen.getByLabelText("FPL Team ID")).toHaveValue(123);
 });

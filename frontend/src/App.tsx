@@ -1,11 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import type { Cell, CellContext, ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import {
-	type ClubForm,
-	type DefconPlayer,
-	type DefconProbabilityPlayer,
-	type FormPlayer,
 	type FplTeamPick,
 	fetchClubForm,
 	fetchClubFormValidation,
@@ -16,1944 +12,102 @@ import {
 	fetchForm,
 	fetchFplTeam,
 	fetchMeta,
-	type Meta,
 	type Position,
 } from "./api";
+import {
+	buildClubColumns,
+	buildDefconColumns,
+	buildDefconProbColumns,
+	buildFormColumns,
+	CLUB_HEAT_KEYS,
+	computeRanges,
+	DEFCON_HEAT_KEYS,
+	DEFCON_PROB_HEAT_KEYS,
+	FORM_HEAT_KEYS,
+} from "./columns";
+import { ActiveFilterChips } from "./components/ActiveFilterChips";
+import { AttackingThreatFilterFields } from "./components/AttackingThreatFilterFields";
+import { ClubColumnChooser } from "./components/ClubColumnChooser";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
 import { ModelEvidence } from "./components/ModelEvidence";
 import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
+import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
-import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
+import { TransferFilterFields } from "./components/TransferFilterFields";
+import { WindowSizeControl } from "./components/WindowSizeControl";
 import {
-	divergingScale,
-	FDR_SCALE,
-	type HeatScale,
-	heatColour,
-	type Range,
-	sequentialScale,
-} from "./lib/heat";
-
-type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
-type AttackingMetric = "xg" | "xa" | "xgi";
-type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
-type AttackingMetricColumn = "window" | "season" | "delta" | "value";
-type AttackingThreatPeriod = "window" | "season";
-type OwnershipFilter = "all" | "owned" | "not-owned";
-type AttackingThreatFilters = Record<
-	AttackingMetric,
-	Record<AttackingThreatPeriod, number | null>
->;
-type ClubColumnGroup =
-	| "matches"
-	| "xg"
-	| "xgc"
-	| "fdr"
-	| "form"
-	| "goals"
-	| "ga"
-	| "finishing_total"
-	| "finishing_rate"
-	| "concession_total"
-	| "concession_rate";
-type ClubColumnVisibility = Record<ClubColumnGroup, boolean>;
-type TransferFilters = {
-	maxPrice: number | null;
-	maxFdr: number | null;
-	minStartPct: number | null;
-	minMinsPerAppearance: number | null;
-	minOwnership: number | null;
-	maxOwnership: number | null;
-};
-type TransferFilterRow = {
-	price?: number | null;
-	avg_fdr?: number | null;
-	window_start_rate?: number | null;
-	window_mins_per_appearance?: number | null;
-	current_ownership?: number | null;
-};
-type ShortlistablePlayer = {
-	element: number;
-	web_name: string;
-};
-type ActiveFilterChip = {
-	id: string;
-	label: string;
-	onClear: () => void;
-};
-type FilterPreset = "nailed" | "value" | "differential" | "fixture";
-// Sequential shades more-is-better metrics, diverging centres changes on zero,
-// fdr uses the fixed 1-5 rating, and none leaves context columns unshaded.
-type HeatScaleKind = "sequential" | "diverging" | "fdr" | "none";
-type HeatCellOptions = {
-	lowerIsBetter?: boolean;
-	scale?: HeatScaleKind;
-	format?: (value: number | null) => string;
-};
-
-const TAB_LABELS: Record<Tab, string> = {
-	form: "Attacking Form",
-	defcon: "DefCon Form",
-	defconProb: "DefCon Probability",
-	clubs: "Club Form",
-	evidence: "Model Evidence",
-};
-
-function formatDeadline(deadline: string | null): string {
-	if (deadline === null) {
-		return "To Be Confirmed";
-	}
-	return new Intl.DateTimeFormat("en-GB", {
-		weekday: "long",
-		day: "numeric",
-		month: "long",
-		hour: "2-digit",
-		minute: "2-digit",
-		timeZone: "Europe/London",
-		timeZoneName: "short",
-	}).format(new Date(deadline));
-}
-
-function SeasonStatus({
-	meta,
-	state,
-}: {
-	meta?: Meta;
-	state: "loading" | "error" | "preseason";
-}) {
-	const title =
-		state === "loading"
-			? "Checking The Live Season"
-			: state === "error"
-				? "Season Status Unavailable"
-				: "Waiting For GW1 Data";
-	const description =
-		state === "loading"
-			? "Loading the current FPL season metadata."
-			: state === "error"
-				? "The API could not report the current season. Try again after the service is available."
-				: "The new FPL season is live and its players and fixtures are archived. Current-season form and DefCon analytics will appear after GW1 is complete and the next data refresh has run.";
-
-	return (
-		<div className="min-h-screen bg-zinc-50 text-zinc-900">
-			<div className="app-shell mx-auto px-6 py-8">
-				<header className="mb-8">
-					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
-					<p className="mt-1 text-sm text-zinc-500">
-						Point-in-time transfer research for the {meta?.season ?? "live"}{" "}
-						season.
-					</p>
-				</header>
-				<section
-					aria-labelledby="season-status-title"
-					className="border-zinc-200 border-y bg-white py-8"
-				>
-					<div className="grid gap-6 px-1 md:grid-cols-[minmax(0,1fr)_18rem] md:items-end">
-						<div>
-							<p className="mb-2 font-medium text-emerald-700 text-sm">
-								{meta?.season ?? "Live Season"}
-							</p>
-							<h2
-								id="season-status-title"
-								className="font-semibold text-2xl text-zinc-900"
-							>
-								{title}
-							</h2>
-							<p className="mt-3 max-w-2xl text-sm text-zinc-600 leading-6">
-								{description}
-							</p>
-						</div>
-						{state === "preseason" ? (
-							<div className="border-zinc-200 border-t pt-5 md:border-t-0 md:border-l md:pt-0 md:pl-6">
-								<p className="font-medium text-xs text-zinc-500 uppercase">
-									Next Deadline
-								</p>
-								<p className="mt-2 font-medium text-zinc-900">
-									{formatDeadline(meta?.next_deadline ?? null)}
-								</p>
-								<p className="mt-1 text-sm text-zinc-500">Gameweek 1</p>
-							</div>
-						) : null}
-					</div>
-				</section>
-			</div>
-		</div>
-	);
-}
-const TABS: Tab[] = ["form", "defcon", "defconProb", "clubs", "evidence"];
-const POSITIONS: Position[] = ["GK", "DEF", "MID", "FWD"];
-const WINDOW_MIN = 2;
-const WINDOW_MAX = 20;
-const DEFAULT_TAB: Tab = "form";
-const DEFAULT_PLAYER_SEARCH = "";
-const DEFAULT_TEAM_FILTER = "";
-// Upper bounds for the automatic window and min-games defaults, which shrink
-// early in the season so recent form never covers every gameweek played.
-const DEFAULT_WINDOW_SIZE = 5;
-const DEFAULT_POSITION: Position | "" = "";
-const DEFAULT_MIN_MINUTES = 180;
-const DEFAULT_MIN_HIT_RATE = 0;
-const DEFAULT_MIN_GAMES = 5;
-const FORM_MIN_DELTA_FLOOR = -1000;
-const DEFAULT_AS_OF_GW: number | null = null;
-const DEFAULT_SELECTED_ELEMENT: number | null = null;
-const DEFAULT_PLAYER_WINDOW = 5;
-const DEFAULT_PLAYER_SEASON: string | null = null;
-const DEFAULT_FPL_TEAM_ID: number | null = null;
-const DEFAULT_OWNERSHIP_FILTER: OwnershipFilter = "all";
-const DEFAULT_SHOW_SQUAD_VIEW = false;
-const DEFAULT_COMPARE_OPEN = false;
-const DEFAULT_COMPARE_ELEMENT: number | null = null;
-const DEFAULT_COMPARE_WINDOW = DEFAULT_WINDOW_SIZE;
-const DEFAULT_COMPARE_AS_OF_GW: number | null = null;
-const DEFAULT_TRANSFER_FILTERS: TransferFilters = {
-	maxPrice: null,
-	maxFdr: null,
-	minStartPct: null,
-	minMinsPerAppearance: null,
-	minOwnership: null,
-	maxOwnership: null,
-};
-const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
-const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
-const ATTACKING_METRIC_COLUMN_ORDER: AttackingMetric[] = ["xgi", "xg", "xa"];
-const ATTACKING_THREAT_PERIODS: AttackingThreatPeriod[] = ["window", "season"];
-const ATTACKING_METRIC_GROUP_LABELS: Record<AttackingMetricColumn, string> = {
-	window: "Window",
-	season: "Season",
-	delta: "Delta",
-	value: "",
-};
-const ATTACKING_METRIC_LABELS: Record<AttackingMetric, string> = {
-	xg: "xG",
-	xa: "xA",
-	xgi: "xGI",
-};
-const ATTACKING_METRIC_KEYS: Record<
-	AttackingMetric,
-	Record<AttackingMetricColumn, keyof FormPlayer & string>
-> = {
-	xg: {
-		window: "window_xg90",
-		season: "season_xg90",
-		delta: "delta_xg90",
-		value: "window_xg90_per_million",
-	},
-	xa: {
-		window: "window_xa90",
-		season: "season_xa90",
-		delta: "delta_xa90",
-		value: "window_xa90_per_million",
-	},
-	xgi: {
-		window: "window_xgi90",
-		season: "season_xgi90",
-		delta: "delta_xgi90",
-		value: "window_xgi90_per_million",
-	},
-};
-const ATTACKING_THREAT_FILTER_KEYS: Record<
-	AttackingMetric,
-	Record<AttackingThreatPeriod, keyof FormPlayer & string>
-> = {
-	xg: {
-		window: "window_xg90",
-		season: "season_xg90",
-	},
-	xa: {
-		window: "window_xa90",
-		season: "season_xa90",
-	},
-	xgi: {
-		window: "window_xgi90",
-		season: "season_xgi90",
-	},
-};
-const ATTACKING_THREAT_QUERY_KEYS: Record<
-	AttackingMetric,
-	Record<AttackingThreatPeriod, string>
-> = {
-	xg: {
-		window: "min_window_xg90",
-		season: "min_season_xg90",
-	},
-	xa: {
-		window: "min_window_xa90",
-		season: "min_season_xa90",
-	},
-	xgi: {
-		window: "min_window_xgi90",
-		season: "min_season_xgi90",
-	},
-};
-const ATTACKING_THREAT_PERIOD_LABELS: Record<AttackingThreatPeriod, string> = {
-	window: "Window",
-	season: "Season",
-};
-const ATTACKING_METRIC_NOUNS: Record<AttackingMetric, string> = {
-	xg: "goals",
-	xa: "assists",
-	xgi: "goal involvements",
-};
-const ATTACKING_METRIC_STYLES: Record<AttackingMetric, { header: string }> = {
-	xg: {
-		header: "bg-emerald-100/80",
-	},
-	xa: {
-		header: "bg-amber-100/80",
-	},
-	xgi: {
-		header: "bg-indigo-100/80",
-	},
-};
-const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {
-	xg: true,
-	xa: false,
-	xgi: true,
-};
-const DEFAULT_ATTACKING_THREAT_FILTERS: AttackingThreatFilters = {
-	xg: { window: null, season: null },
-	xa: { window: null, season: null },
-	xgi: { window: null, season: null },
-};
-const CLUB_COLUMN_GROUPS: ClubColumnGroup[] = [
-	"matches",
-	"xg",
-	"xgc",
-	"fdr",
-	"form",
-	"goals",
-	"ga",
-	"finishing_total",
-	"finishing_rate",
-	"concession_total",
-	"concession_rate",
-];
-const CLUB_COLUMN_LABELS: Record<ClubColumnGroup, string> = {
-	matches: "Matches",
-	xg: "xG",
-	xgc: "xGC",
-	fdr: "FDR",
-	form: "Form Summaries",
-	goals: "Goals",
-	ga: "Goals Conceded",
-	finishing_total: "xG +/- Totals",
-	finishing_rate: "xG +/- Per Match",
-	concession_total: "xGC +/- Totals",
-	concession_rate: "xGC +/- Per Match",
-};
-const DEFAULT_CLUB_COLUMNS: ClubColumnVisibility = {
-	matches: true,
-	xg: true,
-	xgc: true,
-	fdr: true,
-	form: false,
-	goals: false,
-	ga: false,
-	finishing_total: false,
-	finishing_rate: false,
-	concession_total: false,
-	concession_rate: false,
-};
-const FILTER_PRESETS: Array<{ id: FilterPreset; label: string }> = [
-	{ id: "nailed", label: "Nailed Starters" },
-	{ id: "value", label: "Value Attack" },
-	{ id: "differential", label: "Differentials" },
-	{ id: "fixture", label: "Fixture Swing" },
-];
-const TAB_QUERY_VALUES: Record<Tab, string> = {
-	form: "form",
-	defcon: "defcon",
-	defconProb: "defcon-prob",
-	clubs: "clubs",
-	evidence: "evidence",
-};
-const QUERY_VALUE_TABS: Record<string, Tab> = {
-	form: "form",
-	defcon: "defcon",
-	defconProb: "defconProb",
-	"defcon-prob": "defconProb",
-	clubs: "clubs",
-	evidence: "evidence",
-};
-
-type UrlState = {
-	tab: Tab;
-	playerSearch: string;
-	teamFilter: string;
-	windowSize: number | null;
-	position: Position | "";
-	minMinutes: number;
-	minHitRate: number;
-	minGames: number | null;
-	asOfGw: number | null;
-	selectedElement: number | null;
-	playerWindow: number;
-	playerSeason: string | null;
-	fplTeamId: number | null;
-	ownershipFilter: OwnershipFilter;
-	showSquadView: boolean;
-	compareOpen: boolean;
-	compareLeftElement: number | null;
-	compareRightElement: number | null;
-	compareWindow: number;
-	compareAsOfGw: number | null;
-	attackingMetrics: AttackingMetricVisibility;
-	attackingThreatFilters: AttackingThreatFilters;
-	clubColumnVisibility: ClubColumnVisibility;
-	transferFilters: TransferFilters;
-	shortlist: number[];
-	showShortlistedOnly: boolean;
-};
-
-const DEFAULT_URL_STATE: UrlState = {
-	tab: DEFAULT_TAB,
-	playerSearch: DEFAULT_PLAYER_SEARCH,
-	teamFilter: DEFAULT_TEAM_FILTER,
-	windowSize: null,
-	position: DEFAULT_POSITION,
-	minMinutes: DEFAULT_MIN_MINUTES,
-	minHitRate: DEFAULT_MIN_HIT_RATE,
-	minGames: null,
-	asOfGw: DEFAULT_AS_OF_GW,
-	selectedElement: DEFAULT_SELECTED_ELEMENT,
-	playerWindow: DEFAULT_PLAYER_WINDOW,
-	playerSeason: DEFAULT_PLAYER_SEASON,
-	fplTeamId: DEFAULT_FPL_TEAM_ID,
-	ownershipFilter: DEFAULT_OWNERSHIP_FILTER,
-	showSquadView: DEFAULT_SHOW_SQUAD_VIEW,
-	compareOpen: DEFAULT_COMPARE_OPEN,
-	compareLeftElement: DEFAULT_COMPARE_ELEMENT,
-	compareRightElement: DEFAULT_COMPARE_ELEMENT,
-	compareWindow: DEFAULT_COMPARE_WINDOW,
-	compareAsOfGw: DEFAULT_COMPARE_AS_OF_GW,
-	attackingMetrics: DEFAULT_ATTACKING_METRICS,
-	attackingThreatFilters: DEFAULT_ATTACKING_THREAT_FILTERS,
-	clubColumnVisibility: DEFAULT_CLUB_COLUMNS,
-	transferFilters: DEFAULT_TRANSFER_FILTERS,
-	shortlist: [],
-	showShortlistedOnly: false,
-};
-
-function isBrowser() {
-	return typeof window !== "undefined";
-}
-
-function parseNumber(
-	value: string | null,
-	fallback: number,
-	{ min, max }: { min?: number; max?: number } = {},
-): number {
-	if (value === null || value.trim() === "") {
-		return fallback;
-	}
-	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
-		return fallback;
-	}
-	if (min !== undefined && parsed < min) {
-		return fallback;
-	}
-	if (max !== undefined && parsed > max) {
-		return fallback;
-	}
-	return parsed;
-}
-
-function isPlayerTab(tab: Tab): boolean {
-	return tab !== "clubs" && tab !== "evidence";
-}
-
-function parseOptionalNumber(
-	value: string | null,
-	{ min, max }: { min?: number; max?: number } = {},
-): number | null {
-	if (value === null || value.trim() === "") {
-		return null;
-	}
-	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
-		return null;
-	}
-	if (min !== undefined && parsed < min) {
-		return null;
-	}
-	if (max !== undefined && parsed > max) {
-		return null;
-	}
-	return parsed;
-}
-
-function parseTab(value: string | null): Tab {
-	return value === null
-		? DEFAULT_TAB
-		: (QUERY_VALUE_TABS[value] ?? DEFAULT_TAB);
-}
-
-function parsePosition(value: string | null): Position | "" {
-	return POSITIONS.includes(value as Position) ? (value as Position) : "";
-}
-
-function parseAttackingMetrics(
-	value: string | null,
-): AttackingMetricVisibility {
-	if (value === null) {
-		return { ...DEFAULT_ATTACKING_METRICS };
-	}
-	const visible = new Set(value.split(","));
-	const parsed = Object.fromEntries(
-		ATTACKING_METRICS.map((metric) => [metric, visible.has(metric)]),
-	) as AttackingMetricVisibility;
-	return Object.values(parsed).some(Boolean)
-		? parsed
-		: { ...DEFAULT_ATTACKING_METRICS };
-}
-
-function parseClubColumnGroups(value: string | null): ClubColumnVisibility {
-	if (value === null) {
-		return { ...DEFAULT_CLUB_COLUMNS };
-	}
-	const visible = new Set(value.split(","));
-	return Object.fromEntries(
-		CLUB_COLUMN_GROUPS.map((metric) => [metric, visible.has(metric)]),
-	) as ClubColumnVisibility;
-}
-
-function parseAttackingThreatFilters(
-	params: URLSearchParams,
-): AttackingThreatFilters {
-	return Object.fromEntries(
-		ATTACKING_METRICS.map((metric) => [
-			metric,
-			Object.fromEntries(
-				ATTACKING_THREAT_PERIODS.map((period) => [
-					period,
-					parseOptionalNumber(
-						params.get(ATTACKING_THREAT_QUERY_KEYS[metric][period]),
-						{ min: 0 },
-					),
-				]),
-			),
-		]),
-	) as AttackingThreatFilters;
-}
-
-function parseShortlist(value: string | null): number[] {
-	if (value === null || value.trim() === "") {
-		return [];
-	}
-	const elements = value
-		.split(",")
-		.map((part) => Number(part))
-		.filter((element) => Number.isInteger(element) && element > 0);
-	return Array.from(new Set(elements));
-}
-
-function parseOwnershipFilter(value: string | null): OwnershipFilter {
-	return value === "owned" || value === "not-owned"
-		? value
-		: DEFAULT_OWNERSHIP_FILTER;
-}
-
-function readUrlState(): UrlState {
-	if (!isBrowser()) {
-		return { ...DEFAULT_URL_STATE };
-	}
-	const params = new URLSearchParams(window.location.search);
-	const shortlist = parseShortlist(params.get("shortlist"));
-	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), { min: 1 });
-	const tab = parseTab(params.get("tab"));
-	const showSquadView =
-		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
-	const windowSize = parseOptionalNumber(params.get("window"));
-	return {
-		tab,
-		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
-		teamFilter: params.get("team") ?? DEFAULT_TEAM_FILTER,
-		windowSize: windowSize === null ? null : clampWindowSize(windowSize),
-		position: parsePosition(params.get("position")),
-		minMinutes: parseNumber(params.get("min_minutes"), DEFAULT_MIN_MINUTES, {
-			min: 0,
-		}),
-		minHitRate: parseNumber(params.get("min_hit_rate"), DEFAULT_MIN_HIT_RATE, {
-			min: 0,
-			max: 1,
-		}),
-		minGames: parseOptionalNumber(params.get("min_games"), { min: 0 }),
-		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
-		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
-		fplTeamId,
-		ownershipFilter: showSquadView
-			? DEFAULT_OWNERSHIP_FILTER
-			: parseOwnershipFilter(params.get("squad")),
-		showSquadView,
-		compareOpen:
-			params.get("compare") === "1" ||
-			params.has("compare_a") ||
-			params.has("compare_b"),
-		compareLeftElement: parseOptionalNumber(params.get("compare_a"), {
-			min: 1,
-		}),
-		compareRightElement: parseOptionalNumber(params.get("compare_b"), {
-			min: 1,
-		}),
-		compareWindow: clampWindowSize(
-			parseNumber(params.get("compare_window"), DEFAULT_COMPARE_WINDOW),
-		),
-		compareAsOfGw: parseOptionalNumber(params.get("compare_as_of_gw"), {
-			min: 1,
-		}),
-		transferFilters: {
-			maxPrice: parseOptionalNumber(params.get("max_price"), { min: 0 }),
-			maxFdr: parseOptionalNumber(params.get("max_fdr"), { min: 1, max: 5 }),
-			minStartPct: parseOptionalNumber(params.get("min_start_pct"), {
-				min: 0,
-				max: 100,
-			}),
-			minMinsPerAppearance: parseOptionalNumber(params.get("min_mins_app"), {
-				min: 0,
-			}),
-			minOwnership: parseOptionalNumber(params.get("min_owned"), { min: 0 }),
-			maxOwnership: parseOptionalNumber(params.get("max_owned"), { min: 0 }),
-		},
-		playerWindow: parseNumber(
-			params.get("player_window"),
-			DEFAULT_PLAYER_WINDOW,
-			{ min: 1, max: WINDOW_MAX },
-		),
-		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
-		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
-		attackingThreatFilters: parseAttackingThreatFilters(params),
-		clubColumnVisibility: params.has("club_columns")
-			? parseClubColumnGroups(params.get("club_columns"))
-			: {
-					...DEFAULT_CLUB_COLUMNS,
-					goals:
-						params.get("club_actuals")?.split(",").includes("goals") ?? false,
-					ga: params.get("club_actuals")?.split(",").includes("ga") ?? false,
-				},
-		shortlist,
-		showShortlistedOnly:
-			!showSquadView &&
-			shortlist.length > 0 &&
-			params.get("shortlist_only") === "1",
-	};
-}
-
-function metricsMatchDefault(metrics: AttackingMetricVisibility): boolean {
-	return ATTACKING_METRICS.every(
-		(metric) => metrics[metric] === DEFAULT_ATTACKING_METRICS[metric],
-	);
-}
-
-function visibleAttackingThreatFiltersMatchDefault(
-	filters: AttackingThreatFilters,
-	visibleMetrics: AttackingMetricVisibility,
-): boolean {
-	return ATTACKING_METRICS.every(
-		(metric) =>
-			!visibleMetrics[metric] ||
-			ATTACKING_THREAT_PERIODS.every(
-				(period) => filters[metric][period] === null,
-			),
-	);
-}
-
-function clubColumnVisibilityMatchDefault(
-	metrics: ClubColumnVisibility,
-): boolean {
-	return CLUB_COLUMN_GROUPS.every(
-		(metric) => metrics[metric] === DEFAULT_CLUB_COLUMNS[metric],
-	);
-}
-
-function transferFiltersMatchDefault(filters: TransferFilters): boolean {
-	return (
-		filters.maxPrice === null &&
-		filters.maxFdr === null &&
-		filters.minStartPct === null &&
-		filters.minMinsPerAppearance === null &&
-		filters.minOwnership === null &&
-		filters.maxOwnership === null
-	);
-}
-
-function defaultTransferFilters(): TransferFilters {
-	return { ...DEFAULT_TRANSFER_FILTERS };
-}
-
-function defaultAttackingThreatFilters(): AttackingThreatFilters {
-	return {
-		xg: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xg },
-		xa: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xa },
-		xgi: { ...DEFAULT_ATTACKING_THREAT_FILTERS.xgi },
-	};
-}
-
-function writeUrlState(state: UrlState) {
-	if (!isBrowser()) {
-		return;
-	}
-	const params = new URLSearchParams();
-	if (state.tab !== DEFAULT_TAB) {
-		params.set("tab", TAB_QUERY_VALUES[state.tab]);
-	}
-	if (isPlayerTab(state.tab) && state.playerSearch !== DEFAULT_PLAYER_SEARCH) {
-		params.set("q", state.playerSearch);
-	}
-	if (state.tab !== "evidence" && state.teamFilter !== DEFAULT_TEAM_FILTER) {
-		params.set("team", state.teamFilter);
-	}
-	if (state.tab !== "evidence" && state.windowSize !== null) {
-		params.set("window", String(state.windowSize));
-	}
-	if (isPlayerTab(state.tab) && state.position !== DEFAULT_POSITION) {
-		params.set("position", state.position);
-	}
-	if (
-		isPlayerTab(state.tab) &&
-		state.tab !== "defconProb" &&
-		state.minMinutes !== DEFAULT_MIN_MINUTES
-	) {
-		params.set("min_minutes", String(state.minMinutes));
-	}
-	if (state.tab === "defcon" && state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
-		params.set("min_hit_rate", String(state.minHitRate));
-	}
-	if (state.tab === "defconProb" && state.minGames !== null) {
-		params.set("min_games", String(state.minGames));
-	}
-	if (state.tab !== "evidence" && state.asOfGw !== DEFAULT_AS_OF_GW) {
-		params.set("as_of_gw", String(state.asOfGw));
-	}
-	if (!metricsMatchDefault(state.attackingMetrics)) {
-		params.set(
-			"metrics",
-			ATTACKING_METRICS.filter((metric) => state.attackingMetrics[metric]).join(
-				",",
-			),
-		);
-	}
-	if (
-		state.tab === "form" &&
-		!visibleAttackingThreatFiltersMatchDefault(
-			state.attackingThreatFilters,
-			state.attackingMetrics,
-		)
-	) {
-		for (const metric of ATTACKING_METRICS) {
-			if (!state.attackingMetrics[metric]) {
-				continue;
-			}
-			for (const period of ATTACKING_THREAT_PERIODS) {
-				const value = state.attackingThreatFilters[metric][period];
-				if (value !== null) {
-					params.set(
-						ATTACKING_THREAT_QUERY_KEYS[metric][period],
-						String(value),
-					);
-				}
-			}
-		}
-	}
-	if (!clubColumnVisibilityMatchDefault(state.clubColumnVisibility)) {
-		params.set(
-			"club_columns",
-			CLUB_COLUMN_GROUPS.filter(
-				(metric) => state.clubColumnVisibility[metric],
-			).join(","),
-		);
-	}
-	if (state.shortlist.length > 0) {
-		params.set("shortlist", state.shortlist.join(","));
-		if (isPlayerTab(state.tab) && state.showShortlistedOnly) {
-			params.set("shortlist_only", "1");
-		}
-	}
-	if (
-		isPlayerTab(state.tab) &&
-		!transferFiltersMatchDefault(state.transferFilters)
-	) {
-		if (state.transferFilters.maxPrice !== null) {
-			params.set("max_price", String(state.transferFilters.maxPrice));
-		}
-		if (state.transferFilters.maxFdr !== null) {
-			params.set("max_fdr", String(state.transferFilters.maxFdr));
-		}
-		if (state.transferFilters.minStartPct !== null) {
-			params.set("min_start_pct", String(state.transferFilters.minStartPct));
-		}
-		if (state.transferFilters.minMinsPerAppearance !== null) {
-			params.set(
-				"min_mins_app",
-				String(state.transferFilters.minMinsPerAppearance),
-			);
-		}
-		if (state.transferFilters.minOwnership !== null) {
-			params.set("min_owned", String(state.transferFilters.minOwnership));
-		}
-		if (state.transferFilters.maxOwnership !== null) {
-			params.set("max_owned", String(state.transferFilters.maxOwnership));
-		}
-	}
-	if (
-		isPlayerTab(state.tab) &&
-		state.selectedElement !== DEFAULT_SELECTED_ELEMENT
-	) {
-		params.set("player", String(state.selectedElement));
-		if (state.playerWindow !== DEFAULT_PLAYER_WINDOW) {
-			params.set("player_window", String(state.playerWindow));
-		}
-		if (state.playerSeason !== null) {
-			params.set("season", state.playerSeason);
-		}
-	}
-	if (state.fplTeamId !== DEFAULT_FPL_TEAM_ID) {
-		params.set("fpl_team", String(state.fplTeamId));
-		if (isPlayerTab(state.tab) && state.ownershipFilter !== "all") {
-			params.set("squad", state.ownershipFilter);
-		}
-		if (isPlayerTab(state.tab) && state.showSquadView) {
-			params.set("squad_view", "1");
-		}
-	}
-	if (state.compareOpen) {
-		params.set("compare", "1");
-		if (state.compareLeftElement !== DEFAULT_COMPARE_ELEMENT) {
-			params.set("compare_a", String(state.compareLeftElement));
-		}
-		if (state.compareRightElement !== DEFAULT_COMPARE_ELEMENT) {
-			params.set("compare_b", String(state.compareRightElement));
-		}
-		if (state.compareWindow !== DEFAULT_COMPARE_WINDOW) {
-			params.set("compare_window", String(state.compareWindow));
-		}
-		if (state.compareAsOfGw !== DEFAULT_COMPARE_AS_OF_GW) {
-			params.set("compare_as_of_gw", String(state.compareAsOfGw));
-		}
-	}
-
-	const search = params.toString();
-	const nextUrl = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
-	const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-	if (nextUrl !== currentUrl) {
-		window.history.replaceState(null, "", nextUrl);
-	}
-}
-
-// Apply the client-side player and team filters so the chart and table stay
-// in sync from a single source.
-function filterPlayers<
-	T extends { web_name: string; team_name: string | null },
->(rows: T[], playerSearch: string, teamFilter: string): T[] {
-	const query = playerSearch.trim().toLowerCase();
-	return rows.filter(
-		(row) =>
-			(query === "" || row.web_name.toLowerCase().includes(query)) &&
-			(teamFilter === "" || row.team_name === teamFilter),
-	);
-}
-
-function passesMax(value: number | null | undefined, max: number | null) {
-	return max === null || (typeof value === "number" && value <= max);
-}
-
-function passesMin(value: number | null | undefined, min: number | null) {
-	return min === null || (typeof value === "number" && value >= min);
-}
-
-// Transfer filters are hard candidate-pool constraints (price ceiling, minutes
-// floor, ownership band), so they apply even when a player search is active,
-// unlike the form-quality filters that the search box deliberately bypasses. A
-// searched player outside these constraints is correctly not a candidate.
-function filterTransferCandidates<T extends TransferFilterRow>(
-	rows: T[],
-	filters: TransferFilters,
-): T[] {
-	if (transferFiltersMatchDefault(filters)) {
-		return rows;
-	}
-	return rows.filter(
-		(row) =>
-			passesMax(row.price, filters.maxPrice) &&
-			passesMax(row.avg_fdr, filters.maxFdr) &&
-			passesMin(
-				typeof row.window_start_rate === "number"
-					? row.window_start_rate * 100
-					: row.window_start_rate,
-				filters.minStartPct,
-			) &&
-			passesMin(row.window_mins_per_appearance, filters.minMinsPerAppearance) &&
-			passesMin(row.current_ownership, filters.minOwnership) &&
-			passesMax(row.current_ownership, filters.maxOwnership),
-	);
-}
-
-function filterAttackingThreatCandidates(
-	rows: FormPlayer[],
-	filters: AttackingThreatFilters,
-	visibleMetrics: AttackingMetricVisibility,
-): FormPlayer[] {
-	if (visibleAttackingThreatFiltersMatchDefault(filters, visibleMetrics)) {
-		return rows;
-	}
-	return rows.filter((row) =>
-		ATTACKING_METRICS.every((metric) => {
-			if (!visibleMetrics[metric]) {
-				return true;
-			}
-			return ATTACKING_THREAT_PERIODS.every((period) => {
-				const value = row[ATTACKING_THREAT_FILTER_KEYS[metric][period]];
-				return passesMin(
-					typeof value === "number" ? value : null,
-					filters[metric][period],
-				);
-			});
-		}),
-	);
-}
-
-function filterShortlistedPlayers<T extends { element: number }>(
-	rows: T[],
-	shortlist: number[],
-	showShortlistedOnly: boolean,
-): T[] {
-	if (!showShortlistedOnly) {
-		return rows;
-	}
-	const shortlistedElements = new Set(shortlist);
-	return rows.filter((row) => shortlistedElements.has(row.element));
-}
-
-function filterOwnedPlayers<T extends { element: number }>(
-	rows: T[],
-	ownedElements: Set<number>,
-	ownershipFilter: OwnershipFilter,
-): T[] {
-	if (ownershipFilter === "all") {
-		return rows;
-	}
-	return rows.filter((row) => {
-		const isOwned = ownedElements.has(row.element);
-		return ownershipFilter === "owned" ? isOwned : !isOwned;
-	});
-}
-
-function formatPlayerCount(count: number): string {
-	return `${count} ${count === 1 ? "player" : "players"}`;
-}
-
-// Metric columns that get heat shading. The range is computed league-wide from
-// an unfiltered query so a player's colour stays fixed as you filter.
-const FORM_HEAT_KEYS = [
-	"window_xg90",
-	"window_xa90",
-	"window_xgi90",
-	"season_xg90",
-	"season_xa90",
-	"season_xgi90",
-	"delta_xg90",
-	"delta_xa90",
-	"delta_xgi90",
-	"window_xg90_per_million",
-	"window_xa90_per_million",
-	"window_xgi90_per_million",
-	"season_points_per_million",
-	"window_minutes",
-	"window_start_rate",
-	"window_mins_per_appearance",
-	"avg_fdr",
-	"current_ownership",
-];
-const DEFCON_HEAT_KEYS = [
-	"window_minutes",
-	"window_games",
-	"window_defcon_hits",
-	"window_defcon_hit_rate",
-	"window_defcon",
-	"season_points_per_million",
-	"window_start_rate",
-	"window_mins_per_appearance",
-	"avg_fdr",
-	"current_ownership",
-];
-const DEFCON_PROB_HEAT_KEYS = [
-	"window_minutes",
-	"games",
-	"hits",
-	"raw_rate",
-	"prob",
-	"prob_std",
-	"window_defcon",
-	"season_points_per_million",
-	"window_start_rate",
-	"window_mins_per_appearance",
-	"avg_fdr",
-	"current_ownership",
-];
-const CLUB_HEAT_KEYS = [
-	"window_matches",
-	"window_xg_per_match",
-	"season_xg_per_match",
-	"delta_xg_per_match",
-	"window_goals_for_per_match",
-	"season_goals_for_per_match",
-	"delta_goals_for_per_match",
-	"window_xgc_per_match",
-	"season_xgc_per_match",
-	"delta_xgc_per_match",
-	"window_goals_against_per_match",
-	"season_goals_against_per_match",
-	"delta_goals_against_per_match",
-	"window_finishing_delta",
-	"season_finishing_delta",
-	"window_concession_delta",
-	"season_concession_delta",
-	"window_finishing_delta_total",
-	"season_finishing_delta_total",
-	"window_concession_delta_total",
-	"season_concession_delta_total",
-	"attack_form",
-	"defence_form",
-	"avg_fdr",
-];
-
-// Min/max per metric across the supplied (league-wide) rows.
-function computeRanges(
-	rows: readonly unknown[],
-	keys: string[],
-): Record<string, Range> {
-	const ranges: Record<string, Range> = {};
-	for (const key of keys) {
-		const values = rows
-			.map((row) => (row as Record<string, unknown>)[key])
-			.filter((value): value is number => typeof value === "number");
-		ranges[key] =
-			values.length > 0
-				? { min: Math.min(...values), max: Math.max(...values) }
-				: { min: 0, max: 0 };
-	}
-	return ranges;
-}
-
-// Render the cell text; the table cell owns the background fill.
-function HeatCell({
-	value,
-	text,
-}: {
-	value: number | null | undefined;
-	text: string;
-}) {
-	if (value == null) {
-		return <span className="text-zinc-400">-</span>;
-	}
-	return <span>{text}</span>;
-}
-
-// Build the text renderer for a heat-shaded cell.
-function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
-	const format = opts.format ?? ((value: number | null) => fmtNum(value));
-	return (info: CellContext<T, unknown>) => {
-		const value = info.getValue<number | null>();
-		return <HeatCell value={value} text={format(value)} />;
-	};
-}
-
-function heatScale(range: Range, opts: HeatCellOptions): HeatScale | null {
-	const lowerIsBetter = opts.lowerIsBetter ?? false;
-	switch (opts.scale ?? "sequential") {
-		case "sequential":
-			return sequentialScale(range, lowerIsBetter);
-		case "diverging":
-			return divergingScale(range, lowerIsBetter);
-		case "fdr":
-			return FDR_SCALE;
-		case "none":
-			return null;
-	}
-}
-
-function heatCellStyle<T>(
-	scale: HeatScale,
-): (cell: Cell<T, unknown>) => { backgroundColor: string } | undefined {
-	return (cell) => {
-		const backgroundColor = heatColour(cell.getValue<number | null>(), scale);
-		return backgroundColor ? { backgroundColor } : undefined;
-	};
-}
-
-function heatMeta<T>(
-	meta: ColumnDef<T>["meta"],
-	range: Range,
-	opts: HeatCellOptions = {},
-): ColumnDef<T>["meta"] {
-	const scale = heatScale(range, opts);
-	const numericMeta = { ...meta, numeric: true };
-	return scale === null
-		? numericMeta
-		: { ...numericMeta, cellStyle: heatCellStyle<T>(scale) };
-}
-
-function buildFormMetricColumns(
-	ranges: Record<string, Range>,
-	metric: AttackingMetric,
-): ColumnDef<FormPlayer>[] {
-	const label = ATTACKING_METRIC_LABELS[metric];
-	const noun = ATTACKING_METRIC_NOUNS[metric];
-	const styles = ATTACKING_METRIC_STYLES[metric];
-	return (
-		["window", "season", "delta", "value"] satisfies AttackingMetricColumn[]
-	).map((group) => {
-		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
-		const key = ATTACKING_METRIC_KEYS[metric][group];
-		const formatter: HeatCellOptions =
-			group === "delta" ? { format: fmtDelta, scale: "diverging" } : {};
-		const tooltip =
-			group === "window"
-				? `Expected ${noun} per 90 minutes over the recent window`
-				: group === "season"
-					? `Expected ${noun} per 90 minutes, season to date`
-					: group === "delta"
-						? `Window ${label} per 90 minus season ${label} per 90; positive means recent form beats the season baseline`
-						: `Window ${label} per 90 divided by price`;
-		const header =
-			group === "value"
-				? `${label} Per 90 Per £m`
-				: `${groupLabel} ${label} Per 90`;
-		return {
-			accessorKey: key,
-			header,
-			cell: heatCell<FormPlayer>(ranges[key], formatter),
-			meta: heatMeta<FormPlayer>(
-				{
-					tooltip,
-					headerClassName: styles.header,
-				},
-				ranges[key],
-				formatter,
-			),
-		} satisfies ColumnDef<FormPlayer>;
-	});
-}
-
-function buildPlayerContextColumns<T extends TransferFilterRow>(
-	ranges: Record<string, Range>,
-): ColumnDef<T>[] {
-	return [
-		{
-			accessorKey: "price",
-			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number | null>()),
-			meta: { numeric: true },
-		},
-		{
-			accessorKey: "avg_fdr",
-			header: "FDR (Next 5)",
-			cell: heatCell<T>(ranges.avg_fdr, {
-				lowerIsBetter: true,
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<T>(
-				{
-					tooltip:
-						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-				},
-				ranges.avg_fdr,
-				{ scale: "fdr" },
-			),
-		},
-		{
-			accessorKey: "current_ownership",
-			header: "Owned %",
-			cell: heatCell<T>(ranges.current_ownership, {
-				lowerIsBetter: true,
-				format: (v) => fmtPctPoints(v, 1),
-			}),
-			meta: heatMeta<T>(
-				{
-					tooltip:
-						"Current ownership percentage; a live snapshot, not point-in-time",
-				},
-				ranges.current_ownership,
-				{ scale: "none" },
-			),
-		},
-	];
-}
-
-function buildFormColumns(
-	ranges: Record<string, Range>,
-	visibleMetrics: AttackingMetricVisibility,
-): ColumnDef<FormPlayer>[] {
-	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<FormPlayer>(ranges),
-		{
-			accessorKey: "window_minutes",
-			header: "Mins",
-			cell: heatCell<FormPlayer>(ranges.window_minutes, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Total minutes played across the window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_mins_per_appearance",
-			header: "Mins Per App",
-			cell: heatCell<FormPlayer>(ranges.window_mins_per_appearance, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<FormPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_start_rate",
-			header: "Start %",
-			cell: heatCell<FormPlayer>(ranges.window_start_rate, { format: fmtPct }),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Share of window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
-		},
-		...ATTACKING_METRIC_COLUMN_ORDER.filter(
-			(metric) => visibleMetrics[metric],
-		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<FormPlayer>(ranges.season_points_per_million, {
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
-		},
-	];
-}
-
-function buildDefconColumns(
-	ranges: Record<string, Range>,
-): ColumnDef<DefconPlayer>[] {
-	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<DefconPlayer>(ranges),
-		{
-			accessorKey: "window_minutes",
-			header: "Mins",
-			cell: heatCell<DefconPlayer>(ranges.window_minutes, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Total minutes played across the window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_mins_per_appearance",
-			header: "Mins Per App",
-			cell: heatCell<DefconPlayer>(ranges.window_mins_per_appearance, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_start_rate",
-			header: "Start %",
-			cell: heatCell<DefconPlayer>(ranges.window_start_rate, {
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Share of window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_games",
-			header: "Games",
-			cell: heatCell<DefconPlayer>(ranges.window_games, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Eligible games in the window" },
-				ranges.window_games,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_defcon_hits",
-			header: "Hits",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon_hits, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Window games clearing the DefCon threshold" },
-				ranges.window_defcon_hits,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_defcon_hit_rate",
-			header: "Hit Rate",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon_hit_rate, {
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Share of window games clearing the DefCon threshold" },
-				ranges.window_defcon_hit_rate,
-			),
-		},
-		{
-			accessorKey: "window_defcon",
-			header: "Avg DefCon",
-			cell: heatCell<DefconPlayer>(ranges.window_defcon, {
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{
-					tooltip:
-						"Average defensive-contribution count per game over the window",
-				},
-				ranges.window_defcon,
-			),
-		},
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<DefconPlayer>(ranges.season_points_per_million, {
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
-		},
-	];
-}
-
-function buildDefconProbColumns(
-	ranges: Record<string, Range>,
-): ColumnDef<DefconProbabilityPlayer>[] {
-	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<DefconProbabilityPlayer>(ranges),
-		{
-			accessorKey: "window_minutes",
-			header: "Mins",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_minutes, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Total minutes played across the recent window" },
-				ranges.window_minutes,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_mins_per_appearance",
-			header: "Mins Per App",
-			cell: heatCell<DefconProbabilityPlayer>(
-				ranges.window_mins_per_appearance,
-				{ format: (v) => fmtNum(v, 0) },
-			),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Average minutes per appearance in the recent window; 0-minute games are excluded",
-				},
-				ranges.window_mins_per_appearance,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_start_rate",
-			header: "Start %",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_start_rate, {
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Share of recent window games the player started" },
-				ranges.window_start_rate,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "games",
-			header: "Games",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.games, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Eligible appearances up to this gameweek" },
-				ranges.games,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "hits",
-			header: "Hits",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.hits, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Appearances clearing the DefCon threshold" },
-				ranges.hits,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "raw_rate",
-			header: "Raw Rate",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.raw_rate, {
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Observed DefCon hit rate (hits / games)" },
-				ranges.raw_rate,
-			),
-		},
-		{
-			accessorKey: "prob",
-			header: "P(Hit | 60+ Mins)",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.prob, { format: fmtPct }),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
-				},
-				ranges.prob,
-			),
-		},
-		{
-			accessorKey: "prob_std",
-			header: "+/-",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.prob_std, {
-				lowerIsBetter: true,
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Uncertainty (standard deviation) of the probability" },
-				ranges.prob_std,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_defcon",
-			header: "Avg DefCon",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.window_defcon, {
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Average defensive-contribution count per game over the recent window",
-				},
-				ranges.window_defcon,
-			),
-		},
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<DefconProbabilityPlayer>(
-				ranges.season_points_per_million,
-				{ format: (v) => fmtNum(v, 1) },
-			),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
-		},
-	];
-}
-
-function buildClubColumns(
-	ranges: Record<string, Range>,
-	visibleColumns: ClubColumnVisibility,
-): ColumnDef<ClubForm>[] {
-	function overperformanceColumn(
-		period: "window" | "season",
-		metric: "xG" | "xGC",
-		total: boolean,
-	): ColumnDef<ClubForm> {
-		const defensive = metric === "xGC";
-		const key =
-			`${period}_${defensive ? "concession" : "finishing"}_delta${total ? "_total" : ""}` as const;
-		const range = ranges[key];
-		const label = period === "window" ? "Window" : "Season";
-		return {
-			id: key,
-			accessorFn: (row) => {
-				const value = row[key];
-				// Preserve the API's conceded-minus-expected sign; show favourable values as positive.
-				return value == null ? null : defensive ? -value : value;
-			},
-			header: `${label} ${metric} +/- ${total ? "Total" : "Per Match"}`,
-			cell: heatCell<ClubForm>(range, { format: fmtDelta }),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip: `${metric} over/underperformance: ${defensive ? "xGC minus goals conceded" : "goals scored minus xG"}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${defensive ? "fewer goals conceded" : "more goals scored"} than expected; negative means underperformance. Descriptive, not a prediction.`,
-				},
-				range,
-				// Centre on zero so underperformance is never shaded favourably.
-				{ scale: "diverging" },
-			),
-		};
-	}
-	const columns: ColumnDef<ClubForm>[] = [
-		{ accessorKey: "team_name", header: "Club" },
-		{
-			accessorKey: "window_matches",
-			header: "Matches",
-			cell: heatCell<ClubForm>(ranges.window_matches, {
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: heatMeta<ClubForm>(
-				{ tooltip: "Club matches in the recent window" },
-				ranges.window_matches,
-				{ scale: "none" },
-			),
-		},
-		{
-			accessorKey: "window_xg_per_match",
-			header: "Window xG",
-			cell: heatCell<ClubForm>(ranges.window_xg_per_match),
-			meta: heatMeta<ClubForm>(
-				{ tooltip: "Expected goals per match over the recent window" },
-				ranges.window_xg_per_match,
-			),
-		},
-		{
-			accessorKey: "season_xg_per_match",
-			header: "Season xG",
-			cell: heatCell<ClubForm>(ranges.season_xg_per_match),
-			meta: heatMeta<ClubForm>(
-				{ tooltip: "Expected goals per match, season to date" },
-				ranges.season_xg_per_match,
-			),
-		},
-		{
-			accessorKey: "delta_xg_per_match",
-			header: "Delta xG",
-			cell: heatCell<ClubForm>(ranges.delta_xg_per_match, {
-				format: fmtDelta,
-			}),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip:
-						"Window xG per match minus season xG per match; positive means the attack is creating more",
-				},
-				ranges.delta_xg_per_match,
-				{ scale: "diverging" },
-			),
-		},
-		overperformanceColumn("window", "xG", true),
-		overperformanceColumn("window", "xG", false),
-		overperformanceColumn("season", "xG", true),
-		overperformanceColumn("season", "xG", false),
-		...(visibleColumns.goals
-			? [
-					{
-						accessorKey: "window_goals_for_per_match",
-						header: "Window Goals",
-						cell: heatCell<ClubForm>(ranges.window_goals_for_per_match),
-						meta: heatMeta<ClubForm>(
-							{
-								tooltip: "Goals scored per match over the recent window",
-							},
-							ranges.window_goals_for_per_match,
-						),
-					},
-					{
-						accessorKey: "delta_goals_for_per_match",
-						header: "Delta Goals",
-						cell: heatCell<ClubForm>(ranges.delta_goals_for_per_match, {
-							format: fmtDelta,
-						}),
-						meta: heatMeta<ClubForm>(
-							{
-								tooltip:
-									"Window goals per match minus season goals per match; useful context for finishing variance",
-							},
-							ranges.delta_goals_for_per_match,
-							{ scale: "diverging" },
-						),
-					},
-				]
-			: []),
-		{
-			accessorKey: "attack_form",
-			header: "Attack Form",
-			cell: heatCell<ClubForm>(ranges.attack_form, { format: fmtDelta }),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip: "Recent xG per match improvement versus the season baseline",
-				},
-				ranges.attack_form,
-				{ scale: "diverging" },
-			),
-		},
-		{
-			accessorKey: "window_xgc_per_match",
-			header: "Window xGC",
-			cell: heatCell<ClubForm>(ranges.window_xgc_per_match, {
-				lowerIsBetter: true,
-			}),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip: "Expected goals conceded per match over the recent window",
-				},
-				ranges.window_xgc_per_match,
-				{ lowerIsBetter: true },
-			),
-		},
-		{
-			accessorKey: "season_xgc_per_match",
-			header: "Season xGC",
-			cell: heatCell<ClubForm>(ranges.season_xgc_per_match, {
-				lowerIsBetter: true,
-			}),
-			meta: heatMeta<ClubForm>(
-				{ tooltip: "Expected goals conceded per match, season to date" },
-				ranges.season_xgc_per_match,
-				{ lowerIsBetter: true },
-			),
-		},
-		{
-			accessorKey: "delta_xgc_per_match",
-			header: "Delta xGC",
-			cell: heatCell<ClubForm>(ranges.delta_xgc_per_match, {
-				lowerIsBetter: true,
-				format: fmtDelta,
-			}),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip:
-						"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
-				},
-				ranges.delta_xgc_per_match,
-				{ lowerIsBetter: true, scale: "diverging" },
-			),
-		},
-		overperformanceColumn("window", "xGC", true),
-		overperformanceColumn("window", "xGC", false),
-		overperformanceColumn("season", "xGC", true),
-		overperformanceColumn("season", "xGC", false),
-		...(visibleColumns.ga
-			? [
-					{
-						accessorKey: "window_goals_against_per_match",
-						header: "Window Goals Conceded",
-						cell: heatCell<ClubForm>(ranges.window_goals_against_per_match, {
-							lowerIsBetter: true,
-						}),
-						meta: heatMeta<ClubForm>(
-							{
-								tooltip: "Goals conceded per match over the recent window",
-							},
-							ranges.window_goals_against_per_match,
-							{ lowerIsBetter: true },
-						),
-					},
-					{
-						accessorKey: "delta_goals_against_per_match",
-						header: "Delta Goals Conceded",
-						cell: heatCell<ClubForm>(ranges.delta_goals_against_per_match, {
-							lowerIsBetter: true,
-							format: fmtDelta,
-						}),
-						meta: heatMeta<ClubForm>(
-							{
-								tooltip:
-									"Window goals conceded per match minus season goals conceded per match",
-							},
-							ranges.delta_goals_against_per_match,
-							{ lowerIsBetter: true, scale: "diverging" },
-						),
-					},
-				]
-			: []),
-		{
-			accessorKey: "defence_form",
-			header: "Defence Form",
-			cell: heatCell<ClubForm>(ranges.defence_form, { format: fmtDelta }),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip:
-						"Recent xGC per match improvement versus the season baseline; positive is better",
-				},
-				ranges.defence_form,
-				{ scale: "diverging" },
-			),
-		},
-		{
-			accessorKey: "avg_fdr",
-			header: "FDR (Next 5)",
-			cell: heatCell<ClubForm>(ranges.avg_fdr, {
-				lowerIsBetter: true,
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip:
-						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-				},
-				ranges.avg_fdr,
-				{ scale: "fdr" },
-			),
-		},
-	];
-	const groups: Record<string, ClubColumnGroup> = {
-		window_matches: "matches",
-		window_xg_per_match: "xg",
-		season_xg_per_match: "xg",
-		delta_xg_per_match: "xg",
-		window_xgc_per_match: "xgc",
-		season_xgc_per_match: "xgc",
-		delta_xgc_per_match: "xgc",
-		attack_form: "form",
-		defence_form: "form",
-		avg_fdr: "fdr",
-		window_finishing_delta_total: "finishing_total",
-		season_finishing_delta_total: "finishing_total",
-		window_finishing_delta: "finishing_rate",
-		season_finishing_delta: "finishing_rate",
-		window_concession_delta_total: "concession_total",
-		season_concession_delta_total: "concession_total",
-		window_concession_delta: "concession_rate",
-		season_concession_delta: "concession_rate",
-	};
-	return columns.filter((column) => {
-		const id =
-			column.id ?? ("accessorKey" in column ? String(column.accessorKey) : "");
-		const group = groups[id];
-		return group === undefined || visibleColumns[group];
-	});
-}
-
-const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
-const fieldClass =
-	"rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900";
-// Most controls sit below a label, so the shared input class adds the gap.
-const inputClass = `mt-1 ${fieldClass}`;
-const transferInputClass = `${inputClass} w-[5.5rem]`;
-
-// Keep the window within bounds and tolerate an empty/NaN number input.
-function clampWindowSize(value: number): number {
-	if (!Number.isFinite(value)) {
-		return WINDOW_MIN;
-	}
-	return Math.min(Math.max(value, WINDOW_MIN), WINDOW_MAX);
-}
-
-// Default to a window shorter than the gameweeks played, so the recent window
-// differs from the season baseline; fall back to the cap while meta loads.
-function defaultWindowSize(gameweeksPlayed: number): number {
-	if (gameweeksPlayed <= 0) {
-		return DEFAULT_WINDOW_SIZE;
-	}
-	return clampWindowSize(Math.min(DEFAULT_WINDOW_SIZE, gameweeksPlayed - 1));
-}
-
-// Default to a games floor that some players can meet so far this season.
-function defaultMinGames(gameweeksPlayed: number): number {
-	if (gameweeksPlayed <= 0) {
-		return DEFAULT_MIN_GAMES;
-	}
-	return Math.max(1, Math.min(DEFAULT_MIN_GAMES, gameweeksPlayed - 1));
-}
-
-// Clamp to the same bounds the URL parser enforces, so a typed value always
-// round-trips through the query string instead of silently vanishing on reload.
-function parseOptionalInputNumber(
-	value: string,
-	{ min, max }: { min?: number; max?: number } = {},
-): number | null {
-	if (value === "") {
-		return null;
-	}
-	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
-		return null;
-	}
-	if (min !== undefined && parsed < min) {
-		return min;
-	}
-	if (max !== undefined && parsed > max) {
-		return max;
-	}
-	return parsed;
-}
+	filterAttackingThreatCandidates,
+	filterOwnedPlayers,
+	filterPlayers,
+	filterShortlistedPlayers,
+	filterTransferCandidates,
+	formatPlayerCount,
+} from "./lib/filters";
+import { fmtNum, fmtPctPoints, fmtPrice } from "./lib/format";
+import {
+	type ActiveFilterChip,
+	ATTACKING_METRIC_COLUMN_ORDER,
+	ATTACKING_METRIC_LABELS,
+	ATTACKING_METRICS,
+	ATTACKING_THREAT_PERIOD_LABELS,
+	ATTACKING_THREAT_PERIODS,
+	type AttackingMetric,
+	type AttackingThreatPeriod,
+	type ClubColumnGroup,
+	clubColumnVisibilityMatchDefault,
+	DEFAULT_AS_OF_GW,
+	DEFAULT_ATTACKING_METRICS,
+	DEFAULT_CLUB_COLUMNS,
+	DEFAULT_FPL_TEAM_ID,
+	DEFAULT_MIN_HIT_RATE,
+	DEFAULT_MIN_MINUTES,
+	DEFAULT_OWNERSHIP_FILTER,
+	DEFAULT_PLAYER_SEARCH,
+	DEFAULT_PLAYER_SEASON,
+	DEFAULT_PLAYER_WINDOW,
+	DEFAULT_POSITION,
+	DEFAULT_SHOW_SQUAD_VIEW,
+	DEFAULT_TEAM_FILTER,
+	defaultAttackingThreatFilters,
+	defaultMinGames,
+	defaultTransferFilters,
+	defaultWindowSize,
+	FILTER_PRESETS,
+	type FilterPreset,
+	FORM_MIN_DELTA_FLOOR,
+	HIT_RATES,
+	isPlayerTab,
+	metricsMatchDefault,
+	type OwnershipFilter,
+	POSITIONS,
+	type ShortlistablePlayer,
+	TAB_LABELS,
+	TABS,
+	type TransferFilters,
+	transferFiltersMatchDefault,
+	visibleAttackingThreatFiltersMatchDefault,
+	WINDOW_MIN,
+} from "./state";
+import { inputClass, labelClass } from "./styles";
+import { useUrlState } from "./urlState";
 
 export default function App() {
-	const initialUrlState = useMemo(() => readUrlState(), []);
-	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
 	const [tablePageSize, setTablePageSize] = useState(25);
-	const [playerSearch, setPlayerSearch] = useState(
-		initialUrlState.playerSearch,
+	const [urlState, setUrlState] = useUrlState((restored) =>
+		setFplTeamInput(restored.fplTeamId?.toString() ?? ""),
 	);
-	const [teamFilter, setTeamFilter] = useState(initialUrlState.teamFilter);
-	const [windowSizeChoice, setWindowSize] = useState<number | null>(
-		initialUrlState.windowSize,
-	);
-	const [position, setPosition] = useState<Position | "">(
-		initialUrlState.position,
-	);
-	const [minMinutes, setMinMinutes] = useState(initialUrlState.minMinutes);
-	const [minHitRate, setMinHitRate] = useState(initialUrlState.minHitRate);
-	const [minGamesChoice, setMinGames] = useState<number | null>(
-		initialUrlState.minGames,
-	);
-	const [asOfGw, setAsOfGw] = useState<number | null>(initialUrlState.asOfGw);
-	const [selectedElement, setSelectedElement] = useState<number | null>(
-		initialUrlState.selectedElement,
-	);
-	const [playerWindow, setPlayerWindow] = useState(
-		initialUrlState.playerWindow,
-	);
-	const [playerSeason, setPlayerSeason] = useState<string | null>(
-		initialUrlState.playerSeason,
-	);
-	const [fplTeamId, setFplTeamId] = useState<number | null>(
-		initialUrlState.fplTeamId,
-	);
-	const [fplTeamInput, setFplTeamInput] = useState(
-		initialUrlState.fplTeamId?.toString() ?? "",
-	);
-	const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>(
-		initialUrlState.ownershipFilter,
-	);
-	const [showSquadView, setShowSquadView] = useState(
-		initialUrlState.showSquadView,
-	);
-	const [compareOpen, setCompareOpen] = useState(initialUrlState.compareOpen);
-	const [compareLeftElement, setCompareLeftElement] = useState<number | null>(
-		initialUrlState.compareLeftElement,
-	);
-	const [compareRightElement, setCompareRightElement] = useState<number | null>(
-		initialUrlState.compareRightElement,
-	);
-	const [compareWindow, setCompareWindow] = useState(
-		initialUrlState.compareWindow,
-	);
-	const [compareAsOfGw, setCompareAsOfGw] = useState<number | null>(
-		initialUrlState.compareAsOfGw,
-	);
-	const [attackingMetrics, setAttackingMetrics] =
-		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
-	const [attackingThreatFilters, setAttackingThreatFilters] =
-		useState<AttackingThreatFilters>(initialUrlState.attackingThreatFilters);
-	const [clubColumnVisibility, setClubColumnGroups] =
-		useState<ClubColumnVisibility>(initialUrlState.clubColumnVisibility);
-	const [transferFilters, setTransferFilters] = useState<TransferFilters>(
-		initialUrlState.transferFilters,
-	);
-	const [shortlist, setShortlist] = useState<number[]>(
-		initialUrlState.shortlist,
-	);
-	const [showShortlistedOnly, setShowShortlistedOnly] = useState(
-		initialUrlState.showShortlistedOnly,
-	);
-
-	useEffect(() => {
-		function applyCurrentUrlState() {
-			const next = readUrlState();
-			setTab(next.tab);
-			setPlayerSearch(next.playerSearch);
-			setTeamFilter(next.teamFilter);
-			setWindowSize(next.windowSize);
-			setPosition(next.position);
-			setMinMinutes(next.minMinutes);
-			setMinHitRate(next.minHitRate);
-			setMinGames(next.minGames);
-			setAsOfGw(next.asOfGw);
-			setSelectedElement(next.selectedElement);
-			setPlayerWindow(next.playerWindow);
-			setPlayerSeason(next.playerSeason);
-			setFplTeamId(next.fplTeamId);
-			setFplTeamInput(next.fplTeamId?.toString() ?? "");
-			setOwnershipFilter(next.ownershipFilter);
-			setShowSquadView(next.showSquadView);
-			setCompareOpen(next.compareOpen);
-			setCompareLeftElement(next.compareLeftElement);
-			setCompareRightElement(next.compareRightElement);
-			setCompareWindow(next.compareWindow);
-			setCompareAsOfGw(next.compareAsOfGw);
-			setAttackingMetrics(next.attackingMetrics);
-			setAttackingThreatFilters(next.attackingThreatFilters);
-			setClubColumnGroups(next.clubColumnVisibility);
-			setTransferFilters(next.transferFilters);
-			setShortlist(next.shortlist);
-			setShowShortlistedOnly(next.showShortlistedOnly);
-		}
-
-		window.addEventListener("popstate", applyCurrentUrlState);
-		return () => window.removeEventListener("popstate", applyCurrentUrlState);
-	}, []);
-
-	useEffect(() => {
-		writeUrlState({
-			tab,
-			playerSearch,
-			teamFilter,
-			windowSize: windowSizeChoice,
-			position,
-			minMinutes,
-			minHitRate,
-			minGames: minGamesChoice,
-			asOfGw,
-			selectedElement,
-			playerWindow,
-			playerSeason,
-			fplTeamId,
-			ownershipFilter,
-			showSquadView,
-			compareOpen,
-			compareLeftElement,
-			compareRightElement,
-			compareWindow,
-			compareAsOfGw,
-			attackingMetrics,
-			attackingThreatFilters,
-			clubColumnVisibility,
-			transferFilters,
-			shortlist,
-			showShortlistedOnly,
-		});
-	}, [
+	const {
 		tab,
 		playerSearch,
 		teamFilter,
-		windowSizeChoice,
+		windowSize: windowSizeChoice,
 		position,
 		minMinutes,
 		minHitRate,
-		minGamesChoice,
+		minGames: minGamesChoice,
 		asOfGw,
 		selectedElement,
 		playerWindow,
@@ -1972,13 +126,45 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
-	]);
+	} = urlState;
+	const {
+		tab: setTab,
+		playerSearch: setPlayerSearch,
+		teamFilter: setTeamFilter,
+		windowSize: setWindowSize,
+		position: setPosition,
+		minMinutes: setMinMinutes,
+		minHitRate: setMinHitRate,
+		minGames: setMinGames,
+		asOfGw: setAsOfGw,
+		selectedElement: setSelectedElement,
+		playerWindow: setPlayerWindow,
+		playerSeason: setPlayerSeason,
+		fplTeamId: setFplTeamId,
+		ownershipFilter: setOwnershipFilter,
+		showSquadView: setShowSquadView,
+		compareOpen: setCompareOpen,
+		compareLeftElement: setCompareLeftElement,
+		compareRightElement: setCompareRightElement,
+		compareWindow: setCompareWindow,
+		compareAsOfGw: setCompareAsOfGw,
+		attackingMetrics: setAttackingMetrics,
+		attackingThreatFilters: setAttackingThreatFilters,
+		clubColumnVisibility: setClubColumnGroups,
+		transferFilters: setTransferFilters,
+		shortlist: setShortlist,
+		showShortlistedOnly: setShowShortlistedOnly,
+	} = setUrlState;
+	// The team ID input is a draft until imported, so it stays out of the URL.
+	const [fplTeamInput, setFplTeamInput] = useState(
+		urlState.fplTeamId?.toString() ?? "",
+	);
 
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
 			setShowShortlistedOnly(false);
 		}
-	}, [shortlist.length, showShortlistedOnly]);
+	}, [shortlist.length, showShortlistedOnly, setShowShortlistedOnly]);
 
 	useEffect(() => {
 		if (fplTeamId === null && ownershipFilter !== "all") {
@@ -1987,7 +173,13 @@ export default function App() {
 		if (fplTeamId === null && showSquadView) {
 			setShowSquadView(false);
 		}
-	}, [fplTeamId, ownershipFilter, showSquadView]);
+	}, [
+		fplTeamId,
+		ownershipFilter,
+		showSquadView,
+		setOwnershipFilter,
+		setShowSquadView,
+	]);
 
 	function updateTransferFilter(
 		filter: keyof TransferFilters,
@@ -2164,8 +356,6 @@ export default function App() {
 	const windowSize = windowSizeChoice ?? defaultWindowSize(gameweeksPlayed);
 	const minGames = minGamesChoice ?? defaultMinGames(gameweeksPlayed);
 	const hasPlayerSearch = playerSearch.trim() !== "";
-	const windowFillPct =
-		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
 	const isSquadViewActive =
 		isPlayerTab(tab) && showSquadView && fplTeamId !== null;
 	const fplTeamQuery = useQuery({
@@ -2192,7 +382,14 @@ export default function App() {
 	const hasImportedTeam = importedTeam !== undefined;
 	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
 
-	const base = { window: windowSize, position, minMinutes, asOfGw };
+	// Fetch each table league-wide so heat ranges stay fixed as filters change;
+	// position, hit-rate and games filters then apply client-side.
+	const base = {
+		window: windowSize,
+		position: "" as const,
+		minMinutes,
+		asOfGw,
+	};
 	const squadBase = {
 		window: windowSize,
 		position: "" as const,
@@ -2200,7 +397,7 @@ export default function App() {
 		asOfGw,
 	};
 	const formQuery = useQuery({
-		queryKey: ["form", windowSize, position, minMinutes, asOfGw],
+		queryKey: ["form", windowSize, minMinutes, asOfGw],
 		queryFn: () =>
 			fetchForm({
 				...base,
@@ -2209,27 +406,14 @@ export default function App() {
 		enabled: analyticsReady && tab === "form",
 	});
 	const defconQuery = useQuery({
-		queryKey: [
-			"defcon",
-			windowSize,
-			position,
-			minMinutes,
-			minHitRate,
-			asOfGw,
-			hasPlayerSearch,
-		],
-		queryFn: () =>
-			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
+		queryKey: ["defcon", windowSize, minMinutes, asOfGw],
+		queryFn: () => fetchDefcon({ ...base, minHitRate: 0 }),
 		enabled: analyticsReady && tab === "defcon",
 	});
 	const defconProbQuery = useQuery({
-		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
+		queryKey: ["defconProb", asOfGw],
 		queryFn: () =>
-			fetchDefconProbability({
-				position,
-				minGames: hasPlayerSearch ? 0 : minGames,
-				asOfGw,
-			}),
+			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
 		enabled: analyticsReady && tab === "defconProb",
 	});
 	const clubQuery = useQuery({
@@ -2262,7 +446,7 @@ export default function App() {
 		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadDefconProbabilityQuery = useQuery({
-		queryKey: ["squadDefconProbability", asOfGw],
+		queryKey: ["defconProb", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({
 				position: "",
@@ -2272,43 +456,6 @@ export default function App() {
 		enabled: analyticsReady && isSquadViewActive,
 	});
 
-	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
-	// colour scale, so a player's colour is fixed regardless of the active filters.
-	const formBaseline = useQuery({
-		queryKey: ["formBaseline", windowSize, minMinutes, asOfGw],
-		queryFn: () =>
-			fetchForm({
-				window: windowSize,
-				position: "",
-				minMinutes,
-				minDelta: FORM_MIN_DELTA_FLOOR,
-				asOfGw,
-			}),
-		enabled: analyticsReady && tab === "form",
-	});
-	const defconBaseline = useQuery({
-		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
-		queryFn: () =>
-			fetchDefcon({
-				window: windowSize,
-				position: "",
-				minMinutes,
-				minHitRate: 0,
-				asOfGw,
-			}),
-		enabled: analyticsReady && tab === "defcon",
-	});
-	const defconProbBaseline = useQuery({
-		queryKey: ["defconProbBaseline", asOfGw],
-		queryFn: () =>
-			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
-		enabled: analyticsReady && tab === "defconProb",
-	});
-	const clubBaseline = useQuery({
-		queryKey: ["clubBaseline", windowSize, asOfGw],
-		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
-		enabled: analyticsReady && tab === "clubs",
-	});
 	const compareFormQuery = useQuery({
 		queryKey: ["compareForm", compareWindow, compareAsOfGw],
 		queryFn: () =>
@@ -2391,6 +538,7 @@ export default function App() {
 		comparePlayerOptions,
 		ownedElementList,
 		shortlist,
+		setCompareLeftElement,
 	]);
 
 	useEffect(() => {
@@ -2419,37 +567,38 @@ export default function App() {
 		comparePlayerOptions,
 		ownedElementList,
 		shortlist,
+		setCompareRightElement,
 	]);
 
 	const formColumns = useMemo(
 		() =>
 			buildFormColumns(
-				computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS),
+				computeRanges(formQuery.data ?? [], FORM_HEAT_KEYS),
 				attackingMetrics,
 			),
-		[formBaseline.data, attackingMetrics],
+		[formQuery.data, attackingMetrics],
 	);
 	const defconColumns = useMemo(
 		() =>
 			buildDefconColumns(
-				computeRanges(defconBaseline.data ?? [], DEFCON_HEAT_KEYS),
+				computeRanges(defconQuery.data ?? [], DEFCON_HEAT_KEYS),
 			),
-		[defconBaseline.data],
+		[defconQuery.data],
 	);
 	const defconProbColumns = useMemo(
 		() =>
 			buildDefconProbColumns(
-				computeRanges(defconProbBaseline.data ?? [], DEFCON_PROB_HEAT_KEYS),
+				computeRanges(defconProbQuery.data ?? [], DEFCON_PROB_HEAT_KEYS),
 			),
-		[defconProbBaseline.data],
+		[defconProbQuery.data],
 	);
 	const clubColumns = useMemo(
 		() =>
 			buildClubColumns(
-				computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS),
+				computeRanges(clubQuery.data ?? [], CLUB_HEAT_KEYS),
 				clubColumnVisibility,
 			),
-		[clubBaseline.data, clubColumnVisibility],
+		[clubQuery.data, clubColumnVisibility],
 	);
 
 	const active =
@@ -2462,18 +611,8 @@ export default function App() {
 					: tab === "clubs"
 						? clubQuery
 						: null;
-	const activeBaseline =
-		tab === "form"
-			? formBaseline
-			: tab === "defcon"
-				? defconBaseline
-				: tab === "defconProb"
-					? defconProbBaseline
-					: tab === "clubs"
-						? clubBaseline
-						: null;
-	const activeLoading = active?.isPending || activeBaseline?.isPending;
-	const activeError = active?.isError || activeBaseline?.isError;
+	const activeLoading = active?.isPending;
+	const activeError = active?.isError;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
@@ -2493,6 +632,7 @@ export default function App() {
 			formQuery.data ?? [],
 			playerSearch,
 			teamFilter,
+			position,
 		);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const threats = filterAttackingThreatCandidates(
@@ -2512,6 +652,7 @@ export default function App() {
 		formQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
 		transferFilters,
 		attackingThreatFilters,
 		attackingMetrics,
@@ -2520,10 +661,15 @@ export default function App() {
 		shortlistFilter,
 	]);
 	const visibleDefconRows = useMemo(() => {
+		// Searching for a player ignores the hit-rate floor so they always appear.
 		const players = filterPlayers(
 			defconQuery.data ?? [],
 			playerSearch,
 			teamFilter,
+			position,
+		).filter(
+			(row) =>
+				hasPlayerSearch || (row.window_defcon_hit_rate ?? 0) >= minHitRate,
 		);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const owned = ownedFilter
@@ -2538,17 +684,22 @@ export default function App() {
 		defconQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
+		hasPlayerSearch,
+		minHitRate,
 		transferFilters,
 		ownedFilter,
 		ownershipFilter,
 		shortlistFilter,
 	]);
 	const visibleDefconProbRows = useMemo(() => {
+		// Searching for a player ignores the games floor so they always appear.
 		const players = filterPlayers(
 			defconProbQuery.data ?? [],
 			playerSearch,
 			teamFilter,
-		);
+			position,
+		).filter((row) => hasPlayerSearch || row.games >= minGames);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const owned = ownedFilter
 			? filterOwnedPlayers(transfers, ownedFilter, ownershipFilter)
@@ -2562,6 +713,9 @@ export default function App() {
 		defconProbQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
+		hasPlayerSearch,
+		minGames,
 		transferFilters,
 		ownedFilter,
 		ownershipFilter,
@@ -2851,6 +1005,33 @@ export default function App() {
 		? "No Clubs Match These Filters"
 		: "No Clubs Available";
 
+	// The player tabs share every table behaviour except their rows and columns.
+	function renderPlayerTable<T extends ShortlistablePlayer>(
+		rows: T[],
+		columns: ColumnDef<T>[],
+	) {
+		return (
+			<DataTable
+				data={rows}
+				paginate
+				initialPageSize={tablePageSize}
+				onPageSizeChange={setTablePageSize}
+				columns={columns}
+				onRowClick={(row) => openPlayerDetail(row.element)}
+				rowClassName={playerRowClassName}
+				rowStickyClassName={playerStickyClassName}
+				renderRowActions={renderShortlistAction}
+				rowActionsHeader={"\u2605"}
+				rowActionsHeaderLabel="Shortlist"
+				rowActionsHeaderTooltip="Add or remove players from the shortlist"
+				stickyDataColumns={4}
+				emptyTitle={playerEmptyTitle}
+				emptyDescription={playerEmptyDescription}
+				emptyAction={clearActiveFiltersButton}
+			/>
+		);
+	}
+
 	if (meta.isPending) {
 		return <SeasonStatus state="loading" />;
 	}
@@ -2960,62 +1141,12 @@ export default function App() {
 						</label>
 
 						{tab === "clubs" && (
-							<details className="order-last min-w-0 basis-full border-t border-zinc-100 pt-3 text-xs">
-								<summary className="w-fit cursor-pointer font-medium text-zinc-600">
-									Columns ({clubColumns.length})
-								</summary>
-								<div className="mt-3 flex flex-wrap items-start gap-x-10 gap-y-4">
-									{(
-										[
-											[
-												"Expected & Context",
-												["matches", "xg", "xgc", "fdr", "form"],
-											],
-											["Actual Goals", ["goals", "ga"]],
-											[
-												"Over/Underperformance",
-												[
-													"finishing_total",
-													"finishing_rate",
-													"concession_total",
-													"concession_rate",
-												],
-											],
-										] satisfies [string, ClubColumnGroup[]][]
-									).map(([title, metrics]) => (
-										<fieldset key={title} className="min-w-0 max-w-full">
-											<legend className="mb-2 font-medium text-zinc-500">
-												{title}
-											</legend>
-											<div className="flex flex-wrap gap-x-4 gap-y-2">
-												{metrics.map((metric) => (
-													<label
-														key={metric}
-														className="flex items-center gap-1.5 text-zinc-900"
-													>
-														<input
-															type="checkbox"
-															className="accent-blue-600"
-															checked={clubColumnVisibility[metric]}
-															onChange={() => toggleClubColumnGroup(metric)}
-														/>
-														{CLUB_COLUMN_LABELS[metric]}
-													</label>
-												))}
-											</div>
-										</fieldset>
-									))}
-									<button
-										type="button"
-										className="text-xs text-zinc-600 underline underline-offset-2"
-										onClick={() =>
-											setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })
-										}
-									>
-										Reset Columns
-									</button>
-								</div>
-							</details>
+							<ClubColumnChooser
+								visibility={clubColumnVisibility}
+								columnCount={clubColumns.length}
+								onToggle={toggleClubColumnGroup}
+								onReset={() => setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })}
+							/>
 						)}
 
 						{tab === "form" && (
@@ -3075,38 +1206,7 @@ export default function App() {
 						)}
 
 						{tab !== "defconProb" && (
-							<label htmlFor="window-size" className={labelClass}>
-								Window (Gameweeks)
-								<span className="mt-1 flex items-center gap-2">
-									<input
-										id="window-size"
-										type="range"
-										min={WINDOW_MIN}
-										max={WINDOW_MAX}
-										step={1}
-										value={windowSize}
-										onChange={(e) =>
-											setWindowSize(clampWindowSize(Number(e.target.value)))
-										}
-										className="range-slider w-32"
-										style={{
-											background: `linear-gradient(to right, #18181b 0%, #18181b ${windowFillPct}%, #e4e4e7 ${windowFillPct}%, #e4e4e7 100%)`,
-										}}
-									/>
-									<input
-										type="number"
-										min={WINDOW_MIN}
-										max={WINDOW_MAX}
-										step={1}
-										aria-label="Window size in gameweeks"
-										className={`${fieldClass} w-14`}
-										value={windowSize}
-										onChange={(e) =>
-											setWindowSize(clampWindowSize(Number(e.target.value)))
-										}
-									/>
-								</span>
-							</label>
+							<WindowSizeControl value={windowSize} onChange={setWindowSize} />
 						)}
 
 						<div className={labelClass}>
@@ -3196,239 +1296,34 @@ export default function App() {
 					{tab === "form" || showTransferFilters ? (
 						<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
 							{tab === "form" ? (
-								<fieldset className="min-w-0 border-0 p-0">
-									<legend className="sr-only">Attacking Threat Filters</legend>
-									<div className="mb-2 flex items-center gap-2">
-										<span className="font-medium text-xs text-zinc-600">
-											Attacking Threat Filters
-										</span>
-										{hasActiveAttackingThreatFilters ? (
-											<button
-												type="button"
-												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-												onClick={resetAttackingThreatFilters}
-											>
-												Reset Threat Filters
-											</button>
-										) : null}
-									</div>
-									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
-										{ATTACKING_METRIC_COLUMN_ORDER.filter(
-											(metric) => attackingMetrics[metric],
-										).flatMap((metric) =>
-											ATTACKING_THREAT_PERIODS.map((period) => (
-												<label
-													key={`${metric}-${period}`}
-													className={labelClass}
-												>
-													{`Min ${ATTACKING_THREAT_PERIOD_LABELS[period]} ${ATTACKING_METRIC_LABELS[metric]}/90`}
-													<input
-														type="number"
-														min={0}
-														step={0.05}
-														placeholder="Any"
-														className={`${inputClass} w-28`}
-														value={attackingThreatFilters[metric][period] ?? ""}
-														onChange={(e) =>
-															updateAttackingThreatFilter(
-																metric,
-																period,
-																parseOptionalInputNumber(e.target.value, {
-																	min: 0,
-																}),
-															)
-														}
-													/>
-												</label>
-											)),
-										)}
-									</div>
-								</fieldset>
+								<AttackingThreatFilterFields
+									filters={attackingThreatFilters}
+									visibleMetrics={attackingMetrics}
+									hasActiveFilters={hasActiveAttackingThreatFilters}
+									onChange={updateAttackingThreatFilter}
+									onReset={resetAttackingThreatFilters}
+								/>
 							) : null}
 							{showTransferFilters ? (
-								<fieldset className="min-w-0 border-0 p-0">
-									<legend className="sr-only">Transfer Filters</legend>
-									<div className="mb-2 flex items-center gap-2">
-										<span className="font-medium text-xs text-zinc-600">
-											Transfer Filters
-										</span>
-										{hasActiveTransferFilters ? (
-											<button
-												type="button"
-												className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-												onClick={resetTransferFilters}
-											>
-												Reset Transfer Filters
-											</button>
-										) : null}
-									</div>
-									<div className="flex flex-wrap items-start gap-x-2 gap-y-3">
-										<label className={labelClass}>
-											Max Price
-											<input
-												type="number"
-												min={0}
-												step={0.1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxPrice ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxPrice",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Max FDR
-											<input
-												type="number"
-												min={1}
-												max={5}
-												step={0.1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxFdr ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxFdr",
-														parseOptionalInputNumber(e.target.value, {
-															min: 1,
-															max: 5,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										{tab !== "defconProb" && (
-											<label className={labelClass}>
-												Min Minutes
-												<input
-													type="number"
-													min={0}
-													className={transferInputClass}
-													value={minMinutes}
-													onChange={(e) =>
-														setMinMinutes(Number(e.target.value))
-													}
-												/>
-											</label>
-										)}
-
-										<label className={labelClass}>
-											Min Mins/App
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minMinsPerAppearance ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minMinsPerAppearance",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Min Start %
-											<input
-												type="number"
-												min={0}
-												max={100}
-												step={5}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minStartPct ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minStartPct",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-															max: 100,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Min Owned %
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.minOwnership ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"minOwnership",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-
-										<label className={labelClass}>
-											Max Owned %
-											<input
-												type="number"
-												min={0}
-												step={1}
-												placeholder="Any"
-												className={transferInputClass}
-												value={transferFilters.maxOwnership ?? ""}
-												onChange={(e) =>
-													updateTransferFilter(
-														"maxOwnership",
-														parseOptionalInputNumber(e.target.value, {
-															min: 0,
-														}),
-													)
-												}
-											/>
-										</label>
-									</div>
-								</fieldset>
+								<TransferFilterFields
+									filters={transferFilters}
+									minMinutes={minMinutes}
+									showMinMinutes={tab !== "defconProb"}
+									hasActiveFilters={hasActiveTransferFilters}
+									onFilterChange={updateTransferFilter}
+									onMinMinutesChange={setMinMinutes}
+									onReset={resetTransferFilters}
+								/>
 							) : null}
 						</div>
 					) : null}
 				</div>
 
 				{hasActiveFilters ? (
-					<div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-						<span className="mr-1 font-medium text-xs text-zinc-500">
-							Active Filters
-						</span>
-						{activeFilterChips.map((chip) => (
-							<button
-								key={chip.id}
-								type="button"
-								className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-zinc-300 hover:bg-white"
-								onClick={chip.onClear}
-							>
-								<span>{chip.label}</span>
-								<span aria-hidden="true" className="text-zinc-400">
-									x
-								</span>
-								<span className="sr-only">Clear {chip.label}</span>
-							</button>
-						))}
-						<div className="ml-auto">{clearActiveFiltersButton}</div>
-					</div>
+					<ActiveFilterChips
+						chips={activeFilterChips}
+						clearAllButton={clearActiveFiltersButton}
+					/>
 				) : null}
 
 				{windowCoversSeason ? (
@@ -3629,63 +1524,12 @@ export default function App() {
 				) : tab === "form" ? (
 					<>
 						<FormScatter players={visibleFormRows} />
-						<DataTable
-							data={visibleFormRows}
-							paginate
-							initialPageSize={tablePageSize}
-							onPageSizeChange={setTablePageSize}
-							columns={formColumns}
-							onRowClick={(row) => openPlayerDetail(row.element)}
-							rowClassName={playerRowClassName}
-							rowStickyClassName={playerStickyClassName}
-							renderRowActions={renderShortlistAction}
-							rowActionsHeader={"\u2605"}
-							rowActionsHeaderLabel="Shortlist"
-							rowActionsHeaderTooltip="Add or remove players from the shortlist"
-							stickyDataColumns={4}
-							emptyTitle={playerEmptyTitle}
-							emptyDescription={playerEmptyDescription}
-							emptyAction={clearActiveFiltersButton}
-						/>
+						{renderPlayerTable(visibleFormRows, formColumns)}
 					</>
 				) : tab === "defcon" ? (
-					<DataTable
-						data={visibleDefconRows}
-						paginate
-						initialPageSize={tablePageSize}
-						onPageSizeChange={setTablePageSize}
-						columns={defconColumns}
-						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={playerRowClassName}
-						rowStickyClassName={playerStickyClassName}
-						renderRowActions={renderShortlistAction}
-						rowActionsHeader={"\u2605"}
-						rowActionsHeaderLabel="Shortlist"
-						rowActionsHeaderTooltip="Add or remove players from the shortlist"
-						stickyDataColumns={4}
-						emptyTitle={playerEmptyTitle}
-						emptyDescription={playerEmptyDescription}
-						emptyAction={clearActiveFiltersButton}
-					/>
+					renderPlayerTable(visibleDefconRows, defconColumns)
 				) : tab === "defconProb" ? (
-					<DataTable
-						data={visibleDefconProbRows}
-						paginate
-						initialPageSize={tablePageSize}
-						onPageSizeChange={setTablePageSize}
-						columns={defconProbColumns}
-						onRowClick={(row) => openPlayerDetail(row.element)}
-						rowClassName={playerRowClassName}
-						rowStickyClassName={playerStickyClassName}
-						renderRowActions={renderShortlistAction}
-						rowActionsHeader={"\u2605"}
-						rowActionsHeaderLabel="Shortlist"
-						rowActionsHeaderTooltip="Add or remove players from the shortlist"
-						stickyDataColumns={4}
-						emptyTitle={playerEmptyTitle}
-						emptyDescription={playerEmptyDescription}
-						emptyAction={clearActiveFiltersButton}
-					/>
+					renderPlayerTable(visibleDefconProbRows, defconProbColumns)
 				) : (
 					<>
 						<p className="mb-2 text-sm text-zinc-500">
