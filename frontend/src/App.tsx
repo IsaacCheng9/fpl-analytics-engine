@@ -27,6 +27,14 @@ import { PlayerComparePanel } from "./components/PlayerComparePanel";
 import { PlayerPanel } from "./components/PlayerPanel";
 import { SquadInspection } from "./components/SquadInspection";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
+import {
+	divergingScale,
+	FDR_SCALE,
+	type HeatScale,
+	heatColour,
+	type Range,
+	sequentialScale,
+} from "./lib/heat";
 
 type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
 type AttackingMetric = "xg" | "xa" | "xgi";
@@ -76,8 +84,12 @@ type ActiveFilterChip = {
 	onClear: () => void;
 };
 type FilterPreset = "nailed" | "value" | "differential" | "fixture";
+// Sequential shades more-is-better metrics, diverging centres changes on zero,
+// fdr uses the fixed 1-5 rating, and none leaves context columns unshaded.
+type HeatScaleKind = "sequential" | "diverging" | "fdr" | "none";
 type HeatCellOptions = {
 	lowerIsBetter?: boolean;
+	scale?: HeatScaleKind;
 	format?: (value: number | null) => string;
 };
 
@@ -933,8 +945,6 @@ function formatPlayerCount(count: number): string {
 	return `${count} ${count === 1 ? "player" : "players"}`;
 }
 
-type Range = { min: number; max: number };
-
 // Metric columns that get heat shading. The range is computed league-wide from
 // an unfiltered query so a player's colour stays fixed as you filter.
 const FORM_HEAT_KEYS = [
@@ -1042,23 +1052,6 @@ function HeatCell({
 	return <span>{text}</span>;
 }
 
-// Shade a cell red (worst) to green (best) by its position in the league-wide
-// range, so relative standing is readable at a glance.
-function heatCellColour(
-	value: number | null | undefined,
-	range: Range,
-	lowerIsBetter: boolean,
-) {
-	if (value == null) {
-		return undefined;
-	}
-	const { min, max } = range;
-	const t = max > min ? (value - min) / (max - min) : 0.5;
-	const score = lowerIsBetter ? 1 - t : t;
-	const hue = score * 120; // 0 = red (worst), 120 = green (best).
-	return `hsl(${hue}, 68%, 80%)`;
-}
-
 // Build the text renderer for a heat-shaded cell.
 function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
 	const format = opts.format ?? ((value: number | null) => fmtNum(value));
@@ -1068,16 +1061,25 @@ function heatCell<T>(_range: Range, opts: HeatCellOptions = {}) {
 	};
 }
 
+function heatScale(range: Range, opts: HeatCellOptions): HeatScale | null {
+	const lowerIsBetter = opts.lowerIsBetter ?? false;
+	switch (opts.scale ?? "sequential") {
+		case "sequential":
+			return sequentialScale(range, lowerIsBetter);
+		case "diverging":
+			return divergingScale(range, lowerIsBetter);
+		case "fdr":
+			return FDR_SCALE;
+		case "none":
+			return null;
+	}
+}
+
 function heatCellStyle<T>(
-	range: Range,
-	lowerIsBetter: boolean,
+	scale: HeatScale,
 ): (cell: Cell<T, unknown>) => { backgroundColor: string } | undefined {
 	return (cell) => {
-		const backgroundColor = heatCellColour(
-			cell.getValue<number | null>(),
-			range,
-			lowerIsBetter,
-		);
+		const backgroundColor = heatColour(cell.getValue<number | null>(), scale);
 		return backgroundColor ? { backgroundColor } : undefined;
 	};
 }
@@ -1087,10 +1089,11 @@ function heatMeta<T>(
 	range: Range,
 	opts: HeatCellOptions = {},
 ): ColumnDef<T>["meta"] {
-	return {
-		...meta,
-		cellStyle: heatCellStyle<T>(range, opts.lowerIsBetter ?? false),
-	};
+	const scale = heatScale(range, opts);
+	const numericMeta = { ...meta, numeric: true };
+	return scale === null
+		? numericMeta
+		: { ...numericMeta, cellStyle: heatCellStyle<T>(scale) };
 }
 
 function buildFormMetricColumns(
@@ -1105,7 +1108,8 @@ function buildFormMetricColumns(
 	).map((group) => {
 		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
 		const key = ATTACKING_METRIC_KEYS[metric][group];
-		const formatter = group === "delta" ? { format: fmtDelta } : {};
+		const formatter: HeatCellOptions =
+			group === "delta" ? { format: fmtDelta, scale: "diverging" } : {};
 		const tooltip =
 			group === "window"
 				? `Expected ${noun} per 90 minutes over the recent window`
@@ -1142,6 +1146,7 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 			accessorKey: "price",
 			header: "Price",
 			cell: (info) => fmtPrice(info.getValue<number | null>()),
+			meta: { numeric: true },
 		},
 		{
 			accessorKey: "avg_fdr",
@@ -1156,7 +1161,7 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
 				},
 				ranges.avg_fdr,
-				{ lowerIsBetter: true },
+				{ scale: "fdr" },
 			),
 		},
 		{
@@ -1172,7 +1177,7 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 						"Current ownership percentage; a live snapshot, not point-in-time",
 				},
 				ranges.current_ownership,
-				{ lowerIsBetter: true },
+				{ scale: "none" },
 			),
 		},
 	];
@@ -1196,6 +1201,7 @@ function buildFormColumns(
 			meta: heatMeta<FormPlayer>(
 				{ tooltip: "Total minutes played across the window" },
 				ranges.window_minutes,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1210,6 +1216,7 @@ function buildFormColumns(
 						"Average minutes per appearance in the window; 0-minute games are excluded",
 				},
 				ranges.window_mins_per_appearance,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1219,6 +1226,7 @@ function buildFormColumns(
 			meta: heatMeta<FormPlayer>(
 				{ tooltip: "Share of window games the player started" },
 				ranges.window_start_rate,
+				{ scale: "none" },
 			),
 		},
 		...ATTACKING_METRIC_COLUMN_ORDER.filter(
@@ -1255,6 +1263,7 @@ function buildDefconColumns(
 			meta: heatMeta<DefconPlayer>(
 				{ tooltip: "Total minutes played across the window" },
 				ranges.window_minutes,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1269,6 +1278,7 @@ function buildDefconColumns(
 						"Average minutes per appearance in the window; 0-minute games are excluded",
 				},
 				ranges.window_mins_per_appearance,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1280,6 +1290,7 @@ function buildDefconColumns(
 			meta: heatMeta<DefconPlayer>(
 				{ tooltip: "Share of window games the player started" },
 				ranges.window_start_rate,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1291,6 +1302,7 @@ function buildDefconColumns(
 			meta: heatMeta<DefconPlayer>(
 				{ tooltip: "Eligible games in the window" },
 				ranges.window_games,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1302,6 +1314,7 @@ function buildDefconColumns(
 			meta: heatMeta<DefconPlayer>(
 				{ tooltip: "Window games clearing the DefCon threshold" },
 				ranges.window_defcon_hits,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1360,6 +1373,7 @@ function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Total minutes played across the recent window" },
 				ranges.window_minutes,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1375,6 +1389,7 @@ function buildDefconProbColumns(
 						"Average minutes per appearance in the recent window; 0-minute games are excluded",
 				},
 				ranges.window_mins_per_appearance,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1386,6 +1401,7 @@ function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Share of recent window games the player started" },
 				ranges.window_start_rate,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1397,6 +1413,7 @@ function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Eligible appearances up to this gameweek" },
 				ranges.games,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1408,6 +1425,7 @@ function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Appearances clearing the DefCon threshold" },
 				ranges.hits,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1442,7 +1460,7 @@ function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{ tooltip: "Uncertainty (standard deviation) of the probability" },
 				ranges.prob_std,
-				{ lowerIsBetter: true },
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1486,13 +1504,7 @@ function buildClubColumns(
 		const defensive = metric === "xGC";
 		const key =
 			`${period}_${defensive ? "concession" : "finishing"}_delta${total ? "_total" : ""}` as const;
-		const sourceRange = ranges[key];
-		// Centre the colours on zero so underperformance is never shaded green.
-		const extent = Math.max(
-			Math.abs(sourceRange.min),
-			Math.abs(sourceRange.max),
-		);
-		const range = { min: -extent, max: extent };
+		const range = ranges[key];
 		const label = period === "window" ? "Window" : "Season";
 		return {
 			id: key,
@@ -1508,6 +1520,8 @@ function buildClubColumns(
 					tooltip: `${metric} over/underperformance: ${defensive ? "xGC minus goals conceded" : "goals scored minus xG"}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${defensive ? "fewer goals conceded" : "more goals scored"} than expected; negative means underperformance. Descriptive, not a prediction.`,
 				},
 				range,
+				// Centre on zero so underperformance is never shaded favourably.
+				{ scale: "diverging" },
 			),
 		};
 	}
@@ -1522,6 +1536,7 @@ function buildClubColumns(
 			meta: heatMeta<ClubForm>(
 				{ tooltip: "Club matches in the recent window" },
 				ranges.window_matches,
+				{ scale: "none" },
 			),
 		},
 		{
@@ -1554,6 +1569,7 @@ function buildClubColumns(
 						"Window xG per match minus season xG per match; positive means the attack is creating more",
 				},
 				ranges.delta_xg_per_match,
+				{ scale: "diverging" },
 			),
 		},
 		overperformanceColumn("window", "xG", true),
@@ -1585,6 +1601,7 @@ function buildClubColumns(
 									"Window goals per match minus season goals per match; useful context for finishing variance",
 							},
 							ranges.delta_goals_for_per_match,
+							{ scale: "diverging" },
 						),
 					},
 				]
@@ -1598,6 +1615,7 @@ function buildClubColumns(
 					tooltip: "Recent xG per match improvement versus the season baseline",
 				},
 				ranges.attack_form,
+				{ scale: "diverging" },
 			),
 		},
 		{
@@ -1639,7 +1657,7 @@ function buildClubColumns(
 						"Window xGC per match minus season xGC per match; negative means the defence is allowing less",
 				},
 				ranges.delta_xgc_per_match,
-				{ lowerIsBetter: true },
+				{ lowerIsBetter: true, scale: "diverging" },
 			),
 		},
 		overperformanceColumn("window", "xGC", true),
@@ -1675,7 +1693,7 @@ function buildClubColumns(
 									"Window goals conceded per match minus season goals conceded per match",
 							},
 							ranges.delta_goals_against_per_match,
-							{ lowerIsBetter: true },
+							{ lowerIsBetter: true, scale: "diverging" },
 						),
 					},
 				]
@@ -1690,6 +1708,7 @@ function buildClubColumns(
 						"Recent xGC per match improvement versus the season baseline; positive is better",
 				},
 				ranges.defence_form,
+				{ scale: "diverging" },
 			),
 		},
 		{
@@ -1705,7 +1724,7 @@ function buildClubColumns(
 						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
 				},
 				ranges.avg_fdr,
-				{ lowerIsBetter: true },
+				{ scale: "fdr" },
 			),
 		},
 	];

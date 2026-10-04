@@ -31,6 +31,8 @@ declare module "@tanstack/react-table" {
 	interface ColumnMeta<TData extends RowData, TValue> {
 		tooltip?: string;
 		headerClassName?: string;
+		// Right-align with fixed-width digits so magnitudes line up down a column.
+		numeric?: boolean;
 		cellStyle?: (cell: Cell<TData, TValue>) => CSSProperties | undefined;
 	}
 }
@@ -275,16 +277,19 @@ export function DataTable<T>({
 									const sorted = header.column.getIsSorted();
 									const meta = header.column.columnDef.meta;
 									const tooltip = meta?.tooltip;
+									const numeric = meta?.numeric ?? false;
 									return (
 										<th
 											key={header.id}
 											className={`sticky top-0 z-30 ${cellPadding} align-bottom font-medium ${stickyHeaderClass(columnIndex)} ${meta?.headerClassName ?? ""}`}
 											style={stickyStyle(columnIndex)}
 										>
-											<div className={headerContentClass}>
+											<div
+												className={`${headerContentClass}${numeric ? " ml-auto justify-end" : ""}`}
+											>
 												<button
 													type="button"
-													className="flex min-w-0 cursor-pointer select-none items-start gap-1 text-left"
+													className={`flex min-w-0 cursor-pointer select-none items-start gap-1 ${numeric ? "text-right" : "text-left"}`}
 													onClick={header.column.getToggleSortingHandler()}
 												>
 													<span className="min-w-0 break-words whitespace-normal">
@@ -353,7 +358,7 @@ export function DataTable<T>({
 										return (
 											<td
 												key={cell.id}
-												className={`${cellPadding} whitespace-nowrap ${stickyBodyClass(columnIndex)} ${
+												className={`${cellPadding} whitespace-nowrap ${meta?.numeric ? "text-right tabular-nums " : ""}${stickyBodyClass(columnIndex)} ${
 													columnIndex < stickyDataColumns
 														? (rowStickyClassName?.(row.original) ??
 															"bg-white group-hover:bg-zinc-50")

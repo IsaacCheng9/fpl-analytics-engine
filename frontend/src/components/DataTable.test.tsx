@@ -200,3 +200,22 @@ test("returns focus to the top controls after footer navigation", () => {
 	expect(top).toHaveFocus();
 	expect(bodyRows()).toHaveLength(50);
 });
+
+test("right-aligns numeric columns with fixed-width digits", () => {
+	render(
+		<DataTable
+			data={players.slice(0, 1)}
+			columns={[
+				{ accessorKey: "name", header: "Player" },
+				{ accessorKey: "points", header: "Points", meta: { numeric: true } },
+			]}
+		/>,
+	);
+
+	const [nameCell, pointsCell] = within(bodyRows()[0]).getAllByRole("cell");
+	expect(pointsCell).toHaveClass("text-right", "tabular-nums");
+	expect(nameCell).not.toHaveClass("text-right");
+	expect(screen.getByRole("button", { name: "Points" })).toHaveClass(
+		"text-right",
+	);
+});
