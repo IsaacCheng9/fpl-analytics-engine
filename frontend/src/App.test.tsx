@@ -2346,3 +2346,16 @@ test("omits the DefCon probability uncertainty column the model leaves empty", a
 		within(table).queryByRole("button", { name: "+/-" }),
 	).not.toBeInTheDocument();
 });
+
+test("explains an empty club-form backtest instead of showing bare headers", async () => {
+	window.history.replaceState(null, "", "/?tab=evidence");
+	mockEarlySeasonFetch((url) =>
+		url.includes("/clubs/form-validation") ? [] : undefined,
+	);
+
+	render(withProviders(<App />));
+
+	expect(
+		await screen.findByText(/No gameweeks can be scored yet/),
+	).toHaveTextContent("results start once GW16 is complete");
+});

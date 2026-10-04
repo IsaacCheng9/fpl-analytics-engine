@@ -75,6 +75,23 @@ function MetricCard({
 	);
 }
 
+// Explain an empty backtest table rather than leaving bare headers.
+function EmptyTableRow({
+	columns,
+	message,
+}: {
+	columns: number;
+	message: string;
+}) {
+	return (
+		<tr className="border-zinc-100 border-t">
+			<td colSpan={columns} className="px-3 py-6 text-center text-zinc-500">
+				{message}
+			</td>
+		</tr>
+	);
+}
+
 export function ModelEvidence({
 	defconValidation,
 	clubValidation,
@@ -149,6 +166,12 @@ export function ModelEvidence({
 							</tr>
 						</thead>
 						<tbody>
+							{defconValidation?.calibration.length === 0 ? (
+								<EmptyTableRow
+									columns={5}
+									message="No predictions can be scored yet. Each needs the following gameweek's results, so the first appear once GW2 is complete."
+								/>
+							) : null}
 							{defconValidation?.calibration.map((row) => (
 								<tr key={row.bin} className="border-zinc-100 border-t">
 									<td className="px-3 py-2">{row.bin}</td>
@@ -187,6 +210,14 @@ export function ModelEvidence({
 							</tr>
 						</thead>
 						<tbody>
+							{clubRows.length === 0 ? (
+								// With the default 5-gameweek window and horizon and 40 training
+								// rows, GW11 is the first scorable gameweek, needing results to GW16.
+								<EmptyTableRow
+									columns={6}
+									message="No gameweeks can be scored yet. Each needs the following five gameweeks of results and enough earlier club rows to train on, so results start once GW16 is complete."
+								/>
+							) : null}
 							{clubRows.map((row) => (
 								<tr key={row.target} className="border-zinc-100 border-t">
 									<th className="px-3 py-2 text-left font-medium text-zinc-700">
