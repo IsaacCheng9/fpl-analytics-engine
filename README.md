@@ -4,6 +4,8 @@
 [![Test](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml)
 [![Frontend](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml)
 
+**Live dashboard:** [fpl-analytics-engine.vercel.app](https://fpl-analytics-engine.vercel.app)
+
 A Fantasy Premier League analytics engine that surfaces players whose recent
 underlying output has pulled away from their season baseline, and estimates how
 likely each player is to earn a defensive-contribution point. Every metric is
@@ -48,8 +50,8 @@ where the current squad looks weak for the next gameweek.
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
   Form, and Model Evidence views, URL-backed controls, active filter chips,
-  presets, heat-shaded metrics, sticky player context columns, and a collapsible
-  form-versus-baseline scatter plot in Attacking Form
+  presets, colour-coded signal columns, sticky player context columns, and a
+  collapsible form-versus-baseline scatter plot in Attacking Form
 - **Table pagination** – shows 25 rows per page in the player and club tables,
   with 10, 25, 50, 100, or all rows available. Sorting and filtering apply to the
   full result set, and the scatter plot retains all matching players
@@ -62,8 +64,8 @@ where the current squad looks weak for the next gameweek.
   next-gameweek squad inspection view with next fixture, FDR, minutes, threat,
   `P(Hit | 60+ Mins)`, ownership, and transparent risk/hold flags
 - **Player detail view** – click any table row to inspect a player's
-  selected-season gameweeks, rolling xG/xA/xGI per 90, rolling DefCon counts,
-  and cross-season history keyed by stable FPL `code`
+  selected-season gameweeks, rolling xG/xA/xGI per 90 and DefCon counts against
+  their season averages, and cross-season history keyed by stable FPL `code`
 - **Club form context** – compares each club's recent attacking and defensive
   output with its season baseline, then shows that form next to upcoming FDR
 
@@ -71,19 +73,27 @@ where the current squad looks weak for the next gameweek.
 
 ### Attacking Form
 
-<img width="1480" height="1440" alt="Attacking Form table" src="docs/screenshots/attacking_form.png" />
+<img width="3840" height="3600" alt="Attacking Form table" src="https://github.com/user-attachments/assets/56bfb67d-3614-4179-a99e-9726f3e5070e" />
 
 ### DefCon Form
 
-<img width="1480" height="1440" alt="DefCon Form table" src="docs/screenshots/defcon_form.png" />
+<img width="3840" height="3000" alt="DefCon Form table" src="https://github.com/user-attachments/assets/252c638d-6f2e-4162-ac13-a6f6a865b0ba" />
 
 ### DefCon Probability
 
-<img width="1480" height="1440" alt="DefCon Probability table" src="docs/screenshots/defcon_probability.png" />
+<img width="3840" height="3000" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/78f202ed-d0c7-4872-9cf5-14930d2681a3" />
+
+### Club Form
+
+<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/1dfcc71a-b68f-4bc2-8e1f-e65af1baadd2" />
+
+### Model Evidence
+
+<img width="3840" height="2180" alt="Model Evidence view" src="https://github.com/user-attachments/assets/6bb832e2-1cfc-4743-8e49-2785cd83bfc2" />
 
 ### Detailed Player View
 
-<img width="1480" height="1440" alt="Detailed Player View panel" src="docs/screenshots/detailed_player_view.png" />
+<img width="3840" height="2440" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/12652499-5d2c-4841-a7a4-fe2b3cd8b51f" />
 
 ## Methodology
 
@@ -108,6 +118,13 @@ A five-gameweek window at GW30 covers GW26–30 across player form, comparison,
 rolling player detail, and club form. Double gameweeks include every fixture;
 blanks never pull older fixtures into the window. Game and match counts remain
 fixture counts, and per-match rates use the number of fixtures actually present.
+
+The dashboard's default window is one gameweek shorter than the gameweeks
+played, capped at five, so recent form still differs from the season baseline
+early in the season. A window covering every gameweek played makes the two
+figures identical and every delta zero, and the dashboard flags this when such a
+window is chosen. DefCon Probability's minimum-games default follows the same
+rule.
 
 Expected-stat rates use only minutes with an available observation for that
 statistic. For 2022-23, this excludes GW1–15 from expected-stat totals and
@@ -138,6 +155,18 @@ solver: it shows the current squad as one list, with the current next fixture
 and FDR, recent and season threat, minutes, start rate, `P(Hit | 60+ Mins)`,
 ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
 `Low Threat`, `Rising Threat`, `DefCon Upside`, and `Good Hold`.
+
+### Table Colours
+
+Shading marks signal columns only. Changes, form scores, and over- or
+underperformance use a red–white–green scale centred on zero: green is
+favourable, red is unfavourable, and values near zero stay white. For goals
+conceded and xGC, lower values count as favourable. Columns where more is
+better, such as xGI per 90 or `P(Hit | 60+ Mins)`, use a single green that
+strengthens with the value. These scales use the league-wide results, so a
+player's colour does not change as filters narrow the table. FDR uses its fixed
+1–5 rating with 3 as neutral, while context columns – price, ownership, playing
+time, games, and hit counts – stay unshaded.
 
 ### Defensive Contribution (DefCon)
 
@@ -282,9 +311,13 @@ flowchart TD
     enriched --> formmod[form.py<br/>point-in-time form + backtest]
     enriched --> defconmod[defcon.py<br/>calibrated count probability + backtest]
     enriched --> playermod[player.py<br/>player detail + season history]
+    enriched --> clubmod[club.py<br/>club form + validation]
+    snap --> fixmod[fixtures.py<br/>FDR + next fixtures]
     formmod --> api[api.py<br/>FastAPI gateway]
     defconmod --> api
     playermod --> api
+    clubmod --> api
+    fixmod --> api
     api -->|JSON| ui[React dashboard<br/>tables + detail panel]
 ```
 
@@ -331,7 +364,7 @@ The engine reads from committed Parquet snapshots under `data/`:
 Run from the project root:
 
 ```bash
-uv sync --all-extras --dev
+uv sync
 ```
 
 ### Refreshing Data
@@ -346,7 +379,8 @@ The refresh command archives the current live FPL season into the detected
 `data/<season>/` folder, backfills historical seasons from the vaastav archive,
 canonicalises the current season's `enriched.parquet`, runs data-health
 validation, and finishes with the real-data smoke check. Use it before pushing
-updated `data/` snapshots during the season.
+updated `data/` snapshots during the season. The deployed dashboard serves the
+committed snapshots, so a refresh goes live on the next deployment.
 
 Refreshes run against a temporary copy and publish only after every selected
 step passes. Failed downloads, enrichment, validation or smoke checks leave the
@@ -413,7 +447,8 @@ The smoke script uses Saka by default as a known cross-season player, verifies
 stable-code matching, and checks that 2022-23 expected-stat rates are scoped to
 GW16 onward.
 
-Run the opt-in club-form validation against the current-season archive:
+Run the opt-in club-form validation, which reads the 2025-26 archive by default
+(pass `--data-dir` to choose another season):
 
 ```bash
 uv run python scripts/club_form_validation.py
@@ -440,24 +475,6 @@ bun run dev
 ```
 
 The dashboard is then served at [http://localhost:5173](http://localhost:5173).
-
-### Deploying To Vercel
-
-The repository includes a Vercel configuration for a single-project deployment:
-
-- `frontend/` builds the static React dashboard
-- `src/fpl_analytics_engine/vercel.py` exposes the FastAPI app as a Python ASGI
-  function mounted under `/api` and serves the built Vite app for all non-API
-  paths
-- `vercel.json` builds the frontend and sets `PYTHONPATH=src` so Vercel's
-  Python runtime can import the packaged app from the `src/` layout
-- `data/` is committed so the deployed API can read the same Parquet snapshots
-  as local development
-
-In Vercel, import the repository with the project root set to the repository
-root. The checked-in `vercel.json` builds the frontend, then
-`src/fpl_analytics_engine/vercel.py` serves both the API and the single-page app
-from one FastAPI deployment.
 
 ## API Endpoints
 
@@ -529,4 +546,5 @@ cd frontend
 bun run test
 ```
 
-Both suites run on every push via GitHub Actions.
+GitHub Actions runs the backend suite on pushes to `main` and on pull requests,
+and the frontend suite whenever files under `frontend/` change.
