@@ -462,26 +462,11 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ### Deploying To Vercel
 
-The repository includes a Vercel configuration for a single-project deployment:
-
-- `frontend/` builds the static React dashboard
-- `src/fpl_analytics_engine/vercel.py` exposes the FastAPI app as a Python ASGI
-  function mounted under `/api` and serves the built Vite app for all non-API
-  paths
-- `vercel.json` builds the frontend and sets `PYTHONPATH=src` so Vercel's
-  Python runtime can import the packaged app from the `src/` layout
-- `vercel.json` also runs the API in London (`lhr1`) and gives the
-  content-hashed frontend assets a long-lived immutable cache header
-- Successful API reads are cached on Vercel's CDN for a day. Vercel keys that
-  cache by deployment, so refreshed snapshots appear on the next deploy without
-  a manual purge. FPL team imports fetch live data and are never cached
-- `data/` is committed so the deployed API can read the same Parquet snapshots
-  as local development
-
-In Vercel, import the repository with the project root set to the repository
-root. The checked-in `vercel.json` builds the frontend, then
-`src/fpl_analytics_engine/vercel.py` serves both the API and the single-page app
-from one FastAPI deployment.
+Import the repository into Vercel with the project root set to the repository
+root. The checked-in `vercel.json` builds the dashboard, and one FastAPI
+deployment serves it alongside the API under `/api`. The deployed API reads the
+committed `data/` snapshots, so refreshed data reaches the dashboard on the next
+deployment.
 
 ## API Endpoints
 
