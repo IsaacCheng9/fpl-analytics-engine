@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
 	type FplTeamPick,
 	fetchClubForm,
@@ -32,8 +32,6 @@ import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
 import { ModelEvidence } from "./components/ModelEvidence";
-import { PlayerComparePanel } from "./components/PlayerComparePanel";
-import { PlayerPanel } from "./components/PlayerPanel";
 import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
 import { TransferFilterFields } from "./components/TransferFilterFields";
@@ -94,6 +92,27 @@ import {
 } from "./state";
 import { inputClass, labelClass } from "./styles";
 import { useUrlState } from "./urlState";
+
+// Load the modal panels on demand to keep them out of the initial bundle.
+const PlayerPanel = lazy(() =>
+	import("./components/PlayerPanel").then((m) => ({ default: m.PlayerPanel })),
+);
+const PlayerComparePanel = lazy(() =>
+	import("./components/PlayerComparePanel").then((m) => ({
+		default: m.PlayerComparePanel,
+	})),
+);
+
+function PanelFallback() {
+	return (
+		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
+			<div className="fixed inset-0 bg-black/40" />
+			<div className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl">
+				<p className="text-sm text-zinc-500">Loading...</p>
+			</div>
+		</div>
+	);
+}
 
 export default function App() {
 	const [tablePageSize, setTablePageSize] = useState(25);
@@ -1576,52 +1595,56 @@ export default function App() {
 			</div>
 
 			{selectedElement !== null ? (
-				<PlayerPanel
-					key={selectedElement}
-					element={selectedElement}
-					window={playerWindow}
-					season={playerSeason}
-					asOfGw={asOfGw}
-					onWindowChange={setPlayerWindow}
-					onSeasonChange={setPlayerSeason}
-					onClose={() => {
-						setSelectedElement(null);
-						setPlayerWindow(DEFAULT_PLAYER_WINDOW);
-						setPlayerSeason(DEFAULT_PLAYER_SEASON);
-					}}
-				/>
+				<Suspense fallback={<PanelFallback />}>
+					<PlayerPanel
+						key={selectedElement}
+						element={selectedElement}
+						window={playerWindow}
+						season={playerSeason}
+						asOfGw={asOfGw}
+						onWindowChange={setPlayerWindow}
+						onSeasonChange={setPlayerSeason}
+						onClose={() => {
+							setSelectedElement(null);
+							setPlayerWindow(DEFAULT_PLAYER_WINDOW);
+							setPlayerSeason(DEFAULT_PLAYER_SEASON);
+						}}
+					/>
+				</Suspense>
 			) : null}
 
 			{compareOpen ? (
-				<PlayerComparePanel
-					playerOptions={comparePlayerOptions}
-					formPlayers={compareFormQuery.data ?? []}
-					defconPlayers={compareDefconQuery.data ?? []}
-					defconProbabilityPlayers={compareDefconProbabilityQuery.data ?? []}
-					clubForms={compareClubQuery.data ?? []}
-					contextLoading={
-						compareFormQuery.isPending ||
-						compareDefconQuery.isPending ||
-						compareDefconProbabilityQuery.isPending ||
-						compareClubQuery.isPending
-					}
-					contextError={
-						compareFormQuery.isError ||
-						compareDefconQuery.isError ||
-						compareDefconProbabilityQuery.isError ||
-						compareClubQuery.isError
-					}
-					leftElement={compareLeftElement}
-					rightElement={compareRightElement}
-					window={compareWindow}
-					asOfGw={compareAsOfGw}
-					latestGw={latestGw}
-					onWindowChange={setCompareWindow}
-					onAsOfGwChange={setCompareAsOfGw}
-					onLeftChange={updateCompareLeft}
-					onRightChange={updateCompareRight}
-					onClose={closeComparePanel}
-				/>
+				<Suspense fallback={<PanelFallback />}>
+					<PlayerComparePanel
+						playerOptions={comparePlayerOptions}
+						formPlayers={compareFormQuery.data ?? []}
+						defconPlayers={compareDefconQuery.data ?? []}
+						defconProbabilityPlayers={compareDefconProbabilityQuery.data ?? []}
+						clubForms={compareClubQuery.data ?? []}
+						contextLoading={
+							compareFormQuery.isPending ||
+							compareDefconQuery.isPending ||
+							compareDefconProbabilityQuery.isPending ||
+							compareClubQuery.isPending
+						}
+						contextError={
+							compareFormQuery.isError ||
+							compareDefconQuery.isError ||
+							compareDefconProbabilityQuery.isError ||
+							compareClubQuery.isError
+						}
+						leftElement={compareLeftElement}
+						rightElement={compareRightElement}
+						window={compareWindow}
+						asOfGw={compareAsOfGw}
+						latestGw={latestGw}
+						onWindowChange={setCompareWindow}
+						onAsOfGwChange={setCompareAsOfGw}
+						onLeftChange={updateCompareLeft}
+						onRightChange={updateCompareRight}
+						onClose={closeComparePanel}
+					/>
+				</Suspense>
 			) : null}
 		</div>
 	);

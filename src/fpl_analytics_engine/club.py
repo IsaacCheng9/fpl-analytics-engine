@@ -688,38 +688,6 @@ def summarise_club_form_validation(scored: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def flag_clubs(
-    club_table: pl.DataFrame,
-    min_attack_delta: float = 0.0,
-    min_defence_delta: float = 0.0,
-    top_k: int | None = None,
-) -> pl.DataFrame:
-    """Filter clubs whose recent form has improved against their baseline.
-
-    Args:
-        club_table: Output of :func:`compute_club_form_table`.
-        min_attack_delta: Minimum recent xG per match improvement.
-        min_defence_delta: Minimum recent xGC per match improvement, expressed
-            as a positive defensive score.
-        top_k: Optional cap on the number of clubs returned.
-
-    Returns:
-        Clubs matching at least one form threshold, sorted by combined form.
-    """
-    flagged = club_table.filter(
-        (pl.col("attack_form") >= min_attack_delta)
-        | (pl.col("defence_form") >= min_defence_delta)
-    ).with_columns(
-        (pl.col("attack_form") + pl.col("defence_form")).alias("_form_score")
-    )
-    flagged = flagged.sort("_form_score", descending=True, nulls_last=True).drop(
-        "_form_score"
-    )
-    if top_k is not None:
-        flagged = flagged.head(top_k)
-    return flagged
-
-
 def latest_gameweek(history: pl.DataFrame) -> int:
     """Return the latest gameweek in the club history."""
     return cast(int, history["round"].max())
