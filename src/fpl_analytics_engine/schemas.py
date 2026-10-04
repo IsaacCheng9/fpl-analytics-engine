@@ -271,5 +271,4 @@ class DefconProbabilityPlayer(PlayerContext):
             "minimum-minutes threshold (60 by default)."
         )
     )
-    prob_std: float | None
     as_of_gw: int

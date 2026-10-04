@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 
 from fpl_analytics_engine import app as fpl_client
 from fpl_analytics_engine import club, data, defcon, fixtures, form, player
+from fpl_analytics_engine.data_health import DEFCON_START_SEASON
 from fpl_analytics_engine.domain import ELEMENT_TYPE_TO_POSITION, Position
 from fpl_analytics_engine.schemas import (
     ApiMeta,
@@ -36,6 +37,10 @@ AS_OF_GW_DESCRIPTION = (
     "latest). Current ownership is excluded from this - it is always the "
     "present-day snapshot and does not change with as_of_gw."
 )
+VALIDATION_SEASON_DESCRIPTION = (
+    "Archived season to backtest, e.g. 2025-26 (defaults to the live season)."
+)
+SEASON_PATTERN = r"^\d{4}-\d{2}$"
 
 # Fixture difficulty and live-snapshot overlay, attached to every player view.
 FIXTURE_CONTEXT_COLUMNS = [
@@ -106,7 +111,6 @@ DEFCON_PROBABILITY_COLUMNS = [
     "hits",
     "raw_rate",
     "prob",
-    "prob_std",
     *CONTEXT_COLUMNS,
     "as_of_gw",
 ]
@@ -299,6 +303,37 @@ def _resolve_as_of_gw(history: pl.DataFrame, as_of_gw: int | None) -> int:
             ),
         )
     return as_of_gw if as_of_gw is not None else latest
+
+
+def _validation_history(
+    season: str | None,
+    history: pl.DataFrame,
+    all_seasons: pl.DataFrame,
+    current_season: str,
+) -> pl.DataFrame:
+    """Return the history to backtest: the live season or an archived one.
+
+    The live season keeps the preseason guard; an archived season is read from
+    the cross-season snapshot so completed seasons can be validated in full.
+    Seasons before DefCon existed are rejected, because their backfilled
+    archives also lack the per-fixture club columns the club backtest needs.
+    """
+    if season is None or season == current_season:
+        _require_current_history(history)
+        return history
+    if data.season_sort_key(season) < data.season_sort_key(DEFCON_START_SEASON):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Backtests need {DEFCON_START_SEASON} or later archives.",
+        )
+    selected = (
+        all_seasons.filter(pl.col("season") == season)
+        if "season" in all_seasons.columns
+        else pl.DataFrame()
+    )
+    if selected.is_empty():
+        raise HTTPException(status_code=404, detail=f"Season {season} not found")
+    return selected
 
 
 def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
@@ -683,8 +718,13 @@ def players_defcon_probability(
 @app.get("/players/defcon-probability-validation")
 def players_defcon_probability_validation(
     history: Annotated[pl.DataFrame, Depends(get_history)],
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    current_season: Annotated[str, Depends(get_current_season)],
     bins: int = Query(DEFAULT_CALIBRATION_BINS, ge=2, le=20),
     min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
+    season: str | None = Query(
+        None, pattern=SEASON_PATTERN, description=VALIDATION_SEASON_DESCRIPTION
+    ),
 ) -> DefconProbabilityValidation:
     """Backtest the DefCon probability models against next-GW outcomes.
 
@@ -692,7 +732,7 @@ def players_defcon_probability_validation(
     gameweek, then Brier score and calibration are computed from the realised
     DefCon threshold hit.
     """
-    _require_current_history(history)
+    history = _validation_history(season, history, all_seasons, current_season)
     scored = defcon.backtest_defcon_count_probabilities(
         history,
         min_minutes=min_minutes,
@@ -780,12 +820,17 @@ def clubs_form(
 @app.get("/clubs/form-validation")
 def clubs_form_validation(
     history: Annotated[pl.DataFrame, Depends(get_history)],
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    current_season: Annotated[str, Depends(get_current_season)],
     window: int = Query(club.DEFAULT_WINDOW, ge=1, le=20),
     horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
     min_train_rows: int = Query(
         club.DEFAULT_VALIDATION_MIN_TRAIN_ROWS,
         ge=1,
         description="Minimum prior club/GW rows before an as-of GW is scored.",
+    ),
+    season: str | None = Query(
+        None, pattern=SEASON_PATTERN, description=VALIDATION_SEASON_DESCRIPTION
     ),
 ) -> list[ClubFormValidation]:
     """Validate whether club form improves a season-to-date baseline.
@@ -795,7 +840,7 @@ def clubs_form_validation(
     by the scored as-of gameweek. Historical FDR is excluded because the
     archive does not contain point-in-time FDR revisions.
     """
-    _require_current_history(history)
+    history = _validation_history(season, history, all_seasons, current_season)
     scored = club.backtest_club_form_signals(
         history,
         window=window,

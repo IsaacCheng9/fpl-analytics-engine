@@ -316,7 +316,6 @@ const probRows = [
 		hits: 6,
 		raw_rate: 0.6,
 		prob: 0.52,
-		prob_std: 0.1,
 		as_of_gw: 38,
 	},
 	{
@@ -328,7 +327,6 @@ const probRows = [
 		hits: 4,
 		raw_rate: 0.4,
 		prob: 0.45,
-		prob_std: 0.11,
 		as_of_gw: 38,
 	},
 	{
@@ -340,7 +338,6 @@ const probRows = [
 		hits: 12,
 		raw_rate: 0.8,
 		prob: 0.52,
-		prob_std: 0.1,
 		as_of_gw: 38,
 	},
 ];
@@ -1844,6 +1841,56 @@ test("renders the model evidence tab with backtest summaries", async () => {
 	});
 });
 
+test("defaults model evidence to the last complete season early in a live season", async () => {
+	window.history.replaceState(null, "", "/?tab=evidence");
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url !== "/api/") {
+			return mockApiFetch(input);
+		}
+		return Promise.resolve(
+			new Response(
+				JSON.stringify({ ...meta, season: "2026-27", latest_gw: 4 }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			),
+		);
+	});
+	const validationCalls = () =>
+		vi
+			.mocked(fetch)
+			.mock.calls.map(([input]) => String(input))
+			.filter((url) => url.includes("validation"));
+
+	render(withProviders(<App />));
+
+	const seasonSelect = await screen.findByLabelText("Season");
+	expect(seasonSelect).toHaveValue("2025-26");
+	expect(
+		within(seasonSelect).getByRole("option", { name: "2026-27 (Live)" }),
+	).toBeInTheDocument();
+	expect(
+		within(seasonSelect).queryByRole("option", { name: "2024-25" }),
+	).not.toBeInTheDocument();
+	expect(
+		screen.getByText(/until the live season reaches GW19/),
+	).toBeInTheDocument();
+	await waitFor(() => {
+		expect(validationCalls()).toHaveLength(2);
+	});
+	expect(validationCalls().every((url) => url.includes("season=2025-26"))).toBe(
+		true,
+	);
+
+	fireEvent.change(seasonSelect, { target: { value: "2026-27" } });
+
+	await waitFor(() => {
+		expect(
+			validationCalls().filter((url) => url.includes("season=2026-27")),
+		).toHaveLength(2);
+	});
+	expect(screen.getByLabelText("Season")).toHaveValue("2026-27");
+});
+
 test("hides point-in-time table filters on the model evidence tab", async () => {
 	window.history.replaceState(null, "", "/?tab=evidence&as_of_gw=20");
 
@@ -2332,19 +2379,6 @@ test("restores dashboard state and the team ID draft on back navigation", async 
 	).toHaveClass("bg-zinc-900");
 	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(4);
 	expect(screen.getByLabelText("FPL Team ID")).toHaveValue(123);
-});
-
-test("omits the DefCon probability uncertainty column the model leaves empty", async () => {
-	window.history.replaceState(null, "", "/?tab=defcon-prob");
-	render(withProviders(<App />));
-
-	const table = await screen.findByRole("table");
-	await waitFor(() => {
-		expect(within(table).getByText("Senesi")).toBeInTheDocument();
-	});
-	expect(
-		within(table).queryByRole("button", { name: "+/-" }),
-	).not.toBeInTheDocument();
 });
 
 test("explains an empty club-form backtest instead of showing bare headers", async () => {

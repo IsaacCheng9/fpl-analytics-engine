@@ -1,5 +1,15 @@
 import type { ClubFormValidation, DefconProbabilityValidation } from "../api";
+import {
+	EVIDENCE_MIN_LIVE_GW,
+	EVIDENCE_START_SEASON,
+} from "../lib/evidenceSeason";
 import { fmtNum } from "../lib/format";
+import { fieldClass, labelClass } from "../styles";
+import {
+	CalibrationChart,
+	isSmallBucket,
+	MIN_BUCKET_PREDICTIONS,
+} from "./CalibrationChart";
 import { InfoTooltip } from "./InfoTooltip";
 
 type Tone = "good" | "bad" | "neutral";
@@ -95,26 +105,66 @@ function EmptyTableRow({
 export function ModelEvidence({
 	defconValidation,
 	clubValidation,
+	season,
+	seasons,
+	liveSeason,
+	isLoadingSeason = false,
+	onSeasonChange,
 }: {
 	defconValidation: DefconProbabilityValidation | undefined;
 	clubValidation: ClubFormValidation[];
+	season: string;
+	seasons: string[];
+	liveSeason: string;
+	isLoadingSeason?: boolean;
+	onSeasonChange: (season: string) => void;
 }) {
 	const clubRows = [...clubValidation].sort((left, right) =>
 		targetLabel(left.target).localeCompare(targetLabel(right.target)),
 	);
+	const calibration = defconValidation?.calibration ?? [];
+	const hasSmallBuckets = calibration.some(isSmallBucket);
+	// Dim the previous season's results while a newly selected season loads.
+	const resultSectionClass = `rounded-lg border border-zinc-200 bg-white p-4 ${
+		isLoadingSeason ? "opacity-60" : ""
+	}`;
 
 	return (
 		<div className="space-y-4">
 			<section className="rounded-lg border border-zinc-200 bg-white p-4">
-				<h2 className="font-semibold text-lg">Backtested Evidence</h2>
-				<p className="mt-1 max-w-3xl text-sm text-zinc-500">
-					Historic as-of gameweeks are replayed, then scored against what
-					happened next. This keeps the scouting signals accountable to the same
-					point-in-time rules used by the transfer tables.
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<div>
+						<h2 className="font-semibold text-lg">Backtested Evidence</h2>
+						<p className="mt-1 max-w-3xl text-sm text-zinc-500">
+							Historic as-of gameweeks are replayed, then scored against what
+							happened next. This keeps the scouting signals accountable to the
+							same point-in-time rules used by the transfer tables.
+						</p>
+					</div>
+					<label className={`${labelClass} w-40`}>
+						Season
+						<select
+							className={`mt-1 ${fieldClass}`}
+							value={season}
+							onChange={(event) => onSeasonChange(event.target.value)}
+						>
+							{seasons.map((option) => (
+								<option key={option} value={option}>
+									{option === liveSeason ? `${option} (Live)` : option}
+								</option>
+							))}
+						</select>
+					</label>
+				</div>
+				<p className="mt-2 max-w-3xl text-xs text-zinc-500">
+					Defaults to the last complete season until the live season reaches GW
+					{EVIDENCE_MIN_LIVE_GW} (halfway), because earlier samples are too
+					small to judge the models. Evidence starts in {EVIDENCE_START_SEASON},
+					when DefCon was introduced.
 				</p>
 			</section>
 
-			<section className="rounded-lg border border-zinc-200 bg-white p-4">
+			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">DefCon Probability Model</h3>
 					<p className="mt-1 text-sm text-zinc-500">
@@ -149,44 +199,79 @@ export function ModelEvidence({
 					/>
 				</div>
 
-				<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200">
-					<table className="w-full min-w-[36rem] border-collapse text-sm">
-						<thead className="bg-zinc-100 text-left text-zinc-600">
-							<tr>
-								<th className="px-3 py-2 font-medium">
-									<span className="flex items-center gap-1">
-										Bucket
-										<InfoTooltip text="Buckets group predicted probabilities into 10 percentage point bands: 0 = 0% to under 10%, 1 = 10% to under 20%, etc. Mean Predicted is compared with Observed Rate." />
-									</span>
-								</th>
-								<th className="px-3 py-2 font-medium">Predictions</th>
-								<th className="px-3 py-2 font-medium">Mean Predicted</th>
-								<th className="px-3 py-2 font-medium">Observed Rate</th>
-								<th className="px-3 py-2 font-medium">Abs Error</th>
-							</tr>
-						</thead>
-						<tbody>
-							{defconValidation?.calibration.length === 0 ? (
-								<EmptyTableRow
-									columns={5}
-									message="No predictions can be scored yet. Each needs the following gameweek's results, so the first appear once GW2 is complete."
-								/>
-							) : null}
-							{defconValidation?.calibration.map((row) => (
-								<tr key={row.bin} className="border-zinc-100 border-t">
-									<td className="px-3 py-2">{row.bin}</td>
-									<td className="px-3 py-2">{fmtNum(row.n, 0)}</td>
-									<td className="px-3 py-2">{fmtRate(row.mean_predicted)}</td>
-									<td className="px-3 py-2">{fmtRate(row.observed_rate)}</td>
-									<td className="px-3 py-2">{fmtRate(row.abs_error)}</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
+				<div
+					className={`mt-4 grid items-start gap-4 ${
+						calibration.length > 0 ? "xl:grid-cols-2" : ""
+					}`}
+				>
+					{calibration.length > 0 ? (
+						<CalibrationChart buckets={calibration} />
+					) : null}
+					<div>
+						<div className="overflow-x-auto rounded-md border border-zinc-200">
+							<table className="w-full min-w-[36rem] border-collapse text-sm">
+								<thead className="bg-zinc-100 text-left text-zinc-600">
+									<tr>
+										<th className="px-3 py-2 font-medium">
+											<span className="flex items-center gap-1">
+												Bucket
+												<InfoTooltip
+													text={`Buckets group predicted probabilities into 10 percentage point bands: 0 = 0% to under 10%, 1 = 10% to under 20%, etc. Mean Predicted is compared with Observed Rate. Buckets with fewer than ${MIN_BUCKET_PREDICTIONS} predictions are greyed out because their observed rate is too noisy to read as calibration error.`}
+												/>
+											</span>
+										</th>
+										<th className="px-3 py-2 font-medium">Predictions</th>
+										<th className="px-3 py-2 font-medium">Mean Predicted</th>
+										<th className="px-3 py-2 font-medium">Observed Rate</th>
+										<th className="px-3 py-2 font-medium">Abs Error</th>
+									</tr>
+								</thead>
+								<tbody>
+									{defconValidation?.calibration.length === 0 ? (
+										<EmptyTableRow
+											columns={5}
+											message="No predictions can be scored yet. Each needs the following gameweek's results, so the first appear once GW2 is complete."
+										/>
+									) : null}
+									{calibration.map((row) => {
+										const isSmall = isSmallBucket(row);
+										return (
+											<tr
+												key={row.bin}
+												className={`border-zinc-100 border-t ${
+													isSmall ? "text-zinc-400" : ""
+												}`}
+											>
+												<td className="px-3 py-2">{row.bin}</td>
+												<td className="px-3 py-2">
+													{fmtNum(row.n, 0)}
+													{isSmall ? " (small sample)" : null}
+												</td>
+												<td className="px-3 py-2">
+													{fmtRate(row.mean_predicted)}
+												</td>
+												<td className="px-3 py-2">
+													{fmtRate(row.observed_rate)}
+												</td>
+												<td className="px-3 py-2">{fmtRate(row.abs_error)}</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+						{hasSmallBuckets ? (
+							<p className="mt-2 text-xs text-zinc-500">
+								Greyed buckets have fewer than {MIN_BUCKET_PREDICTIONS}{" "}
+								predictions, so their error is mostly noise rather than
+								miscalibration.
+							</p>
+						) : null}
+					</div>
 				</div>
 			</section>
 
-			<section className="rounded-lg border border-zinc-200 bg-white p-4">
+			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">Recent Club Form</h3>
 					<p className="mt-1 text-sm text-zinc-500">

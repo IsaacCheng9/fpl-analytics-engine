@@ -79,6 +79,7 @@ def client() -> Iterator[TestClient]:
     api.app.dependency_overrides[api.get_events] = _empty_events
     api.app.dependency_overrides[api.get_current_season] = lambda: "2025-26"
     api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame()
+    api.app.dependency_overrides[api.get_all_seasons] = pl.DataFrame
     yield TestClient(api.app)
     api.app.dependency_overrides.clear()
 
@@ -484,6 +485,8 @@ def test_defcon_probability_endpoint_ranks_and_excludes_keepers(
     assert body[0]["web_name"] == "P3"
     assert body[0]["raw_rate"] == pytest.approx(0.75)
     assert 0.0 <= body[0]["prob"] <= 1.0
+    # The calibrated count model has no posterior spread to report.
+    assert "prob_std" not in body[0]
 
     # Everyone has four games, so a higher floor returns nothing.
     too_few = client.get("/players/defcon-probability", params={"min_games": 5})
@@ -580,6 +583,71 @@ def test_defcon_probability_validation_defaults_to_display_minutes_threshold(
 
     assert default_body["n_predictions"] == 9
     assert low_minute_body["n_predictions"] > default_body["n_predictions"]
+
+
+def _with_season(history: pl.DataFrame, season: str) -> pl.DataFrame:
+    return history.with_columns(pl.lit(season).alias("season"))
+
+
+def test_defcon_probability_validation_can_score_an_archived_season(
+    client: TestClient,
+) -> None:
+    # The live season has only one gameweek, so nothing can be scored yet.
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = lambda: _history().filter(
+        pl.col("round") == 1
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: _with_season(
+        _history(), "2025-26"
+    )
+
+    live = client.get("/players/defcon-probability-validation").json()
+    archived = client.get(
+        "/players/defcon-probability-validation", params={"season": "2025-26"}
+    ).json()
+
+    assert live["n_predictions"] == 0
+    assert archived["n_predictions"] == 9
+    assert archived["calibration"]
+
+
+def test_club_form_validation_can_score_an_archived_season(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = _club_history
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: _with_season(
+        _club_validation_history(), "2025-26"
+    )
+    params = {"window": 1, "horizon": 1, "min_train_rows": 4}
+
+    live = client.get("/clubs/form-validation", params=params).json()
+    archived = client.get(
+        "/clubs/form-validation", params={**params, "season": "2025-26"}
+    ).json()
+
+    assert live == []
+    assert {row["n_predictions"] for row in archived} == {6}
+
+
+@pytest.mark.parametrize(
+    "path", ["/players/defcon-probability-validation", "/clubs/form-validation"]
+)
+def test_validation_season_is_checked_and_independent_of_live_history(
+    client: TestClient, path: str
+) -> None:
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = pl.DataFrame
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: _with_season(
+        _history(), "2025-26"
+    )
+
+    # An archived season stays available before the live season's GW1.
+    assert client.get(path).status_code == 409
+    assert client.get(path, params={"season": "2025-26"}).status_code == 200
+    assert client.get(path, params={"season": "2027-28"}).status_code == 404
+    assert client.get(path, params={"season": "2024-25"}).status_code == 422
+    assert client.get(path, params={"season": "latest"}).status_code == 422
 
 
 def _club_history() -> pl.DataFrame:
