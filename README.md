@@ -303,9 +303,13 @@ flowchart TD
     enriched --> formmod[form.py<br/>point-in-time form + backtest]
     enriched --> defconmod[defcon.py<br/>calibrated count probability + backtest]
     enriched --> playermod[player.py<br/>player detail + season history]
+    enriched --> clubmod[club.py<br/>club form + validation]
+    snap --> fixmod[fixtures.py<br/>FDR + next fixtures]
     formmod --> api[api.py<br/>FastAPI gateway]
     defconmod --> api
     playermod --> api
+    clubmod --> api
+    fixmod --> api
     api -->|JSON| ui[React dashboard<br/>tables + detail panel]
 ```
 
@@ -352,7 +356,7 @@ The engine reads from committed Parquet snapshots under `data/`:
 Run from the project root:
 
 ```bash
-uv sync --all-extras --dev
+uv sync
 ```
 
 ### Refreshing Data
@@ -435,7 +439,8 @@ The smoke script uses Saka by default as a known cross-season player, verifies
 stable-code matching, and checks that 2022-23 expected-stat rates are scoped to
 GW16 onward.
 
-Run the opt-in club-form validation against the current-season archive:
+Run the opt-in club-form validation, which reads the 2025-26 archive by default
+(pass `--data-dir` to choose another season):
 
 ```bash
 uv run python scripts/club_form_validation.py
@@ -533,4 +538,5 @@ cd frontend
 bun run test
 ```
 
-Both suites run on every push via GitHub Actions.
+GitHub Actions runs the backend suite on pushes to `main` and on pull requests,
+and the frontend suite whenever files under `frontend/` change.
