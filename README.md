@@ -410,6 +410,18 @@ For a validation-only check of existing local snapshots:
 uv run python -m fpl_analytics_engine.refresh --skip-archive --skip-backfill
 ```
 
+The `Data Refresh` GitHub Actions workflow automates this during the season. It
+runs daily and on demand, checks the live FPL API for newly finalised gameweeks,
+and only then runs the refresh with `--skip-backfill` followed by the test
+suite. A passing run opens or updates a single review PR from the
+`data/scheduled-refresh` branch – nothing reaches `main` or the deployed
+dashboard until that PR is merged, and a failed or blocked FPL request fails the
+run without committing data. Trigger it manually with `force` to refresh the
+snapshot context without a new gameweek. PRs opened with the default workflow
+token do not trigger CI, so close and reopen the PR to run it, or add a
+fine-grained `DATA_REFRESH_TOKEN` secret with contents and pull-request write
+access.
+
 ### Archiving the Current Season
 
 Snapshot the live FPL season to its detected `data/<season>/` folder:

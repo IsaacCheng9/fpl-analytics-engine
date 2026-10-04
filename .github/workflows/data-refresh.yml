@@ -1,0 +1,145 @@
+name: Data Refresh
+
+on:
+  schedule:
+    # Check daily because FPL marks gameweeks data-checked at irregular times.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Refresh and open a PR even if no new gameweek is finalised"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      # Fetch only the bootstrap so days without a newly finalised gameweek skip
+      # the ~700 per-player requests of a full refresh.
+      - name: Check for newly finalised gameweeks
+        id: check
+        run: |
+          uv run --locked python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import polars as pl
+
+          from fpl_analytics_engine import app, archive
+
+          events = app.get_fpl_data()["events"]
+          season = archive.detect_season(events)
+          # Reuse the archive's rule so the gate matches what the refresh adds.
+          finalised = max(archive._completed_gameweek_ids(events), default=0)
+          path = Path("data", season, "player_gw_history.parquet")
+          history = pl.read_parquet(path) if path.exists() else pl.DataFrame()
+          # Preseason snapshots hold an empty history without a round column.
+          archived = history["round"].max() if "round" in history.columns else None
+          archived = archived or 0
+          print(f"{season}: archived through GW{archived}, finalised through GW{finalised}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"season={season}", file=output)
+              print(f"archived={archived}", file=output)
+              print(f"stale={str(finalised > archived).lower()}", file=output)
+          PY
+
+      # The refresh stages a temporary copy, runs data-health validation and the
+      # real-data smoke check, and publishes to data/ only if every step passes.
+      - name: Refresh data snapshots
+        id: refresh
+        if: steps.check.outputs.stale == 'true' || inputs.force
+        run: uv run --locked python -u -m fpl_analytics_engine.refresh --skip-backfill
+
+      # PRs opened with the default token do not trigger CI, so run the suite here.
+      - name: Run tests with Pytest
+        if: steps.refresh.outcome == 'success'
+        run: uv run --locked pytest -q
+
+      - name: Summarise the refresh
+        id: summary
+        if: steps.refresh.outcome == 'success'
+        env:
+          SEASON: ${{ steps.check.outputs.season }}
+          ARCHIVED: ${{ steps.check.outputs.archived }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HAS_PAT: ${{ secrets.DATA_REFRESH_TOKEN != '' }}
+        run: |
+          uv run --locked python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import polars as pl
+
+          season = os.environ["SEASON"]
+          archived = int(os.environ["ARCHIVED"])
+          season_dir = Path("data", season)
+          history = pl.read_parquet(season_dir / "player_gw_history.parquet")
+          latest = (history["round"].max() if "round" in history.columns else None) or 0
+          events = pl.read_parquet(season_dir / "events.parquet")
+          next_ids = events.filter(pl.col("is_next"))["id"].to_list()
+
+          parts = []
+          lines = ["# Summary", ""]
+          if latest > archived:
+              first = archived + 1
+              added = f"GW{latest}" if first == latest else f"GW{first}-GW{latest}"
+              parts.append(f"{added} results")
+              lines.append(
+                  f"- Added finalised {added} results to the {season} snapshots, "
+                  f"bringing the history to {history.height:,} player-fixture records"
+              )
+          if next_ids:
+              parts.append(f"GW{next_ids[0]} snapshot context")
+          lines += [
+              "- Refreshed current player, fixture and gameweek context from the live FPL API",
+              "- Passed data-health validation, the real-data smoke check and the "
+              f"test suite in the [scheduled refresh run]({os.environ['RUN_URL']})",
+          ]
+          if os.environ["HAS_PAT"] != "true":
+              lines.append(
+                  "  - PRs opened with the default workflow token do not trigger CI, "
+                  "so close and reopen this PR to run the CI workflows"
+              )
+          subject = " and ".join(parts) or f"{season} snapshots"
+          Path(os.environ["RUNNER_TEMP"], "data-refresh-pr.md").write_text(
+              "\n".join(lines) + "\n"
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"title=chore(data): Refresh {subject}", file=output)
+          PY
+
+      # Force-update one fixed branch so a later run refreshes the open PR
+      # instead of opening a duplicate.
+      - name: Open or update the refresh PR
+        if: steps.refresh.outcome == 'success'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          # Use a fine-grained PAT when configured so the PR triggers CI.
+          token: ${{ secrets.DATA_REFRESH_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: data/scheduled-refresh
+          delete-branch: true
+          add-paths: data
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          commit-message: ${{ steps.summary.outputs.title }}
+          title: ${{ steps.summary.outputs.title }}
+          body-path: ${{ runner.temp }}/data-refresh-pr.md
