@@ -221,7 +221,22 @@ const clubRows = [
 		avg_fdr: 3.2,
 		as_of_gw: 38,
 	},
-];
+].map((row) => ({
+	...row,
+	season_finishing_delta:
+		row.season_goals_for_per_match - row.season_xg_per_match,
+	season_concession_delta:
+		row.season_goals_against_per_match - row.season_xgc_per_match,
+	window_finishing_delta_total: row.window_finishing_delta * row.window_matches,
+	season_finishing_delta_total:
+		(row.season_goals_for_per_match - row.season_xg_per_match) *
+		row.season_matches,
+	window_concession_delta_total:
+		row.window_concession_delta * row.window_matches,
+	season_concession_delta_total:
+		(row.season_goals_against_per_match - row.season_xgc_per_match) *
+		row.season_matches,
+}));
 
 const defconRows = [
 	{
@@ -1862,7 +1877,8 @@ test("renders the Club Form tab with team-level context", async () => {
 	});
 	expect(screen.getByText("Window xG")).toBeInTheDocument();
 	expect(screen.getByText("Delta xGC")).toBeInTheDocument();
-	expect(screen.getByText("Defence Form")).toBeInTheDocument();
+	expect(screen.queryByText("Defence Form")).not.toBeInTheDocument();
+	expect(screen.getAllByRole("columnheader")).toHaveLength(9);
 	expect(screen.getByText("FDR (Next 5)")).toBeInTheDocument();
 	expect(screen.queryByText("Window Goals")).not.toBeInTheDocument();
 	expect(screen.queryByText("Delta Goals")).not.toBeInTheDocument();
@@ -1877,6 +1893,56 @@ test("renders the Club Form tab with team-level context", async () => {
 	});
 });
 
+test("shows signed club overperformance totals and rates with numeric sorting", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(await screen.findByText("Club Form"));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	fireEvent.click(screen.getByText("Columns (9)"));
+	for (const label of [
+		"xG +/- Totals",
+		"xG +/- Per Match",
+		"xGC +/- Totals",
+		"xGC +/- Per Match",
+	]) {
+		fireEvent.click(screen.getByLabelText(label));
+	}
+	const table = screen.getByRole("table");
+	const headers = within(table).getAllByRole("columnheader");
+	const cellFor = (club: string, header: string) => {
+		const index = headers.findIndex((cell) =>
+			cell.textContent?.includes(header),
+		);
+		expect(index).toBeGreaterThan(-1);
+		const row = within(table).getByRole("row", { name: new RegExp(club) });
+		return within(row).getAllByRole("cell")[index];
+	};
+	const values = [
+		["Window xG +/- Total", "+1.50"],
+		["Window xG +/- Per Match", "+0.30"],
+		["Season xG +/- Total", "+7.60"],
+		["Season xG +/- Per Match", "+0.20"],
+		["Window xGC +/- Total", "+1.00"],
+		["Window xGC +/- Per Match", "+0.20"],
+		["Season xGC +/- Total", "+7.60"],
+		["Season xGC +/- Per Match", "+0.20"],
+	];
+	for (const [header, value] of values) {
+		expect(cellFor("Arsenal", header)).toHaveTextContent(value);
+	}
+	expect(cellFor("Chelsea", "Window xGC +/- Total")).toHaveTextContent("-1.50");
+	expect(cellFor("Chelsea", "Window xG +/- Total")).toHaveTextContent("-1.00");
+	expect(
+		cellFor("Arsenal", "Window xGC +/- Total").style.backgroundColor,
+	).not.toBe(cellFor("Chelsea", "Window xGC +/- Total").style.backgroundColor);
+	const header = within(table).getByRole("button", {
+		name: "Window xGC +/- Total",
+	});
+	fireEvent.click(header);
+	expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Arsenal");
+	fireEvent.click(header);
+	expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Chelsea");
+});
+
 test("shows club actual goal columns only when toggled on", async () => {
 	render(withProviders(<App />));
 	fireEvent.click(await screen.findByText("Club Form"));
@@ -1885,6 +1951,7 @@ test("shows club actual goal columns only when toggled on", async () => {
 		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
 	});
 
+	fireEvent.click(screen.getByText("Columns (9)"));
 	const goalsToggle = screen.getByLabelText("Goals");
 	const goalsConcededToggle = screen.getByLabelText("Goals Conceded");
 	expect(goalsToggle).not.toBeChecked();
@@ -1898,6 +1965,77 @@ test("shows club actual goal columns only when toggled on", async () => {
 	fireEvent.click(goalsConcededToggle);
 	expect(screen.getByText("Window Goals Conceded")).toBeInTheDocument();
 	expect(screen.getByText("Delta Goals Conceded")).toBeInTheDocument();
+});
+
+test("persists club column groups and resets to the compact defaults", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?tab=clubs&club_columns=xg,finishing_total",
+	);
+	const view = render(withProviders(<App />));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+	expect(
+		screen.queryByRole("button", { name: "Window xGC" }),
+	).not.toBeInTheDocument();
+	fireEvent.click(screen.getByText("Columns (6)"));
+	fireEvent.click(screen.getByLabelText("xG"));
+	fireEvent.click(screen.getByLabelText("xG +/- Totals"));
+	expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+	await waitFor(() =>
+		expect(
+			new URLSearchParams(window.location.search).get("club_columns"),
+		).toBe(""),
+	);
+	view.unmount();
+	render(withProviders(<App />));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+	fireEvent.click(screen.getByText("Columns (1)"));
+	fireEvent.click(screen.getByRole("button", { name: "Reset Columns" }));
+	expect(screen.getAllByRole("columnheader")).toHaveLength(9);
+	await waitFor(() =>
+		expect(
+			new URLSearchParams(window.location.search).has("club_columns"),
+		).toBe(false),
+	);
+});
+
+test("preserves actual goals from legacy club column links", async () => {
+	window.history.replaceState(null, "", "/?tab=clubs&club_actuals=goals,ga");
+	render(withProviders(<App />));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	expect(screen.getByText("Window Goals")).toBeInTheDocument();
+	expect(screen.getByText("Window Goals Conceded")).toBeInTheDocument();
+	expect(screen.getByText("Window xG")).toBeInTheDocument();
+	expect(screen.getAllByRole("columnheader")).toHaveLength(13);
+});
+
+test("toggles club context groups independently and can hide the sorted group", async () => {
+	window.history.replaceState(null, "", "/?tab=clubs");
+	render(withProviders(<App />));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	fireEvent.click(screen.getByText("Columns (9)"));
+	fireEvent.click(screen.getByRole("button", { name: "Window xGC" }));
+	for (const [label, headers] of [
+		["Matches", ["Matches"]],
+		["xGC", ["Window xGC", "Season xGC", "Delta xGC"]],
+		["FDR", ["FDR (Next 5)"]],
+	] as const) {
+		fireEvent.click(screen.getByLabelText(label));
+		for (const name of headers) {
+			expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+		}
+	}
+	fireEvent.click(screen.getByLabelText("Form Summaries"));
+	expect(
+		screen.getByRole("button", { name: "Attack Form" }),
+	).toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: "Defence Form" }),
+	).toBeInTheDocument();
+	expect(screen.getAllByRole("columnheader")).toHaveLength(6);
 });
 
 test("clicking a row opens the player detail panel", async () => {

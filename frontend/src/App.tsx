@@ -38,8 +38,19 @@ type AttackingThreatFilters = Record<
 	AttackingMetric,
 	Record<AttackingThreatPeriod, number | null>
 >;
-type ClubActualMetric = "goals" | "ga";
-type ClubActualMetricVisibility = Record<ClubActualMetric, boolean>;
+type ClubColumnGroup =
+	| "matches"
+	| "xg"
+	| "xgc"
+	| "fdr"
+	| "form"
+	| "goals"
+	| "ga"
+	| "finishing_total"
+	| "finishing_rate"
+	| "concession_total"
+	| "concession_rate";
+type ClubColumnVisibility = Record<ClubColumnGroup, boolean>;
 type TransferFilters = {
 	maxPrice: number | null;
 	maxFdr: number | null;
@@ -293,14 +304,44 @@ const DEFAULT_ATTACKING_THREAT_FILTERS: AttackingThreatFilters = {
 	xa: { window: null, season: null },
 	xgi: { window: null, season: null },
 };
-const CLUB_ACTUAL_METRICS: ClubActualMetric[] = ["goals", "ga"];
-const CLUB_ACTUAL_METRIC_LABELS: Record<ClubActualMetric, string> = {
+const CLUB_COLUMN_GROUPS: ClubColumnGroup[] = [
+	"matches",
+	"xg",
+	"xgc",
+	"fdr",
+	"form",
+	"goals",
+	"ga",
+	"finishing_total",
+	"finishing_rate",
+	"concession_total",
+	"concession_rate",
+];
+const CLUB_COLUMN_LABELS: Record<ClubColumnGroup, string> = {
+	matches: "Matches",
+	xg: "xG",
+	xgc: "xGC",
+	fdr: "FDR",
+	form: "Form Summaries",
 	goals: "Goals",
 	ga: "Goals Conceded",
+	finishing_total: "xG +/- Totals",
+	finishing_rate: "xG +/- Per Match",
+	concession_total: "xGC +/- Totals",
+	concession_rate: "xGC +/- Per Match",
 };
-const DEFAULT_CLUB_ACTUAL_METRICS: ClubActualMetricVisibility = {
+const DEFAULT_CLUB_COLUMNS: ClubColumnVisibility = {
+	matches: true,
+	xg: true,
+	xgc: true,
+	fdr: true,
+	form: false,
 	goals: false,
 	ga: false,
+	finishing_total: false,
+	finishing_rate: false,
+	concession_total: false,
+	concession_rate: false,
 };
 const FILTER_PRESETS: Array<{ id: FilterPreset; label: string }> = [
 	{ id: "nailed", label: "Nailed Starters" },
@@ -347,7 +388,7 @@ type UrlState = {
 	compareAsOfGw: number | null;
 	attackingMetrics: AttackingMetricVisibility;
 	attackingThreatFilters: AttackingThreatFilters;
-	clubActualMetrics: ClubActualMetricVisibility;
+	clubColumnVisibility: ClubColumnVisibility;
 	transferFilters: TransferFilters;
 	shortlist: number[];
 	showShortlistedOnly: boolean;
@@ -376,7 +417,7 @@ const DEFAULT_URL_STATE: UrlState = {
 	compareAsOfGw: DEFAULT_COMPARE_AS_OF_GW,
 	attackingMetrics: DEFAULT_ATTACKING_METRICS,
 	attackingThreatFilters: DEFAULT_ATTACKING_THREAT_FILTERS,
-	clubActualMetrics: DEFAULT_CLUB_ACTUAL_METRICS,
+	clubColumnVisibility: DEFAULT_CLUB_COLUMNS,
 	transferFilters: DEFAULT_TRANSFER_FILTERS,
 	shortlist: [],
 	showShortlistedOnly: false,
@@ -456,16 +497,14 @@ function parseAttackingMetrics(
 		: { ...DEFAULT_ATTACKING_METRICS };
 }
 
-function parseClubActualMetrics(
-	value: string | null,
-): ClubActualMetricVisibility {
+function parseClubColumnGroups(value: string | null): ClubColumnVisibility {
 	if (value === null) {
-		return { ...DEFAULT_CLUB_ACTUAL_METRICS };
+		return { ...DEFAULT_CLUB_COLUMNS };
 	}
 	const visible = new Set(value.split(","));
 	return Object.fromEntries(
-		CLUB_ACTUAL_METRICS.map((metric) => [metric, visible.has(metric)]),
-	) as ClubActualMetricVisibility;
+		CLUB_COLUMN_GROUPS.map((metric) => [metric, visible.has(metric)]),
+	) as ClubColumnVisibility;
 }
 
 function parseAttackingThreatFilters(
@@ -576,7 +615,14 @@ function readUrlState(): UrlState {
 		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
 		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
 		attackingThreatFilters: parseAttackingThreatFilters(params),
-		clubActualMetrics: parseClubActualMetrics(params.get("club_actuals")),
+		clubColumnVisibility: params.has("club_columns")
+			? parseClubColumnGroups(params.get("club_columns"))
+			: {
+					...DEFAULT_CLUB_COLUMNS,
+					goals:
+						params.get("club_actuals")?.split(",").includes("goals") ?? false,
+					ga: params.get("club_actuals")?.split(",").includes("ga") ?? false,
+				},
 		shortlist,
 		showShortlistedOnly:
 			!showSquadView &&
@@ -604,11 +650,11 @@ function visibleAttackingThreatFiltersMatchDefault(
 	);
 }
 
-function clubActualMetricsMatchDefault(
-	metrics: ClubActualMetricVisibility,
+function clubColumnVisibilityMatchDefault(
+	metrics: ClubColumnVisibility,
 ): boolean {
-	return CLUB_ACTUAL_METRICS.every(
-		(metric) => metrics[metric] === DEFAULT_CLUB_ACTUAL_METRICS[metric],
+	return CLUB_COLUMN_GROUPS.every(
+		(metric) => metrics[metric] === DEFAULT_CLUB_COLUMNS[metric],
 	);
 }
 
@@ -701,11 +747,11 @@ function writeUrlState(state: UrlState) {
 			}
 		}
 	}
-	if (!clubActualMetricsMatchDefault(state.clubActualMetrics)) {
+	if (!clubColumnVisibilityMatchDefault(state.clubColumnVisibility)) {
 		params.set(
-			"club_actuals",
-			CLUB_ACTUAL_METRICS.filter(
-				(metric) => state.clubActualMetrics[metric],
+			"club_columns",
+			CLUB_COLUMN_GROUPS.filter(
+				(metric) => state.clubColumnVisibility[metric],
 			).join(","),
 		);
 	}
@@ -953,7 +999,13 @@ const CLUB_HEAT_KEYS = [
 	"season_goals_against_per_match",
 	"delta_goals_against_per_match",
 	"window_finishing_delta",
+	"season_finishing_delta",
 	"window_concession_delta",
+	"season_concession_delta",
+	"window_finishing_delta_total",
+	"season_finishing_delta_total",
+	"window_concession_delta_total",
+	"season_concession_delta_total",
 	"attack_form",
 	"defence_form",
 	"avg_fdr",
@@ -1425,9 +1477,42 @@ function buildDefconProbColumns(
 
 function buildClubColumns(
 	ranges: Record<string, Range>,
-	visibleActualMetrics: ClubActualMetricVisibility,
+	visibleColumns: ClubColumnVisibility,
 ): ColumnDef<ClubForm>[] {
-	return [
+	function overperformanceColumn(
+		period: "window" | "season",
+		metric: "xG" | "xGC",
+		total: boolean,
+	): ColumnDef<ClubForm> {
+		const defensive = metric === "xGC";
+		const key =
+			`${period}_${defensive ? "concession" : "finishing"}_delta${total ? "_total" : ""}` as const;
+		const sourceRange = ranges[key];
+		// Centre the colours on zero so underperformance is never shaded green.
+		const extent = Math.max(
+			Math.abs(sourceRange.min),
+			Math.abs(sourceRange.max),
+		);
+		const range = { min: -extent, max: extent };
+		const label = period === "window" ? "Window" : "Season";
+		return {
+			id: key,
+			accessorFn: (row) => {
+				const value = row[key];
+				// Preserve the API's conceded-minus-expected sign; show favourable values as positive.
+				return value == null ? null : defensive ? -value : value;
+			},
+			header: `${label} ${metric} +/- ${total ? "Total" : "Per Match"}`,
+			cell: heatCell<ClubForm>(range, { format: fmtDelta }),
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip: `${metric} over/underperformance: ${defensive ? "xGC minus goals conceded" : "goals scored minus xG"}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${defensive ? "fewer goals conceded" : "more goals scored"} than expected; negative means underperformance. Descriptive, not a prediction.`,
+				},
+				range,
+			),
+		};
+	}
+	const columns: ColumnDef<ClubForm>[] = [
 		{ accessorKey: "team_name", header: "Club" },
 		{
 			accessorKey: "window_matches",
@@ -1472,7 +1557,11 @@ function buildClubColumns(
 				ranges.delta_xg_per_match,
 			),
 		},
-		...(visibleActualMetrics.goals
+		overperformanceColumn("window", "xG", true),
+		overperformanceColumn("window", "xG", false),
+		overperformanceColumn("season", "xG", true),
+		overperformanceColumn("season", "xG", false),
+		...(visibleColumns.goals
 			? [
 					{
 						accessorKey: "window_goals_for_per_match",
@@ -1554,7 +1643,11 @@ function buildClubColumns(
 				{ lowerIsBetter: true },
 			),
 		},
-		...(visibleActualMetrics.ga
+		overperformanceColumn("window", "xGC", true),
+		overperformanceColumn("window", "xGC", false),
+		overperformanceColumn("season", "xGC", true),
+		overperformanceColumn("season", "xGC", false),
+		...(visibleColumns.ga
 			? [
 					{
 						accessorKey: "window_goals_against_per_match",
@@ -1617,6 +1710,32 @@ function buildClubColumns(
 			),
 		},
 	];
+	const groups: Record<string, ClubColumnGroup> = {
+		window_matches: "matches",
+		window_xg_per_match: "xg",
+		season_xg_per_match: "xg",
+		delta_xg_per_match: "xg",
+		window_xgc_per_match: "xgc",
+		season_xgc_per_match: "xgc",
+		delta_xgc_per_match: "xgc",
+		attack_form: "form",
+		defence_form: "form",
+		avg_fdr: "fdr",
+		window_finishing_delta_total: "finishing_total",
+		season_finishing_delta_total: "finishing_total",
+		window_finishing_delta: "finishing_rate",
+		season_finishing_delta: "finishing_rate",
+		window_concession_delta_total: "concession_total",
+		season_concession_delta_total: "concession_total",
+		window_concession_delta: "concession_rate",
+		season_concession_delta: "concession_rate",
+	};
+	return columns.filter((column) => {
+		const id =
+			column.id ?? ("accessorKey" in column ? String(column.accessorKey) : "");
+		const group = groups[id];
+		return group === undefined || visibleColumns[group];
+	});
 }
 
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
@@ -1710,8 +1829,8 @@ export default function App() {
 		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
 	const [attackingThreatFilters, setAttackingThreatFilters] =
 		useState<AttackingThreatFilters>(initialUrlState.attackingThreatFilters);
-	const [clubActualMetrics, setClubActualMetrics] =
-		useState<ClubActualMetricVisibility>(initialUrlState.clubActualMetrics);
+	const [clubColumnVisibility, setClubColumnGroups] =
+		useState<ClubColumnVisibility>(initialUrlState.clubColumnVisibility);
 	const [transferFilters, setTransferFilters] = useState<TransferFilters>(
 		initialUrlState.transferFilters,
 	);
@@ -1748,7 +1867,7 @@ export default function App() {
 			setCompareAsOfGw(next.compareAsOfGw);
 			setAttackingMetrics(next.attackingMetrics);
 			setAttackingThreatFilters(next.attackingThreatFilters);
-			setClubActualMetrics(next.clubActualMetrics);
+			setClubColumnGroups(next.clubColumnVisibility);
 			setTransferFilters(next.transferFilters);
 			setShortlist(next.shortlist);
 			setShowShortlistedOnly(next.showShortlistedOnly);
@@ -1782,7 +1901,7 @@ export default function App() {
 			compareAsOfGw,
 			attackingMetrics,
 			attackingThreatFilters,
-			clubActualMetrics,
+			clubColumnVisibility,
 			transferFilters,
 			shortlist,
 			showShortlistedOnly,
@@ -1810,7 +1929,7 @@ export default function App() {
 		compareAsOfGw,
 		attackingMetrics,
 		attackingThreatFilters,
-		clubActualMetrics,
+		clubColumnVisibility,
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
@@ -1869,7 +1988,7 @@ export default function App() {
 		setAsOfGw(DEFAULT_AS_OF_GW);
 		setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS });
 		setAttackingThreatFilters(defaultAttackingThreatFilters());
-		setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS });
+		setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS });
 		setTransferFilters(defaultTransferFilters());
 		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 		setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
@@ -1992,8 +2111,8 @@ export default function App() {
 		});
 	}
 
-	function toggleClubActualMetric(metric: ClubActualMetric) {
-		setClubActualMetrics((current) => ({
+	function toggleClubColumnGroup(metric: ClubColumnGroup) {
+		setClubColumnGroups((current) => ({
 			...current,
 			[metric]: !current[metric],
 		}));
@@ -2286,9 +2405,9 @@ export default function App() {
 		() =>
 			buildClubColumns(
 				computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS),
-				clubActualMetrics,
+				clubColumnVisibility,
 			),
-		[clubBaseline.data, clubActualMetrics],
+		[clubBaseline.data, clubColumnVisibility],
 	);
 
 	const active =
@@ -2433,8 +2552,8 @@ export default function App() {
 			attackingThreatFilters,
 			attackingMetrics,
 		);
-	const hasActiveClubActualMetrics =
-		tab === "clubs" && !clubActualMetricsMatchDefault(clubActualMetrics);
+	const hasActiveClubColumnGroups =
+		tab === "clubs" && !clubColumnVisibilityMatchDefault(clubColumnVisibility);
 	const visiblePlayerRowCount =
 		tab === "form"
 			? visibleFormRows.length
@@ -2635,15 +2754,11 @@ export default function App() {
 			});
 		}
 	}
-	if (hasActiveClubActualMetrics) {
+	if (hasActiveClubColumnGroups) {
 		activeFilterChips.push({
-			id: "club-actuals",
-			label: `Actuals ${CLUB_ACTUAL_METRICS.filter(
-				(metric) => clubActualMetrics[metric],
-			)
-				.map((metric) => CLUB_ACTUAL_METRIC_LABELS[metric])
-				.join(", ")}`,
-			onClear: () => setClubActualMetrics({ ...DEFAULT_CLUB_ACTUAL_METRICS }),
+			id: "club-columns",
+			label: "Custom Columns",
+			onClear: () => setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS }),
 		});
 	}
 	if (isShortlistViewActive) {
@@ -2797,25 +2912,62 @@ export default function App() {
 						</label>
 
 						{tab === "clubs" && (
-							<div className={labelClass}>
-								<span>Actual Metrics (Non-Expected)</span>
-								<div className="mt-1 flex h-[34px] items-center gap-4">
-									{CLUB_ACTUAL_METRICS.map((metric) => (
-										<label
-											key={metric}
-											className="flex items-center gap-1 text-xs text-zinc-900"
-										>
-											<input
-												type="checkbox"
-												className="accent-blue-600"
-												checked={clubActualMetrics[metric]}
-												onChange={() => toggleClubActualMetric(metric)}
-											/>
-											{CLUB_ACTUAL_METRIC_LABELS[metric]}
-										</label>
+							<details className="order-last min-w-0 basis-full border-t border-zinc-100 pt-3 text-xs">
+								<summary className="w-fit cursor-pointer font-medium text-zinc-600">
+									Columns ({clubColumns.length})
+								</summary>
+								<div className="mt-3 flex flex-wrap items-start gap-x-10 gap-y-4">
+									{(
+										[
+											[
+												"Expected & Context",
+												["matches", "xg", "xgc", "fdr", "form"],
+											],
+											["Actual Goals", ["goals", "ga"]],
+											[
+												"Over/Underperformance",
+												[
+													"finishing_total",
+													"finishing_rate",
+													"concession_total",
+													"concession_rate",
+												],
+											],
+										] satisfies [string, ClubColumnGroup[]][]
+									).map(([title, metrics]) => (
+										<fieldset key={title} className="min-w-0 max-w-full">
+											<legend className="mb-2 font-medium text-zinc-500">
+												{title}
+											</legend>
+											<div className="flex flex-wrap gap-x-4 gap-y-2">
+												{metrics.map((metric) => (
+													<label
+														key={metric}
+														className="flex items-center gap-1.5 text-zinc-900"
+													>
+														<input
+															type="checkbox"
+															className="accent-blue-600"
+															checked={clubColumnVisibility[metric]}
+															onChange={() => toggleClubColumnGroup(metric)}
+														/>
+														{CLUB_COLUMN_LABELS[metric]}
+													</label>
+												))}
+											</div>
+										</fieldset>
 									))}
+									<button
+										type="button"
+										className="text-xs text-zinc-600 underline underline-offset-2"
+										onClick={() =>
+											setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })
+										}
+									>
+										Reset Columns
+									</button>
 								</div>
-							</div>
+							</details>
 						)}
 
 						{tab === "form" && (
