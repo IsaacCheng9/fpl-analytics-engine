@@ -177,6 +177,8 @@ const WINDOW_MAX = 20;
 const DEFAULT_TAB: Tab = "form";
 const DEFAULT_PLAYER_SEARCH = "";
 const DEFAULT_TEAM_FILTER = "";
+// Upper bounds for the automatic window and min-games defaults, which shrink
+// early in the season so recent form never covers every gameweek played.
 const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_POSITION: Position | "" = "";
 const DEFAULT_MIN_MINUTES = 180;
@@ -369,11 +371,11 @@ type UrlState = {
 	tab: Tab;
 	playerSearch: string;
 	teamFilter: string;
-	windowSize: number;
+	windowSize: number | null;
 	position: Position | "";
 	minMinutes: number;
 	minHitRate: number;
-	minGames: number;
+	minGames: number | null;
 	asOfGw: number | null;
 	selectedElement: number | null;
 	playerWindow: number;
@@ -398,11 +400,11 @@ const DEFAULT_URL_STATE: UrlState = {
 	tab: DEFAULT_TAB,
 	playerSearch: DEFAULT_PLAYER_SEARCH,
 	teamFilter: DEFAULT_TEAM_FILTER,
-	windowSize: DEFAULT_WINDOW_SIZE,
+	windowSize: null,
 	position: DEFAULT_POSITION,
 	minMinutes: DEFAULT_MIN_MINUTES,
 	minHitRate: DEFAULT_MIN_HIT_RATE,
-	minGames: DEFAULT_MIN_GAMES,
+	minGames: null,
 	asOfGw: DEFAULT_AS_OF_GW,
 	selectedElement: DEFAULT_SELECTED_ELEMENT,
 	playerWindow: DEFAULT_PLAYER_WINDOW,
@@ -553,13 +555,12 @@ function readUrlState(): UrlState {
 	const tab = parseTab(params.get("tab"));
 	const showSquadView =
 		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
+	const windowSize = parseOptionalNumber(params.get("window"));
 	return {
 		tab,
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
 		teamFilter: params.get("team") ?? DEFAULT_TEAM_FILTER,
-		windowSize: clampWindowSize(
-			parseNumber(params.get("window"), DEFAULT_WINDOW_SIZE),
-		),
+		windowSize: windowSize === null ? null : clampWindowSize(windowSize),
 		position: parsePosition(params.get("position")),
 		minMinutes: parseNumber(params.get("min_minutes"), DEFAULT_MIN_MINUTES, {
 			min: 0,
@@ -568,9 +569,7 @@ function readUrlState(): UrlState {
 			min: 0,
 			max: 1,
 		}),
-		minGames: parseNumber(params.get("min_games"), DEFAULT_MIN_GAMES, {
-			min: 0,
-		}),
+		minGames: parseOptionalNumber(params.get("min_games"), { min: 0 }),
 		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
 		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
 		fplTeamId,
@@ -695,7 +694,7 @@ function writeUrlState(state: UrlState) {
 	if (state.tab !== "evidence" && state.teamFilter !== DEFAULT_TEAM_FILTER) {
 		params.set("team", state.teamFilter);
 	}
-	if (state.tab !== "evidence" && state.windowSize !== DEFAULT_WINDOW_SIZE) {
+	if (state.tab !== "evidence" && state.windowSize !== null) {
 		params.set("window", String(state.windowSize));
 	}
 	if (isPlayerTab(state.tab) && state.position !== DEFAULT_POSITION) {
@@ -711,7 +710,7 @@ function writeUrlState(state: UrlState) {
 	if (state.tab === "defcon" && state.minHitRate !== DEFAULT_MIN_HIT_RATE) {
 		params.set("min_hit_rate", String(state.minHitRate));
 	}
-	if (state.tab === "defconProb" && state.minGames !== DEFAULT_MIN_GAMES) {
+	if (state.tab === "defconProb" && state.minGames !== null) {
 		params.set("min_games", String(state.minGames));
 	}
 	if (state.tab !== "evidence" && state.asOfGw !== DEFAULT_AS_OF_GW) {
@@ -1753,6 +1752,23 @@ function clampWindowSize(value: number): number {
 	return Math.min(Math.max(value, WINDOW_MIN), WINDOW_MAX);
 }
 
+// Default to a window shorter than the gameweeks played, so the recent window
+// differs from the season baseline; fall back to the cap while meta loads.
+function defaultWindowSize(gameweeksPlayed: number): number {
+	if (gameweeksPlayed <= 0) {
+		return DEFAULT_WINDOW_SIZE;
+	}
+	return clampWindowSize(Math.min(DEFAULT_WINDOW_SIZE, gameweeksPlayed - 1));
+}
+
+// Default to a games floor that some players can meet so far this season.
+function defaultMinGames(gameweeksPlayed: number): number {
+	if (gameweeksPlayed <= 0) {
+		return DEFAULT_MIN_GAMES;
+	}
+	return Math.max(1, Math.min(DEFAULT_MIN_GAMES, gameweeksPlayed - 1));
+}
+
 // Clamp to the same bounds the URL parser enforces, so a typed value always
 // round-trips through the query string instead of silently vanishing on reload.
 function parseOptionalInputNumber(
@@ -1783,13 +1799,17 @@ export default function App() {
 		initialUrlState.playerSearch,
 	);
 	const [teamFilter, setTeamFilter] = useState(initialUrlState.teamFilter);
-	const [windowSize, setWindowSize] = useState(initialUrlState.windowSize);
+	const [windowSizeChoice, setWindowSize] = useState<number | null>(
+		initialUrlState.windowSize,
+	);
 	const [position, setPosition] = useState<Position | "">(
 		initialUrlState.position,
 	);
 	const [minMinutes, setMinMinutes] = useState(initialUrlState.minMinutes);
 	const [minHitRate, setMinHitRate] = useState(initialUrlState.minHitRate);
-	const [minGames, setMinGames] = useState(initialUrlState.minGames);
+	const [minGamesChoice, setMinGames] = useState<number | null>(
+		initialUrlState.minGames,
+	);
 	const [asOfGw, setAsOfGw] = useState<number | null>(initialUrlState.asOfGw);
 	const [selectedElement, setSelectedElement] = useState<number | null>(
 		initialUrlState.selectedElement,
@@ -1882,11 +1902,11 @@ export default function App() {
 			tab,
 			playerSearch,
 			teamFilter,
-			windowSize,
+			windowSize: windowSizeChoice,
 			position,
 			minMinutes,
 			minHitRate,
-			minGames,
+			minGames: minGamesChoice,
 			asOfGw,
 			selectedElement,
 			playerWindow,
@@ -1910,11 +1930,11 @@ export default function App() {
 		tab,
 		playerSearch,
 		teamFilter,
-		windowSize,
+		windowSizeChoice,
 		position,
 		minMinutes,
 		minHitRate,
-		minGames,
+		minGamesChoice,
 		asOfGw,
 		selectedElement,
 		playerWindow,
@@ -1980,11 +2000,11 @@ export default function App() {
 	function clearActiveFilters() {
 		setPlayerSearch(DEFAULT_PLAYER_SEARCH);
 		setTeamFilter(DEFAULT_TEAM_FILTER);
-		setWindowSize(DEFAULT_WINDOW_SIZE);
+		setWindowSize(null);
 		setPosition(DEFAULT_POSITION);
 		setMinMinutes(DEFAULT_MIN_MINUTES);
 		setMinHitRate(DEFAULT_MIN_HIT_RATE);
-		setMinGames(DEFAULT_MIN_GAMES);
+		setMinGames(null);
 		setAsOfGw(DEFAULT_AS_OF_GW);
 		setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS });
 		setAttackingThreatFilters(defaultAttackingThreatFilters());
@@ -2121,6 +2141,9 @@ export default function App() {
 	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
 	const analyticsReady = meta.data?.data_status === "ready";
 	const latestGw = meta.data?.latest_gw ?? 0;
+	const gameweeksPlayed = asOfGw ?? latestGw;
+	const windowSize = windowSizeChoice ?? defaultWindowSize(gameweeksPlayed);
+	const minGames = minGamesChoice ?? defaultMinGames(gameweeksPlayed);
 	const hasPlayerSearch = playerSearch.trim() !== "";
 	const windowFillPct =
 		((windowSize - WINDOW_MIN) / (WINDOW_MAX - WINDOW_MIN)) * 100;
@@ -2639,15 +2662,11 @@ export default function App() {
 			onClear: () => setTeamFilter(DEFAULT_TEAM_FILTER),
 		});
 	}
-	if (
-		tab !== "evidence" &&
-		tab !== "defconProb" &&
-		windowSize !== DEFAULT_WINDOW_SIZE
-	) {
+	if (tab !== "evidence" && tab !== "defconProb" && windowSizeChoice !== null) {
 		activeFilterChips.push({
 			id: "window",
-			label: `Window ${windowSize}`,
-			onClear: () => setWindowSize(DEFAULT_WINDOW_SIZE),
+			label: `Window ${windowSizeChoice}`,
+			onClear: () => setWindowSize(null),
 		});
 	}
 	if (
@@ -2668,11 +2687,11 @@ export default function App() {
 			onClear: () => setMinHitRate(DEFAULT_MIN_HIT_RATE),
 		});
 	}
-	if (tab === "defconProb" && minGames !== DEFAULT_MIN_GAMES) {
+	if (tab === "defconProb" && minGamesChoice !== null) {
 		activeFilterChips.push({
 			id: "min-games",
-			label: `Games >= ${minGames}`,
-			onClear: () => setMinGames(DEFAULT_MIN_GAMES),
+			label: `Games >= ${minGamesChoice}`,
+			onClear: () => setMinGames(null),
 		});
 	}
 	if (tab !== "evidence" && asOfGw !== DEFAULT_AS_OF_GW) {
@@ -2796,9 +2815,19 @@ export default function App() {
 	const playerEmptyTitle = hasActiveFilters
 		? "No Players Match These Filters"
 		: "No Players Available";
-	const playerEmptyDescription = hasActiveFilters
-		? "Try clearing active filters or lowering the strongest thresholds"
-		: undefined;
+	const playerEmptyDescription =
+		tab === "defconProb" && minGames > gameweeksPlayed
+			? `Min Games ${minGames} exceeds the ${gameweeksPlayed} gameweeks played up to GW${gameweeksPlayed}. Lower it to see players.`
+			: hasActiveFilters
+				? "Try clearing active filters or lowering the strongest thresholds"
+				: undefined;
+	// A window spanning every gameweek played makes recent form identical to the
+	// season baseline, so every delta is zero.
+	const windowCoversSeason =
+		tab !== "evidence" &&
+		tab !== "defconProb" &&
+		gameweeksPlayed > 0 &&
+		windowSize >= gameweeksPlayed;
 	const clubEmptyTitle = hasActiveFilters
 		? "No Clubs Match These Filters"
 		: "No Clubs Available";
@@ -3381,6 +3410,17 @@ export default function App() {
 						))}
 						<div className="ml-auto">{clearActiveFiltersButton}</div>
 					</div>
+				) : null}
+
+				{windowCoversSeason ? (
+					<p className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-sm">
+						The {windowSize}-gameweek window covers every gameweek up to GW
+						{gameweeksPlayed}, so recent and season figures match and deltas are
+						zero.{" "}
+						{gameweeksPlayed - 1 >= WINDOW_MIN
+							? `Use a window of ${gameweeksPlayed - 1} or fewer to compare them.`
+							: `Deltas become meaningful after GW${WINDOW_MIN}.`}
+					</p>
 				) : null}
 
 				{isPlayerTab(tab) ? (
