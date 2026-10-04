@@ -78,7 +78,6 @@ export const DEFCON_PROB_HEAT_KEYS = [
 	"hits",
 	"raw_rate",
 	"prob",
-	"prob_std",
 	"window_defcon",
 	"season_points_per_million",
 	"window_start_rate",
@@ -542,18 +541,6 @@ export function buildDefconProbColumns(
 						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
 				},
 				ranges.prob,
-			),
-		},
-		{
-			accessorKey: "prob_std",
-			header: "+/-",
-			cell: heatCell<DefconProbabilityPlayer>(ranges.prob_std, {
-				lowerIsBetter: true,
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Uncertainty (standard deviation) of the probability" },
-				ranges.prob_std,
-				{ scale: "none" },
 			),
 		},
 		{

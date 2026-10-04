@@ -415,8 +415,8 @@ def defcon_count_probabilities(
     null ``prob_std``.
 
     Note: back-testing shows this is sharper than the binary model (lower Brier)
-    but overconfident at the extremes (worse calibration), so the binary model
-    is the one surfaced. Kept as the basis for a future recalibrated version.
+    but overconfident at the extremes (worse calibration), so the dashboard
+    surfaces its recalibrated version, which also carries a null ``prob_std``.
 
     Args:
         history: Enriched per-gameweek history.

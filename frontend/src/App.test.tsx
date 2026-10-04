@@ -2333,3 +2333,16 @@ test("restores dashboard state and the team ID draft on back navigation", async 
 	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(4);
 	expect(screen.getByLabelText("FPL Team ID")).toHaveValue(123);
 });
+
+test("omits the DefCon probability uncertainty column the model leaves empty", async () => {
+	window.history.replaceState(null, "", "/?tab=defcon-prob");
+	render(withProviders(<App />));
+
+	const table = await screen.findByRole("table");
+	await waitFor(() => {
+		expect(within(table).getByText("Senesi")).toBeInTheDocument();
+	});
+	expect(
+		within(table).queryByRole("button", { name: "+/-" }),
+	).not.toBeInTheDocument();
+});
