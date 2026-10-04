@@ -158,7 +158,6 @@ export interface DefconProbabilityPlayer extends PlayerContext {
 	hits: number;
 	raw_rate: number | null;
 	prob: number | null;
-	prob_std: number | null;
 	as_of_gw: number;
 }
 

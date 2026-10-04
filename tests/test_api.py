@@ -485,6 +485,8 @@ def test_defcon_probability_endpoint_ranks_and_excludes_keepers(
     assert body[0]["web_name"] == "P3"
     assert body[0]["raw_rate"] == pytest.approx(0.75)
     assert 0.0 <= body[0]["prob"] <= 1.0
+    # The calibrated count model has no posterior spread to report.
+    assert "prob_std" not in body[0]
 
     # Everyone has four games, so a higher floor returns nothing.
     too_few = client.get("/players/defcon-probability", params={"min_games": 5})

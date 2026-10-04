@@ -117,8 +117,7 @@ def defcon_probabilities(
 
     Returns:
         One row per eligible player with the empirical hit rate, the
-        shrinkage-adjusted probability, its posterior standard deviation, and
-        the supporting game counts.
+        shrinkage-adjusted probability, and the supporting game counts.
     """
     eligible = history.filter(
         (pl.col("round") <= as_of_gw)
@@ -145,15 +144,6 @@ def defcon_probabilities(
         .with_columns(
             (pl.col("hits") / pl.col("games")).alias("raw_rate"),
             (pl.col("alpha") / (pl.col("alpha") + pl.col("beta"))).alias("prob"),
-            (
-                (pl.col("alpha") * pl.col("beta"))
-                / (
-                    (pl.col("alpha") + pl.col("beta")).pow(2)
-                    * (pl.col("alpha") + pl.col("beta") + 1)
-                )
-            )
-            .sqrt()
-            .alias("prob_std"),
             pl.lit(as_of_gw).alias("as_of_gw"),
         )
         .select(
@@ -165,7 +155,6 @@ def defcon_probabilities(
             "hits",
             "raw_rate",
             "prob",
-            "prob_std",
             "as_of_gw",
         )
     )
@@ -411,12 +400,11 @@ def defcon_count_probabilities(
     Bayes per position), then returns ``P(count >= positional threshold)`` from
     the Negative-Binomial predictive. Unlike :func:`defcon_probabilities`, this
     uses the size of each contribution, so comfortably-over-threshold players
-    score higher than those who scrape it. Columns mirror that function, with a
-    null ``prob_std``.
+    score higher than those who scrape it. Columns mirror that function.
 
     Note: back-testing shows this is sharper than the binary model (lower Brier)
     but overconfident at the extremes (worse calibration), so the dashboard
-    surfaces its recalibrated version, which also carries a null ``prob_std``.
+    surfaces its recalibrated version.
 
     Args:
         history: Enriched per-gameweek history.
@@ -466,11 +454,10 @@ def defcon_count_probabilities(
                 "hits": row["hits"],
                 "raw_rate": row["hits"] / row["games"],
                 "prob": prob,
-                "prob_std": None,
                 "as_of_gw": as_of_gw,
             }
         )
-    return pl.DataFrame(records, schema_overrides={"prob_std": pl.Float64})
+    return pl.DataFrame(records)
 
 
 def _count_and_binary_probabilities(
@@ -501,7 +488,6 @@ def _count_and_binary_probabilities(
         "element",
         "as_of_gw",
         pl.col("prob").alias("binary_prob"),
-        pl.col("prob_std").alias("binary_prob_std"),
     )
     return count_model.join(binary_model, on=["element", "as_of_gw"], how="left")
 
@@ -706,7 +692,6 @@ def calibrated_defcon_count_probabilities(
         "hits",
         "raw_rate",
         "prob",
-        pl.lit(None, dtype=pl.Float64).alias("prob_std"),
         "count_prob",
         "binary_prob",
         "as_of_gw",

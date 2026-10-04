@@ -111,7 +111,6 @@ DEFCON_PROBABILITY_COLUMNS = [
     "hits",
     "raw_rate",
     "prob",
-    "prob_std",
     *CONTEXT_COLUMNS,
     "as_of_gw",
 ]
