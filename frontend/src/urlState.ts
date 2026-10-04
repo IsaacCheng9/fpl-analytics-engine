@@ -1,3 +1,11 @@
+import {
+	type Dispatch,
+	type SetStateAction,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import type { Position } from "./api";
 import {
 	ATTACKING_METRICS,
@@ -57,7 +65,7 @@ const QUERY_VALUE_TABS: Record<string, Tab> = {
 	evidence: "evidence",
 };
 
-type UrlState = {
+export type UrlState = {
 	tab: Tab;
 	playerSearch: string;
 	teamFilter: string;
@@ -86,7 +94,7 @@ type UrlState = {
 	showShortlistedOnly: boolean;
 };
 
-const DEFAULT_URL_STATE: UrlState = {
+export const DEFAULT_URL_STATE: UrlState = {
 	tab: DEFAULT_TAB,
 	playerSearch: DEFAULT_PLAYER_SEARCH,
 	teamFilter: DEFAULT_TEAM_FILTER,
@@ -465,4 +473,57 @@ export function writeUrlState(state: UrlState) {
 	if (nextUrl !== currentUrl) {
 		window.history.replaceState(null, "", nextUrl);
 	}
+}
+
+export type UrlStateSetters = {
+	[Key in keyof UrlState]: Dispatch<SetStateAction<UrlState[Key]>>;
+};
+
+// Hold the shareable dashboard state, mirror it into the query string, and
+// restore it on back/forward navigation. Each field gets a stable setter with
+// useState semantics, so call sites read like ordinary component state.
+export function useUrlState(
+	onRestore?: (state: UrlState) => void,
+): [UrlState, UrlStateSetters] {
+	const [state, setState] = useState(readUrlState);
+	const onRestoreRef = useRef(onRestore);
+	onRestoreRef.current = onRestore;
+
+	useEffect(() => {
+		function restore() {
+			const next = readUrlState();
+			setState(next);
+			onRestoreRef.current?.(next);
+		}
+		window.addEventListener("popstate", restore);
+		return () => window.removeEventListener("popstate", restore);
+	}, []);
+
+	useEffect(() => {
+		writeUrlState(state);
+	}, [state]);
+
+	const setters = useMemo(() => {
+		function setterFor<Key extends keyof UrlState>(key: Key) {
+			return (value: SetStateAction<UrlState[Key]>) =>
+				setState((current) => {
+					const next =
+						typeof value === "function"
+							? (value as (previous: UrlState[Key]) => UrlState[Key])(
+									current[key],
+								)
+							: value;
+					// Keep the same object when nothing changed so React can skip renders.
+					return Object.is(next, current[key])
+						? current
+						: { ...current, [key]: next };
+				});
+		}
+		const keys = Object.keys(DEFAULT_URL_STATE) as Array<keyof UrlState>;
+		return Object.fromEntries(
+			keys.map((key) => [key, setterFor(key)]),
+		) as UrlStateSetters;
+	}, []);
+
+	return [state, setters];
 }

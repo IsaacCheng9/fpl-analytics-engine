@@ -49,12 +49,9 @@ import {
 	ATTACKING_THREAT_PERIOD_LABELS,
 	ATTACKING_THREAT_PERIODS,
 	type AttackingMetric,
-	type AttackingMetricVisibility,
-	type AttackingThreatFilters,
 	type AttackingThreatPeriod,
 	CLUB_COLUMN_LABELS,
 	type ClubColumnGroup,
-	type ClubColumnVisibility,
 	clampWindowSize,
 	clubColumnVisibilityMatchDefault,
 	DEFAULT_AS_OF_GW,
@@ -86,14 +83,13 @@ import {
 	type ShortlistablePlayer,
 	TAB_LABELS,
 	TABS,
-	type Tab,
 	type TransferFilters,
 	transferFiltersMatchDefault,
 	visibleAttackingThreatFiltersMatchDefault,
 	WINDOW_MAX,
 	WINDOW_MIN,
 } from "./state";
-import { readUrlState, writeUrlState } from "./urlState";
+import { useUrlState } from "./urlState";
 
 const labelClass = "flex flex-col text-xs font-medium text-zinc-600";
 const fieldClass =
@@ -103,149 +99,19 @@ const inputClass = `mt-1 ${fieldClass}`;
 const transferInputClass = `${inputClass} w-[5.5rem]`;
 
 export default function App() {
-	const initialUrlState = useMemo(() => readUrlState(), []);
-	const [tab, setTab] = useState<Tab>(initialUrlState.tab);
 	const [tablePageSize, setTablePageSize] = useState(25);
-	const [playerSearch, setPlayerSearch] = useState(
-		initialUrlState.playerSearch,
+	const [urlState, setUrlState] = useUrlState((restored) =>
+		setFplTeamInput(restored.fplTeamId?.toString() ?? ""),
 	);
-	const [teamFilter, setTeamFilter] = useState(initialUrlState.teamFilter);
-	const [windowSizeChoice, setWindowSize] = useState<number | null>(
-		initialUrlState.windowSize,
-	);
-	const [position, setPosition] = useState<Position | "">(
-		initialUrlState.position,
-	);
-	const [minMinutes, setMinMinutes] = useState(initialUrlState.minMinutes);
-	const [minHitRate, setMinHitRate] = useState(initialUrlState.minHitRate);
-	const [minGamesChoice, setMinGames] = useState<number | null>(
-		initialUrlState.minGames,
-	);
-	const [asOfGw, setAsOfGw] = useState<number | null>(initialUrlState.asOfGw);
-	const [selectedElement, setSelectedElement] = useState<number | null>(
-		initialUrlState.selectedElement,
-	);
-	const [playerWindow, setPlayerWindow] = useState(
-		initialUrlState.playerWindow,
-	);
-	const [playerSeason, setPlayerSeason] = useState<string | null>(
-		initialUrlState.playerSeason,
-	);
-	const [fplTeamId, setFplTeamId] = useState<number | null>(
-		initialUrlState.fplTeamId,
-	);
-	const [fplTeamInput, setFplTeamInput] = useState(
-		initialUrlState.fplTeamId?.toString() ?? "",
-	);
-	const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>(
-		initialUrlState.ownershipFilter,
-	);
-	const [showSquadView, setShowSquadView] = useState(
-		initialUrlState.showSquadView,
-	);
-	const [compareOpen, setCompareOpen] = useState(initialUrlState.compareOpen);
-	const [compareLeftElement, setCompareLeftElement] = useState<number | null>(
-		initialUrlState.compareLeftElement,
-	);
-	const [compareRightElement, setCompareRightElement] = useState<number | null>(
-		initialUrlState.compareRightElement,
-	);
-	const [compareWindow, setCompareWindow] = useState(
-		initialUrlState.compareWindow,
-	);
-	const [compareAsOfGw, setCompareAsOfGw] = useState<number | null>(
-		initialUrlState.compareAsOfGw,
-	);
-	const [attackingMetrics, setAttackingMetrics] =
-		useState<AttackingMetricVisibility>(initialUrlState.attackingMetrics);
-	const [attackingThreatFilters, setAttackingThreatFilters] =
-		useState<AttackingThreatFilters>(initialUrlState.attackingThreatFilters);
-	const [clubColumnVisibility, setClubColumnGroups] =
-		useState<ClubColumnVisibility>(initialUrlState.clubColumnVisibility);
-	const [transferFilters, setTransferFilters] = useState<TransferFilters>(
-		initialUrlState.transferFilters,
-	);
-	const [shortlist, setShortlist] = useState<number[]>(
-		initialUrlState.shortlist,
-	);
-	const [showShortlistedOnly, setShowShortlistedOnly] = useState(
-		initialUrlState.showShortlistedOnly,
-	);
-
-	useEffect(() => {
-		function applyCurrentUrlState() {
-			const next = readUrlState();
-			setTab(next.tab);
-			setPlayerSearch(next.playerSearch);
-			setTeamFilter(next.teamFilter);
-			setWindowSize(next.windowSize);
-			setPosition(next.position);
-			setMinMinutes(next.minMinutes);
-			setMinHitRate(next.minHitRate);
-			setMinGames(next.minGames);
-			setAsOfGw(next.asOfGw);
-			setSelectedElement(next.selectedElement);
-			setPlayerWindow(next.playerWindow);
-			setPlayerSeason(next.playerSeason);
-			setFplTeamId(next.fplTeamId);
-			setFplTeamInput(next.fplTeamId?.toString() ?? "");
-			setOwnershipFilter(next.ownershipFilter);
-			setShowSquadView(next.showSquadView);
-			setCompareOpen(next.compareOpen);
-			setCompareLeftElement(next.compareLeftElement);
-			setCompareRightElement(next.compareRightElement);
-			setCompareWindow(next.compareWindow);
-			setCompareAsOfGw(next.compareAsOfGw);
-			setAttackingMetrics(next.attackingMetrics);
-			setAttackingThreatFilters(next.attackingThreatFilters);
-			setClubColumnGroups(next.clubColumnVisibility);
-			setTransferFilters(next.transferFilters);
-			setShortlist(next.shortlist);
-			setShowShortlistedOnly(next.showShortlistedOnly);
-		}
-
-		window.addEventListener("popstate", applyCurrentUrlState);
-		return () => window.removeEventListener("popstate", applyCurrentUrlState);
-	}, []);
-
-	useEffect(() => {
-		writeUrlState({
-			tab,
-			playerSearch,
-			teamFilter,
-			windowSize: windowSizeChoice,
-			position,
-			minMinutes,
-			minHitRate,
-			minGames: minGamesChoice,
-			asOfGw,
-			selectedElement,
-			playerWindow,
-			playerSeason,
-			fplTeamId,
-			ownershipFilter,
-			showSquadView,
-			compareOpen,
-			compareLeftElement,
-			compareRightElement,
-			compareWindow,
-			compareAsOfGw,
-			attackingMetrics,
-			attackingThreatFilters,
-			clubColumnVisibility,
-			transferFilters,
-			shortlist,
-			showShortlistedOnly,
-		});
-	}, [
+	const {
 		tab,
 		playerSearch,
 		teamFilter,
-		windowSizeChoice,
+		windowSize: windowSizeChoice,
 		position,
 		minMinutes,
 		minHitRate,
-		minGamesChoice,
+		minGames: minGamesChoice,
 		asOfGw,
 		selectedElement,
 		playerWindow,
@@ -264,13 +130,45 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
-	]);
+	} = urlState;
+	const {
+		tab: setTab,
+		playerSearch: setPlayerSearch,
+		teamFilter: setTeamFilter,
+		windowSize: setWindowSize,
+		position: setPosition,
+		minMinutes: setMinMinutes,
+		minHitRate: setMinHitRate,
+		minGames: setMinGames,
+		asOfGw: setAsOfGw,
+		selectedElement: setSelectedElement,
+		playerWindow: setPlayerWindow,
+		playerSeason: setPlayerSeason,
+		fplTeamId: setFplTeamId,
+		ownershipFilter: setOwnershipFilter,
+		showSquadView: setShowSquadView,
+		compareOpen: setCompareOpen,
+		compareLeftElement: setCompareLeftElement,
+		compareRightElement: setCompareRightElement,
+		compareWindow: setCompareWindow,
+		compareAsOfGw: setCompareAsOfGw,
+		attackingMetrics: setAttackingMetrics,
+		attackingThreatFilters: setAttackingThreatFilters,
+		clubColumnVisibility: setClubColumnGroups,
+		transferFilters: setTransferFilters,
+		shortlist: setShortlist,
+		showShortlistedOnly: setShowShortlistedOnly,
+	} = setUrlState;
+	// The team ID input is a draft until imported, so it stays out of the URL.
+	const [fplTeamInput, setFplTeamInput] = useState(
+		urlState.fplTeamId?.toString() ?? "",
+	);
 
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
 			setShowShortlistedOnly(false);
 		}
-	}, [shortlist.length, showShortlistedOnly]);
+	}, [shortlist.length, showShortlistedOnly, setShowShortlistedOnly]);
 
 	useEffect(() => {
 		if (fplTeamId === null && ownershipFilter !== "all") {
@@ -279,7 +177,13 @@ export default function App() {
 		if (fplTeamId === null && showSquadView) {
 			setShowSquadView(false);
 		}
-	}, [fplTeamId, ownershipFilter, showSquadView]);
+	}, [
+		fplTeamId,
+		ownershipFilter,
+		showSquadView,
+		setOwnershipFilter,
+		setShowSquadView,
+	]);
 
 	function updateTransferFilter(
 		filter: keyof TransferFilters,
@@ -640,6 +544,7 @@ export default function App() {
 		comparePlayerOptions,
 		ownedElementList,
 		shortlist,
+		setCompareLeftElement,
 	]);
 
 	useEffect(() => {
@@ -668,6 +573,7 @@ export default function App() {
 		comparePlayerOptions,
 		ownedElementList,
 		shortlist,
+		setCompareRightElement,
 	]);
 
 	const formColumns = useMemo(

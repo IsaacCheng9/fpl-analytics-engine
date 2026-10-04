@@ -2317,3 +2317,19 @@ test("fetches each player table once and filters position in the browser", async
 	expect(within(table).getByText("Haaland")).toBeInTheDocument();
 	expect(formCalls()).toHaveLength(1);
 });
+
+test("restores dashboard state and the team ID draft on back navigation", async () => {
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
+	});
+
+	window.history.replaceState(null, "", "/?tab=defcon&window=4&fpl_team=123");
+	fireEvent(window, new PopStateEvent("popstate"));
+
+	expect(
+		await screen.findByRole("button", { name: "DefCon Form" }),
+	).toHaveClass("bg-zinc-900");
+	expect(screen.getByLabelText("Window size in gameweeks")).toHaveValue(4);
+	expect(screen.getByLabelText("FPL Team ID")).toHaveValue(123);
+});
