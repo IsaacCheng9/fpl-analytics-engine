@@ -11,3 +11,17 @@ export function rollingChartRows(
 	}
 	return [...byRound.values()];
 }
+
+// Average defensive contributions per recorded fixture, matching the rolling
+// mean's treatment of missing values.
+export function meanDefensiveContribution(
+	gameweeks: PlayerGameweek[],
+): number | null {
+	const values = gameweeks
+		.map((gameweek) => gameweek.defensive_contribution)
+		.filter((value): value is number => value !== null);
+	if (values.length === 0) {
+		return null;
+	}
+	return values.reduce((total, value) => total + value, 0) / values.length;
+}

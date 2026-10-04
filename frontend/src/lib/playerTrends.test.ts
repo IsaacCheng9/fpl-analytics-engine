@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { PlayerGameweek } from "../api";
-import { rollingChartRows } from "./playerTrends";
+import { meanDefensiveContribution, rollingChartRows } from "./playerTrends";
 
 function gameweek(
 	round: number,
@@ -35,4 +35,17 @@ test("plots one end-of-gameweek point per double gameweek", () => {
 
 	expect(rows.map((row) => row.round)).toEqual([1, 2, 4]);
 	expect(rows[1].kickoff_time).toBe("second");
+});
+
+test("averages recorded defensive contributions and ignores missing ones", () => {
+	expect(
+		meanDefensiveContribution([
+			gameweek(1, { defensive_contribution: 6 }),
+			gameweek(2, { defensive_contribution: null }),
+			gameweek(3, { defensive_contribution: 12 }),
+		]),
+	).toBe(9);
+	expect(
+		meanDefensiveContribution([gameweek(1, { defensive_contribution: null })]),
+	).toBeNull();
 });

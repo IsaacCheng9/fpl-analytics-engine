@@ -4,6 +4,7 @@ import {
 	CartesianGrid,
 	Line,
 	LineChart,
+	ReferenceLine,
 	ResponsiveContainer,
 	Tooltip,
 	XAxis,
@@ -11,7 +12,10 @@ import {
 } from "recharts";
 import { fetchMeta, fetchPlayerDetail, type PlayerGameweek } from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
-import { rollingChartRows } from "../lib/playerTrends";
+import {
+	meanDefensiveContribution,
+	rollingChartRows,
+} from "../lib/playerTrends";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 
@@ -23,10 +27,12 @@ function Chart({
 	data,
 	dataKey,
 	title,
+	seasonAverage,
 }: {
 	data: PlayerGameweek[];
 	dataKey: keyof PlayerGameweek;
 	title: string;
+	seasonAverage: number | null | undefined;
 }) {
 	return (
 		<div>
@@ -52,6 +58,20 @@ function Chart({
 							typeof value === "number" ? value.toFixed(2) : value
 						}
 					/>
+					{seasonAverage == null ? null : (
+						<ReferenceLine
+							y={seasonAverage}
+							stroke="#a1a1aa"
+							strokeDasharray="4 4"
+							ifOverflow="extendDomain"
+							label={{
+								value: `Season ${seasonAverage.toFixed(2)}`,
+								position: "insideTopRight",
+								fontSize: 10,
+								fill: "#71717a",
+							}}
+						/>
+					)}
 					{/* Straight segments avoid implying trends between gameweeks. */}
 					<Line
 						type="linear"
@@ -113,6 +133,9 @@ export function PlayerPanel({
 		.sort()
 		.reverse();
 	const chartRows = detail ? rollingChartRows(detail.gameweeks) : [];
+	const seasonSummary = detail?.seasons.find(
+		(summary) => summary.season === detail.selected_season,
+	);
 
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
@@ -198,21 +221,25 @@ export function PlayerPanel({
 							<Chart
 								data={chartRows}
 								dataKey="rolling_xg90"
+								seasonAverage={seasonSummary?.xg90}
 								title="Rolling xG Per 90"
 							/>
 							<Chart
 								data={chartRows}
 								dataKey="rolling_xa90"
+								seasonAverage={seasonSummary?.xa90}
 								title="Rolling xA Per 90"
 							/>
 							<Chart
 								data={chartRows}
 								dataKey="rolling_xgi90"
+								seasonAverage={seasonSummary?.xgi90}
 								title="Rolling xGI Per 90"
 							/>
 							<Chart
 								data={chartRows}
 								dataKey="rolling_defcon"
+								seasonAverage={meanDefensiveContribution(detail.gameweeks)}
 								title="Rolling DefCon (Mean Per Game)"
 							/>
 						</div>
