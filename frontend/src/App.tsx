@@ -484,7 +484,14 @@ export default function App() {
 	const hasImportedTeam = importedTeam !== undefined;
 	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
 
-	const base = { window: windowSize, position, minMinutes, asOfGw };
+	// Fetch each table league-wide so heat ranges stay fixed as filters change;
+	// position, hit-rate and games filters then apply client-side.
+	const base = {
+		window: windowSize,
+		position: "" as const,
+		minMinutes,
+		asOfGw,
+	};
 	const squadBase = {
 		window: windowSize,
 		position: "" as const,
@@ -492,7 +499,7 @@ export default function App() {
 		asOfGw,
 	};
 	const formQuery = useQuery({
-		queryKey: ["form", windowSize, position, minMinutes, asOfGw],
+		queryKey: ["form", windowSize, minMinutes, asOfGw],
 		queryFn: () =>
 			fetchForm({
 				...base,
@@ -501,27 +508,14 @@ export default function App() {
 		enabled: analyticsReady && tab === "form",
 	});
 	const defconQuery = useQuery({
-		queryKey: [
-			"defcon",
-			windowSize,
-			position,
-			minMinutes,
-			minHitRate,
-			asOfGw,
-			hasPlayerSearch,
-		],
-		queryFn: () =>
-			fetchDefcon({ ...base, minHitRate: hasPlayerSearch ? 0 : minHitRate }),
+		queryKey: ["defcon", windowSize, minMinutes, asOfGw],
+		queryFn: () => fetchDefcon({ ...base, minHitRate: 0 }),
 		enabled: analyticsReady && tab === "defcon",
 	});
 	const defconProbQuery = useQuery({
-		queryKey: ["defconProb", position, minGames, asOfGw, hasPlayerSearch],
+		queryKey: ["defconProb", asOfGw],
 		queryFn: () =>
-			fetchDefconProbability({
-				position,
-				minGames: hasPlayerSearch ? 0 : minGames,
-				asOfGw,
-			}),
+			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
 		enabled: analyticsReady && tab === "defconProb",
 	});
 	const clubQuery = useQuery({
@@ -554,7 +548,7 @@ export default function App() {
 		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadDefconProbabilityQuery = useQuery({
-		queryKey: ["squadDefconProbability", asOfGw],
+		queryKey: ["defconProb", asOfGw],
 		queryFn: () =>
 			fetchDefconProbability({
 				position: "",
@@ -564,43 +558,6 @@ export default function App() {
 		enabled: analyticsReady && isSquadViewActive,
 	});
 
-	// League-wide queries (no position/delta/hit-rate filter) feed the heat-map
-	// colour scale, so a player's colour is fixed regardless of the active filters.
-	const formBaseline = useQuery({
-		queryKey: ["formBaseline", windowSize, minMinutes, asOfGw],
-		queryFn: () =>
-			fetchForm({
-				window: windowSize,
-				position: "",
-				minMinutes,
-				minDelta: FORM_MIN_DELTA_FLOOR,
-				asOfGw,
-			}),
-		enabled: analyticsReady && tab === "form",
-	});
-	const defconBaseline = useQuery({
-		queryKey: ["defconBaseline", windowSize, minMinutes, asOfGw],
-		queryFn: () =>
-			fetchDefcon({
-				window: windowSize,
-				position: "",
-				minMinutes,
-				minHitRate: 0,
-				asOfGw,
-			}),
-		enabled: analyticsReady && tab === "defcon",
-	});
-	const defconProbBaseline = useQuery({
-		queryKey: ["defconProbBaseline", asOfGw],
-		queryFn: () =>
-			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
-		enabled: analyticsReady && tab === "defconProb",
-	});
-	const clubBaseline = useQuery({
-		queryKey: ["clubBaseline", windowSize, asOfGw],
-		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
-		enabled: analyticsReady && tab === "clubs",
-	});
 	const compareFormQuery = useQuery({
 		queryKey: ["compareForm", compareWindow, compareAsOfGw],
 		queryFn: () =>
@@ -716,32 +673,32 @@ export default function App() {
 	const formColumns = useMemo(
 		() =>
 			buildFormColumns(
-				computeRanges(formBaseline.data ?? [], FORM_HEAT_KEYS),
+				computeRanges(formQuery.data ?? [], FORM_HEAT_KEYS),
 				attackingMetrics,
 			),
-		[formBaseline.data, attackingMetrics],
+		[formQuery.data, attackingMetrics],
 	);
 	const defconColumns = useMemo(
 		() =>
 			buildDefconColumns(
-				computeRanges(defconBaseline.data ?? [], DEFCON_HEAT_KEYS),
+				computeRanges(defconQuery.data ?? [], DEFCON_HEAT_KEYS),
 			),
-		[defconBaseline.data],
+		[defconQuery.data],
 	);
 	const defconProbColumns = useMemo(
 		() =>
 			buildDefconProbColumns(
-				computeRanges(defconProbBaseline.data ?? [], DEFCON_PROB_HEAT_KEYS),
+				computeRanges(defconProbQuery.data ?? [], DEFCON_PROB_HEAT_KEYS),
 			),
-		[defconProbBaseline.data],
+		[defconProbQuery.data],
 	);
 	const clubColumns = useMemo(
 		() =>
 			buildClubColumns(
-				computeRanges(clubBaseline.data ?? [], CLUB_HEAT_KEYS),
+				computeRanges(clubQuery.data ?? [], CLUB_HEAT_KEYS),
 				clubColumnVisibility,
 			),
-		[clubBaseline.data, clubColumnVisibility],
+		[clubQuery.data, clubColumnVisibility],
 	);
 
 	const active =
@@ -754,18 +711,8 @@ export default function App() {
 					: tab === "clubs"
 						? clubQuery
 						: null;
-	const activeBaseline =
-		tab === "form"
-			? formBaseline
-			: tab === "defcon"
-				? defconBaseline
-				: tab === "defconProb"
-					? defconProbBaseline
-					: tab === "clubs"
-						? clubBaseline
-						: null;
-	const activeLoading = active?.isPending || activeBaseline?.isPending;
-	const activeError = active?.isError || activeBaseline?.isError;
+	const activeLoading = active?.isPending;
+	const activeError = active?.isError;
 
 	// Team dropdown options derived from the loaded players, independent of the
 	// client-side player/team filters so the list stays stable.
@@ -785,6 +732,7 @@ export default function App() {
 			formQuery.data ?? [],
 			playerSearch,
 			teamFilter,
+			position,
 		);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const threats = filterAttackingThreatCandidates(
@@ -804,6 +752,7 @@ export default function App() {
 		formQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
 		transferFilters,
 		attackingThreatFilters,
 		attackingMetrics,
@@ -812,10 +761,15 @@ export default function App() {
 		shortlistFilter,
 	]);
 	const visibleDefconRows = useMemo(() => {
+		// Searching for a player ignores the hit-rate floor so they always appear.
 		const players = filterPlayers(
 			defconQuery.data ?? [],
 			playerSearch,
 			teamFilter,
+			position,
+		).filter(
+			(row) =>
+				hasPlayerSearch || (row.window_defcon_hit_rate ?? 0) >= minHitRate,
 		);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const owned = ownedFilter
@@ -830,17 +784,22 @@ export default function App() {
 		defconQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
+		hasPlayerSearch,
+		minHitRate,
 		transferFilters,
 		ownedFilter,
 		ownershipFilter,
 		shortlistFilter,
 	]);
 	const visibleDefconProbRows = useMemo(() => {
+		// Searching for a player ignores the games floor so they always appear.
 		const players = filterPlayers(
 			defconProbQuery.data ?? [],
 			playerSearch,
 			teamFilter,
-		);
+			position,
+		).filter((row) => hasPlayerSearch || row.games >= minGames);
 		const transfers = filterTransferCandidates(players, transferFilters);
 		const owned = ownedFilter
 			? filterOwnedPlayers(transfers, ownedFilter, ownershipFilter)
@@ -854,6 +813,9 @@ export default function App() {
 		defconProbQuery.data,
 		playerSearch,
 		teamFilter,
+		position,
+		hasPlayerSearch,
+		minGames,
 		transferFilters,
 		ownedFilter,
 		ownershipFilter,

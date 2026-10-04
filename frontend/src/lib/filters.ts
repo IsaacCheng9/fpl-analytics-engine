@@ -1,4 +1,4 @@
-import type { FormPlayer } from "../api";
+import type { FormPlayer, Position } from "../api";
 import {
 	ATTACKING_METRICS,
 	ATTACKING_THREAT_FILTER_KEYS,
@@ -12,16 +12,26 @@ import {
 	visibleAttackingThreatFiltersMatchDefault,
 } from "../state";
 
-// Apply the client-side player and team filters so the chart and table stay
-// in sync from a single source.
+// Apply the client-side player, team and position filters so the chart and
+// table stay in sync from a single league-wide source.
 export function filterPlayers<
-	T extends { web_name: string; team_name: string | null },
->(rows: T[], playerSearch: string, teamFilter: string): T[] {
+	T extends {
+		web_name: string;
+		team_name: string | null;
+		position: string | null;
+	},
+>(
+	rows: T[],
+	playerSearch: string,
+	teamFilter: string,
+	position: Position | "",
+): T[] {
 	const query = playerSearch.trim().toLowerCase();
 	return rows.filter(
 		(row) =>
 			(query === "" || row.web_name.toLowerCase().includes(query)) &&
-			(teamFilter === "" || row.team_name === teamFilter),
+			(teamFilter === "" || row.team_name === teamFilter) &&
+			(position === "" || row.position === position),
 	);
 }
 
