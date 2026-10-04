@@ -13,9 +13,9 @@ export type HeatScale =
 
 type Rgb = [number, number, number];
 
-// Blue and orange stay distinguishable with red-green colour blindness.
-const FAVOURABLE: Rgb = [59, 130, 246];
-const UNFAVOURABLE: Rgb = [249, 115, 22];
+// Green and red match the fixture difficulty colours FPL players already read.
+const FAVOURABLE: Rgb = [34, 197, 94];
+const UNFAVOURABLE: Rgb = [239, 68, 68];
 // Cap the tint so dark cell text stays readable on the strongest fills.
 const MAX_TINT = 0.45;
 

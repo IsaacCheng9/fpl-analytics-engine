@@ -14,8 +14,8 @@ test("shades gains and losses of equal size with equal strength", () => {
 	const scale = divergingScale({ min: -0.2, max: 0.4 });
 
 	// Half the 0.4 extent gives half the maximum tint in each direction.
-	expect(heatColour(0.2, scale)).toBe("rgb(211, 227, 253)");
-	expect(heatColour(-0.2, scale)).toBe("rgb(254, 224, 203)");
+	expect(heatColour(0.2, scale)).toBe("rgb(205, 242, 219)");
+	expect(heatColour(-0.2, scale)).toBe("rgb(251, 213, 213)");
 });
 
 test("treats lower values as favourable when lower is better", () => {
