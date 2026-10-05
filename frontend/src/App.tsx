@@ -1077,7 +1077,7 @@ export default function App() {
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
 			<div className="app-shell mx-auto px-6 py-8">
 				<header className="mb-6">
-					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
+					<h1 className="font-semibold text-2xl">FPL Analytics Engine</h1>
 					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
 						{tab === "evidence" ? (
 							<>
