@@ -683,7 +683,7 @@ function withProviders(children: ReactNode) {
 
 test("renders the attacking form table with flagged players", async () => {
 	render(withProviders(<App />));
-	expect(screen.getByText("FPL Form Scout")).toBeInTheDocument();
+	expect(screen.getByText("FPL Analytics Engine")).toBeInTheDocument();
 	await waitFor(() => {
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
