@@ -73,29 +73,42 @@ where the current squad looks weak for the next gameweek.
 
 ## Screenshots
 
-### Attacking Form
-
 <img width="3840" height="3600" alt="Attacking Form table" src="https://github.com/user-attachments/assets/20ab0a9f-3b36-4364-9d9f-4d3b8c0f1b54" />
 
-### DefCon Form
+<details>
+<summary>DefCon Form</summary>
 
 <img width="3840" height="3000" alt="DefCon Form table" src="https://github.com/user-attachments/assets/c4c5bdc5-f1f0-465a-a624-3e2f9e469dfd" />
 
-### DefCon Probability
+</details>
+
+<details>
+<summary>DefCon Probability</summary>
 
 <img width="3840" height="3000" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/6fff0436-af28-4175-84fd-02cd3c9b022a" />
 
-### Club Form
+</details>
+
+<details>
+<summary>Club Form</summary>
 
 <img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/6399bfc4-0a71-4bbd-afa2-cc2bd2a29177" />
 
-### Model Evidence
+</details>
+
+<details>
+<summary>Model Evidence</summary>
 
 <img width="3840" height="2350" alt="Model Evidence view" src="https://github.com/user-attachments/assets/a97382bc-60ab-48bc-865a-a9a233c332da" />
 
-### Detailed Player View
+</details>
+
+<details>
+<summary>Detailed Player View</summary>
 
 <img width="3840" height="2440" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/2acd9c48-f5f9-4752-a1bf-f5103481a019" />
+
+</details>
 
 ## Methodology
 
