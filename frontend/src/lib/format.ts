@@ -3,8 +3,15 @@
 // the view.
 type Maybe = number | null | undefined;
 
+// Round before deciding the sign, so tiny values such as -0.004 show as 0.00
+// rather than -0.00 or +0.00.
+function fixed(value: number, digits: number): string {
+	const text = value.toFixed(digits);
+	return Number(text) === 0 ? (0).toFixed(digits) : text;
+}
+
 export function fmtNum(value: Maybe, digits = 2): string {
-	return value == null ? "-" : value.toFixed(digits);
+	return value == null ? "-" : fixed(value, digits);
 }
 
 export function fmtPrice(value: Maybe): string {
@@ -21,7 +28,7 @@ export function fmtPct(value: Maybe): string {
 
 // Format a value already expressed in percentage points (e.g. ownership 15.5).
 export function fmtPctPoints(value: Maybe, digits = 1): string {
-	return value == null ? "-" : `${value.toFixed(digits)}%`;
+	return value == null ? "-" : `${fixed(value, digits)}%`;
 }
 
 // Format a signed delta with an explicit leading plus for positive values.
@@ -29,5 +36,6 @@ export function fmtDelta(value: Maybe, digits = 2): string {
 	if (value == null) {
 		return "-";
 	}
-	return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+	const text = fixed(value, digits);
+	return Number(text) > 0 ? `+${text}` : text;
 }
