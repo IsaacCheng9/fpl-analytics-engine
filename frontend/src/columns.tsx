@@ -29,10 +29,10 @@ import {
 	type TransferFilterRow,
 } from "./state";
 
-// Sequential shades more-is-better metrics, diverging centres changes on zero,
-// and fdr uses the fixed 1-5 rating. Context columns skip heatMeta entirely
-// and stay unshaded.
-type HeatScaleKind = "sequential" | "diverging" | "fdr";
+// Sequential shades more-is-better metrics and diverging centres changes on
+// zero. FDR uses fdrMeta's fixed 1-5 scale, and context columns skip heatMeta
+// entirely and stay unshaded.
+type HeatScaleKind = "sequential" | "diverging";
 type HeatCellOptions = {
 	lowerIsBetter?: boolean;
 	scale?: HeatScaleKind;
@@ -55,20 +55,17 @@ export const FORM_HEAT_KEYS = [
 	"window_xa90_per_million",
 	"window_xgi90_per_million",
 	"season_points_per_million",
-	"avg_fdr",
 ];
 export const DEFCON_HEAT_KEYS = [
 	"window_defcon_hit_rate",
 	"window_defcon",
 	"season_points_per_million",
-	"avg_fdr",
 ];
 export const DEFCON_PROB_HEAT_KEYS = [
 	"raw_rate",
 	"prob",
 	"window_defcon",
 	"season_points_per_million",
-	"avg_fdr",
 ];
 export const CLUB_HEAT_KEYS = [
 	"window_xg_per_match",
@@ -93,7 +90,6 @@ export const CLUB_HEAT_KEYS = [
 	"season_concession_delta_total",
 	"attack_form",
 	"defence_form",
-	"avg_fdr",
 ];
 
 // Min/max per metric across the supplied (league-wide) rows.
@@ -144,8 +140,6 @@ function heatScale(range: Range, opts: HeatCellOptions): HeatScale {
 			return sequentialScale(range, lowerIsBetter);
 		case "diverging":
 			return divergingScale(range, lowerIsBetter);
-		case "fdr":
-			return FDR_SCALE;
 	}
 }
 
@@ -168,6 +162,11 @@ function heatMeta<T>(
 		numeric: true,
 		cellStyle: heatCellStyle<T>(heatScale(range, opts)),
 	};
+}
+
+// FDR is a fixed 1-5 rating, so it needs no league-wide range.
+function fdrMeta<T>(meta: ColumnDef<T>["meta"]): ColumnDef<T>["meta"] {
+	return { ...meta, numeric: true, cellStyle: heatCellStyle<T>(FDR_SCALE) };
 }
 
 function buildFormMetricColumns(
@@ -212,9 +211,9 @@ function buildFormMetricColumns(
 	});
 }
 
-function buildPlayerContextColumns<T extends TransferFilterRow>(
-	ranges: Record<string, Range>,
-): ColumnDef<T>[] {
+function buildPlayerContextColumns<
+	T extends TransferFilterRow,
+>(): ColumnDef<T>[] {
 	return [
 		{
 			accessorKey: "price",
@@ -229,14 +228,10 @@ function buildPlayerContextColumns<T extends TransferFilterRow>(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: heatMeta<T>(
-				{
-					tooltip:
-						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-				},
-				ranges.avg_fdr,
-				{ scale: "fdr" },
-			),
+			meta: fdrMeta<T>({
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			}),
 		},
 		{
 			accessorKey: "current_ownership",
@@ -262,7 +257,7 @@ export function buildFormColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<FormPlayer>(ranges),
+		...buildPlayerContextColumns<FormPlayer>(),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
@@ -319,7 +314,7 @@ export function buildDefconColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<DefconPlayer>(ranges),
+		...buildPlayerContextColumns<DefconPlayer>(),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
@@ -419,7 +414,7 @@ export function buildDefconProbColumns(
 		{ accessorKey: "web_name", header: "Player" },
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
-		...buildPlayerContextColumns<DefconProbabilityPlayer>(ranges),
+		...buildPlayerContextColumns<DefconProbabilityPlayer>(),
 		{
 			accessorKey: "window_minutes",
 			header: "Mins",
@@ -745,14 +740,10 @@ export function buildClubColumns(
 				lowerIsBetter: true,
 				format: (v) => fmtNum(v, 1),
 			}),
-			meta: heatMeta<ClubForm>(
-				{
-					tooltip:
-						"Average fixture difficulty over the next 5 gameweeks; lower is easier",
-				},
-				ranges.avg_fdr,
-				{ scale: "fdr" },
-			),
+			meta: fdrMeta<ClubForm>({
+				tooltip:
+					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
+			}),
 		},
 	];
 	const groups: Record<string, ClubColumnGroup> = {
