@@ -39,7 +39,7 @@ export function SeasonStatus({
 		<div className="min-h-screen bg-zinc-50 text-zinc-900">
 			<div className="app-shell mx-auto px-6 py-8">
 				<header className="mb-8">
-					<h1 className="font-semibold text-2xl">FPL Form Scout</h1>
+					<h1 className="font-semibold text-2xl">FPL Analytics Engine</h1>
 					<p className="mt-1 text-sm text-zinc-500">
 						Point-in-time transfer research for the {meta?.season ?? "live"}{" "}
 						season.
