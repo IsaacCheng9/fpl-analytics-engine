@@ -2393,3 +2393,28 @@ test("explains an empty club-form backtest instead of showing bare headers", asy
 		await screen.findByText(/No gameweeks can be scored yet/),
 	).toHaveTextContent("results start once GW16 is complete");
 });
+
+test("shades FDR on its fixed scale without a league-wide range", async () => {
+	render(withProviders(<App />));
+	const table = await screen.findByRole("table");
+	await waitFor(() => {
+		expect(within(table).getByText("Mbeumo")).toBeInTheDocument();
+	});
+	const headers = within(table).getAllByRole("columnheader");
+	const fdrIndex = headers.findIndex((cell) =>
+		cell.textContent?.includes("FDR (Next 5)"),
+	);
+	const fdrCell = (player: string) =>
+		within(within(table).getByRole("row", { name: new RegExp(player) }))
+			.getAllByRole("cell")
+			.at(fdrIndex);
+
+	// 2.6 is easier than the neutral 3, and 3.4 is harder.
+	expect(fdrCell("Mbeumo")).toHaveTextContent("2.6");
+	expect(fdrCell("Mbeumo")?.style.backgroundColor).toMatch(/^rgb/);
+	expect(fdrCell("Saka")).toHaveTextContent("3.4");
+	expect(fdrCell("Saka")?.style.backgroundColor).toMatch(/^rgb/);
+	expect(fdrCell("Mbeumo")?.style.backgroundColor).not.toBe(
+		fdrCell("Saka")?.style.backgroundColor,
+	);
+});
