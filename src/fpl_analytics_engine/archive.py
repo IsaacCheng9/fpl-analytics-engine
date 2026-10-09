@@ -71,8 +71,18 @@ def _flatten_nested(records: list[dict]) -> list[dict]:
     ]
 
 
-def _completed_gameweek_ids(events: list[dict]) -> set[int]:
-    """Return gameweeks whose results have been finalised by FPL."""
+def completed_gameweek_ids(events: list[dict]) -> set[int]:
+    """Return gameweeks whose results have been finalised by FPL.
+
+    The scheduled data refresh workflow uses this to decide whether a refresh
+    would add anything, so it must stay in step with what archiving keeps.
+
+    Args:
+        events: The bootstrap-static ``events`` list.
+
+    Returns:
+        IDs of gameweeks marked both finished and data-checked.
+    """
     return {
         int(event["id"])
         for event in events
@@ -150,7 +160,7 @@ def archive_season(
     )
 
     histories: list[dict] = []
-    completed_gameweeks = _completed_gameweek_ids(bootstrap["events"])
+    completed_gameweeks = completed_gameweek_ids(bootstrap["events"])
     if completed_gameweeks:
         element_ids = [element["id"] for element in bootstrap["elements"]]
         if limit is not None:
