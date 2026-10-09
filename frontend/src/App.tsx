@@ -1099,13 +1099,15 @@ export default function App() {
 					</p>
 				</header>
 
-				<div className="mb-4 flex gap-2">
+				{/* Scroll the tabs sideways on narrow screens rather than widening the page;
+				    the padding keeps the focus rings from being clipped. */}
+				<div className="mb-4 flex gap-2 overflow-x-auto p-px">
 					{TABS.map((value) => (
 						<button
 							key={value}
 							type="button"
 							onClick={() => setTab(value)}
-							className={`rounded-md px-3 py-1.5 font-medium text-sm ${
+							className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm ${
 								tab === value
 									? "bg-zinc-900 text-white"
 									: "bg-white text-zinc-700 ring-1 ring-zinc-200"
