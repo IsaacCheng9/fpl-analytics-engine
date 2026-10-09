@@ -209,16 +209,28 @@ function buildFormMetricColumns(
 	});
 }
 
-function buildPlayerContextColumns<
+// Player, position, team and price stay pinned on the left of every player table.
+function buildPlayerIdentityColumns<
 	T extends TransferFilterRow,
 >(): ColumnDef<T>[] {
 	return [
+		{ accessorKey: "web_name", header: "Player" },
+		{ accessorKey: "position", header: "Pos" },
+		{ accessorKey: "team_name", header: "Team" },
 		{
 			accessorKey: "price",
 			header: "Price",
 			cell: (info) => fmtPrice(info.getValue<number | null>()),
 			meta: { numeric: true },
 		},
+	];
+}
+
+// Fixture and ownership context follows each table's signal columns.
+function buildPlayerContextColumns<
+	T extends TransferFilterRow,
+>(): ColumnDef<T>[] {
+	return [
 		{
 			accessorKey: "avg_fdr",
 			header: "FDR (Next 5)",
@@ -252,9 +264,21 @@ export function buildFormColumns(
 	visibleMetrics: AttackingMetricVisibility,
 ): ColumnDef<FormPlayer>[] {
 	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
+		...buildPlayerIdentityColumns<FormPlayer>(),
+		...ATTACKING_METRIC_COLUMN_ORDER.filter(
+			(metric) => visibleMetrics[metric],
+		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points Per £m",
+			cell: heatCell<FormPlayer>({
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: heatMeta<FormPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
+		},
 		...buildPlayerContextColumns<FormPlayer>(),
 		{
 			accessorKey: "window_minutes",
@@ -288,20 +312,6 @@ export function buildFormColumns(
 				numeric: true,
 			},
 		},
-		...ATTACKING_METRIC_COLUMN_ORDER.filter(
-			(metric) => visibleMetrics[metric],
-		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<FormPlayer>({
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<FormPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
-		},
 	];
 }
 
@@ -309,9 +319,62 @@ export function buildDefconColumns(
 	ranges: Record<string, Range>,
 ): ColumnDef<DefconPlayer>[] {
 	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
+		...buildPlayerIdentityColumns<DefconPlayer>(),
+		{
+			accessorKey: "window_defcon_hit_rate",
+			header: "Hit Rate",
+			cell: heatCell<DefconPlayer>({
+				format: fmtPct,
+			}),
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Share of window games clearing the DefCon threshold" },
+				ranges.window_defcon_hit_rate,
+			),
+		},
+		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconPlayer>({
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: heatMeta<DefconPlayer>(
+				{
+					tooltip:
+						"Average defensive-contribution count per game over the window",
+				},
+				ranges.window_defcon,
+			),
+		},
+		{
+			accessorKey: "window_defcon_hits",
+			header: "Hits",
+			cell: heatCell<DefconPlayer>({
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip: "Window games clearing the DefCon threshold",
+				numeric: true,
+			},
+		},
+		{
+			accessorKey: "window_games",
+			header: "Games",
+			cell: heatCell<DefconPlayer>({
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: { tooltip: "Eligible games in the window", numeric: true },
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points Per £m",
+			cell: heatCell<DefconPlayer>({
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: heatMeta<DefconPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
+		},
 		...buildPlayerContextColumns<DefconPlayer>(),
 		{
 			accessorKey: "window_minutes",
@@ -347,61 +410,6 @@ export function buildDefconColumns(
 				numeric: true,
 			},
 		},
-		{
-			accessorKey: "window_games",
-			header: "Games",
-			cell: heatCell<DefconPlayer>({
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: { tooltip: "Eligible games in the window", numeric: true },
-		},
-		{
-			accessorKey: "window_defcon_hits",
-			header: "Hits",
-			cell: heatCell<DefconPlayer>({
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: {
-				tooltip: "Window games clearing the DefCon threshold",
-				numeric: true,
-			},
-		},
-		{
-			accessorKey: "window_defcon_hit_rate",
-			header: "Hit Rate",
-			cell: heatCell<DefconPlayer>({
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Share of window games clearing the DefCon threshold" },
-				ranges.window_defcon_hit_rate,
-			),
-		},
-		{
-			accessorKey: "window_defcon",
-			header: "Avg DefCon",
-			cell: heatCell<DefconPlayer>({
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{
-					tooltip:
-						"Average defensive-contribution count per game over the window",
-				},
-				ranges.window_defcon,
-			),
-		},
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<DefconPlayer>({
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
-		},
 	];
 }
 
@@ -409,9 +417,75 @@ export function buildDefconProbColumns(
 	ranges: Record<string, Range>,
 ): ColumnDef<DefconProbabilityPlayer>[] {
 	return [
-		{ accessorKey: "web_name", header: "Player" },
-		{ accessorKey: "position", header: "Pos" },
-		{ accessorKey: "team_name", header: "Team" },
+		...buildPlayerIdentityColumns<DefconProbabilityPlayer>(),
+		{
+			accessorKey: "prob",
+			header: "P(Hit | 60+ Mins)",
+			cell: heatCell<DefconProbabilityPlayer>({ format: fmtPct }),
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{
+					tooltip:
+						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
+				},
+				ranges.prob,
+			),
+		},
+		{
+			accessorKey: "raw_rate",
+			header: "Raw Rate",
+			cell: heatCell<DefconProbabilityPlayer>({
+				format: fmtPct,
+			}),
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Observed DefCon hit rate (hits / games)" },
+				ranges.raw_rate,
+			),
+		},
+		{
+			accessorKey: "window_defcon",
+			header: "Avg DefCon",
+			cell: heatCell<DefconProbabilityPlayer>({
+				format: (v) => fmtNum(v, 1),
+			}),
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{
+					tooltip:
+						"Average defensive-contribution count per game over the recent window",
+				},
+				ranges.window_defcon,
+			),
+		},
+		{
+			accessorKey: "games",
+			header: "Games",
+			cell: heatCell<DefconProbabilityPlayer>({
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip: "Eligible appearances up to this gameweek",
+				numeric: true,
+			},
+		},
+		{
+			accessorKey: "hits",
+			header: "Hits",
+			cell: heatCell<DefconProbabilityPlayer>({
+				format: (v) => fmtNum(v, 0),
+			}),
+			meta: {
+				tooltip: "Appearances clearing the DefCon threshold",
+				numeric: true,
+			},
+		},
+		{
+			accessorKey: "season_points_per_million",
+			header: "Points Per £m",
+			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 1) }),
+			meta: heatMeta<DefconProbabilityPlayer>(
+				{ tooltip: "Total season points divided by price" },
+				ranges.season_points_per_million,
+			),
+		},
 		...buildPlayerContextColumns<DefconProbabilityPlayer>(),
 		{
 			accessorKey: "window_minutes",
@@ -444,74 +518,6 @@ export function buildDefconProbColumns(
 				tooltip: "Share of recent window games the player started",
 				numeric: true,
 			},
-		},
-		{
-			accessorKey: "games",
-			header: "Games",
-			cell: heatCell<DefconProbabilityPlayer>({
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: {
-				tooltip: "Eligible appearances up to this gameweek",
-				numeric: true,
-			},
-		},
-		{
-			accessorKey: "hits",
-			header: "Hits",
-			cell: heatCell<DefconProbabilityPlayer>({
-				format: (v) => fmtNum(v, 0),
-			}),
-			meta: {
-				tooltip: "Appearances clearing the DefCon threshold",
-				numeric: true,
-			},
-		},
-		{
-			accessorKey: "raw_rate",
-			header: "Raw Rate",
-			cell: heatCell<DefconProbabilityPlayer>({
-				format: fmtPct,
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Observed DefCon hit rate (hits / games)" },
-				ranges.raw_rate,
-			),
-		},
-		{
-			accessorKey: "prob",
-			header: "P(Hit | 60+ Mins)",
-			cell: heatCell<DefconProbabilityPlayer>({ format: fmtPct }),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Modelled probability of clearing the DefCon threshold, conditional on playing 60+ minutes",
-				},
-				ranges.prob,
-			),
-		},
-		{
-			accessorKey: "window_defcon",
-			header: "Avg DefCon",
-			cell: heatCell<DefconProbabilityPlayer>({
-				format: (v) => fmtNum(v, 1),
-			}),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{
-					tooltip:
-						"Average defensive-contribution count per game over the recent window",
-				},
-				ranges.window_defcon,
-			),
-		},
-		{
-			accessorKey: "season_points_per_million",
-			header: "Points Per £m",
-			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 1) }),
-			meta: heatMeta<DefconProbabilityPlayer>(
-				{ tooltip: "Total season points divided by price" },
-				ranges.season_points_per_million,
-			),
 		},
 	];
 }

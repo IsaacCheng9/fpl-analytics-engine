@@ -22,14 +22,16 @@ interface Point {
 	name: string;
 }
 
+// Start collapsed so the table is visible on the first screen; only an explicit
+// choice to show the chart keeps it open across visits.
 function readStoredCollapsedPreference(): boolean {
 	if (typeof window === "undefined") {
-		return false;
+		return true;
 	}
 	try {
-		return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true";
+		return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) !== "false";
 	} catch {
-		return false;
+		return true;
 	}
 }
 

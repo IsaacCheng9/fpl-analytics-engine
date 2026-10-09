@@ -674,6 +674,11 @@ beforeEach(() => {
 	vi.stubGlobal("fetch", vi.fn(mockApiFetch));
 });
 
+// Presets, threat and transfer filters sit behind the 'More Filters' toggle.
+function openMoreFilters() {
+	fireEvent.click(screen.getByRole("button", { name: /More Filters/ }));
+}
+
 function withProviders(children: ReactNode) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
@@ -717,28 +722,28 @@ test("shows the live preseason status without requesting analytics", async () =>
 	expect(fetchMock).toHaveBeenCalledWith("/api/");
 });
 
-test("collapses the attacking form chart and remembers the preference", async () => {
+test("starts the attacking form chart collapsed and remembers opening it", async () => {
 	const firstRender = render(withProviders(<App />));
 	await waitFor(() => {
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
 	expect(
-		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
-	).toBeInTheDocument();
-
-	const hideButton = screen.getByRole("button", { name: "Hide Chart" });
-	expect(hideButton).toHaveAttribute("aria-expanded", "true");
-	fireEvent.click(hideButton);
-
-	expect(
 		screen.queryByRole("region", { name: "Attacking Form Scatter Chart" }),
 	).not.toBeInTheDocument();
-	expect(screen.getByRole("button", { name: "Show Chart" })).toHaveAttribute(
+
+	const showButton = screen.getByRole("button", { name: "Show Chart" });
+	expect(showButton).toHaveAttribute("aria-expanded", "false");
+	fireEvent.click(showButton);
+
+	expect(
+		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Hide Chart" })).toHaveAttribute(
 		"aria-expanded",
-		"false",
+		"true",
 	);
 	expect(window.localStorage.getItem("fpl-form-scatter-collapsed")).toBe(
-		"true",
+		"false",
 	);
 
 	firstRender.unmount();
@@ -747,7 +752,7 @@ test("collapses the attacking form chart and remembers the preference", async ()
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
 	expect(
-		screen.getByRole("button", { name: "Show Chart" }),
+		screen.getByRole("button", { name: "Hide Chart" }),
 	).toBeInTheDocument();
 });
 
@@ -773,6 +778,7 @@ test("filters attacking form candidates by explicit threat thresholds", async ()
 	await waitFor(() => {
 		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
+	openMoreFilters();
 	expect(screen.getByLabelText("Min Window xGI/90")).toBeInTheDocument();
 	expect(screen.getByLabelText("Min Season xGI/90")).toBeInTheDocument();
 	expect(screen.getByLabelText("Min Window xG/90")).toBeInTheDocument();
@@ -811,6 +817,7 @@ test("filters player tables with transfer candidate controls", async () => {
 		expect(screen.getByText("Haaland")).toBeInTheDocument();
 	});
 
+	openMoreFilters();
 	fireEvent.change(screen.getByLabelText("Max Price"), {
 		target: { value: "9" },
 	});
@@ -870,6 +877,7 @@ test("surfaces active filters with reset controls and presets", async () => {
 		screen.getByRole("columnheader", { name: /Shortlist/ }),
 	).toBeInTheDocument();
 
+	openMoreFilters();
 	fireEvent.click(screen.getByRole("button", { name: "Value Attack" }));
 	expect(screen.getByLabelText("Max Price")).toHaveValue(7.5);
 	expect(screen.getByLabelText("Min Window xGI/90")).toHaveValue(0.35);
@@ -2147,6 +2155,7 @@ test("persists filter changes and player panel state to the URL", async () => {
 	fireEvent.change(screen.getByLabelText("Position"), {
 		target: { value: "MID" },
 	});
+	openMoreFilters();
 	fireEvent.change(screen.getByLabelText("Max Price"), {
 		target: { value: "11" },
 	});
@@ -2417,4 +2426,62 @@ test("shades FDR on its fixed scale without a league-wide range", async () => {
 	expect(fdrCell("Mbeumo")?.style.backgroundColor).not.toBe(
 		fdrCell("Saka")?.style.backgroundColor,
 	);
+});
+
+test("folds advanced filters behind a toggle that counts the ones in use", async () => {
+	window.history.replaceState(null, "", "/?max_price=7&min_window_xgi90=0.3");
+	render(withProviders(<App />));
+
+	const toggle = await screen.findByRole("button", {
+		name: "More Filters (2)",
+	});
+	expect(toggle).toHaveAttribute("aria-expanded", "false");
+	expect(screen.queryByLabelText("Max Price")).not.toBeInTheDocument();
+	expect(screen.getByLabelText("Position")).toBeInTheDocument();
+
+	fireEvent.click(toggle);
+
+	expect(
+		screen.getByRole("button", { name: "Fewer Filters (2)" }),
+	).toHaveAttribute("aria-expanded", "true");
+	expect(screen.getByLabelText("Max Price")).toHaveValue(7);
+	expect(screen.getByLabelText("Min Window xGI/90")).toHaveValue(0.3);
+});
+
+test("keeps the table sort in the URL and clears it when switching tabs", async () => {
+	window.history.replaceState(null, "", "/?sort=price:asc");
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Haaland"),
+		).toBeInTheDocument();
+	});
+	const firstPlayer = () =>
+		within(
+			within(screen.getByRole("table")).getAllByRole("row")[1],
+		).getAllByRole("cell")[1];
+	// Mbeumo is the cheapest of the three fixture players.
+	expect(firstPlayer()).toHaveTextContent("Mbeumo");
+
+	fireEvent.click(screen.getByRole("button", { name: "DefCon Form" }));
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("sort")).toBeNull();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Attacking Form" }));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Haaland"),
+		).toBeInTheDocument();
+	});
+	// Numeric columns sort descending first.
+	fireEvent.click(
+		within(screen.getByRole("table")).getByRole("button", { name: /^Price/ }),
+	);
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("sort")).toBe(
+			"price:desc",
+		);
+	});
+	expect(firstPlayer()).toHaveTextContent("Haaland");
 });

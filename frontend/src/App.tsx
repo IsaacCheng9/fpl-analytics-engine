@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
 	type FplTeamPick,
@@ -46,6 +46,7 @@ import {
 	formatPlayerCount,
 } from "./lib/filters";
 import { fmtNum, fmtPctPoints, fmtPrice } from "./lib/format";
+import { sortingFromParam, sortingToParam } from "./lib/tableSort";
 import {
 	type ActiveFilterChip,
 	ATTACKING_METRIC_COLUMN_ORDER,
@@ -116,6 +117,7 @@ function PanelFallback() {
 
 export default function App() {
 	const [tablePageSize, setTablePageSize] = useState(25);
+	const [showMoreFilters, setShowMoreFilters] = useState(false);
 	const [urlState, setUrlState] = useUrlState((restored) =>
 		setFplTeamInput(restored.fplTeamId?.toString() ?? ""),
 	);
@@ -146,6 +148,7 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
+		sort,
 	} = urlState;
 	const {
 		tab: setTab,
@@ -174,6 +177,7 @@ export default function App() {
 		transferFilters: setTransferFilters,
 		shortlist: setShortlist,
 		showShortlistedOnly: setShowShortlistedOnly,
+		sort: setSort,
 	} = setUrlState;
 	// The team ID input is a draft until imported, so it stays out of the URL.
 	const [fplTeamInput, setFplTeamInput] = useState(
@@ -779,6 +783,28 @@ export default function App() {
 			attackingThreatFilters,
 			attackingMetrics,
 		);
+	const tableSorting = useMemo(() => sortingFromParam(sort), [sort]);
+	function updateTableSorting(next: SortingState) {
+		setSort(sortingToParam(next));
+	}
+
+	// Presets, threat and transfer filters sit behind a toggle; count the ones in
+	// use so a collapsed panel still shows that it is narrowing the table.
+	const hasMoreFilters = tab === "form" || showTransferFilters;
+	const moreFilterCount =
+		(tab === "form"
+			? ATTACKING_METRICS.filter((metric) => attackingMetrics[metric]).flatMap(
+					(metric) =>
+						ATTACKING_THREAT_PERIODS.filter(
+							(period) => attackingThreatFilters[metric][period] !== null,
+						),
+				).length
+			: 0) +
+		(showTransferFilters
+			? Object.values(transferFilters).filter((value) => value !== null)
+					.length +
+				(tab !== "defconProb" && minMinutes !== DEFAULT_MIN_MINUTES ? 1 : 0)
+			: 0);
 	const hasActiveClubColumnGroups =
 		tab === "clubs" && !clubColumnVisibilityMatchDefault(clubColumnVisibility);
 	const visiblePlayerRowCount =
@@ -1047,6 +1073,8 @@ export default function App() {
 				paginate
 				initialPageSize={tablePageSize}
 				onPageSizeChange={setTablePageSize}
+				sorting={tableSorting}
+				onSortingChange={updateTableSorting}
 				columns={columns}
 				onRowClick={(row) => openPlayerDetail(row.element)}
 				rowClassName={playerRowClassName}
@@ -1099,13 +1127,21 @@ export default function App() {
 					</p>
 				</header>
 
-				<div className="mb-4 flex gap-2">
+				{/* Scroll the tabs sideways on narrow screens rather than widening the page;
+				    the padding keeps the focus rings from being clipped. */}
+				<div className="mb-4 flex gap-2 overflow-x-auto p-px">
 					{TABS.map((value) => (
 						<button
 							key={value}
 							type="button"
-							onClick={() => setTab(value)}
-							className={`rounded-md px-3 py-1.5 font-medium text-sm ${
+							onClick={() => {
+								// Each tab has different columns, so a sort does not carry over.
+								if (value !== tab) {
+									setTab(value);
+									setSort(null);
+								}
+							}}
+							className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm ${
 								tab === value
 									? "bg-zinc-900 text-white"
 									: "bg-white text-zinc-700 ring-1 ring-zinc-200"
@@ -1304,48 +1340,63 @@ export default function App() {
 								) : null}
 							</form>
 						) : null}
+
+						{hasMoreFilters ? (
+							<button
+								type="button"
+								aria-expanded={showMoreFilters}
+								aria-controls="more-filters"
+								className="self-end rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
+								onClick={() => setShowMoreFilters((current) => !current)}
+							>
+								{showMoreFilters ? "Fewer Filters" : "More Filters"}
+								{moreFilterCount > 0 ? ` (${moreFilterCount})` : ""}
+							</button>
+						) : null}
 					</div>
-					{tab === "form" ? (
-						<div className="mt-4 border-zinc-100 border-t pt-4">
-							<div className="mb-2 font-medium text-xs text-zinc-600">
-								Filter Presets
-							</div>
-							<div className="flex flex-wrap gap-2">
-								{FILTER_PRESETS.map((preset) => (
-									<button
-										key={preset.id}
-										type="button"
-										className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white"
-										onClick={() => applyFilterPreset(preset.id)}
-									>
-										{preset.label}
-									</button>
-								))}
-							</div>
-						</div>
-					) : null}
-					{tab === "form" || showTransferFilters ? (
-						<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
+					{hasMoreFilters && showMoreFilters ? (
+						<div id="more-filters">
 							{tab === "form" ? (
-								<AttackingThreatFilterFields
-									filters={attackingThreatFilters}
-									visibleMetrics={attackingMetrics}
-									hasActiveFilters={hasActiveAttackingThreatFilters}
-									onChange={updateAttackingThreatFilter}
-									onReset={resetAttackingThreatFilters}
-								/>
+								<div className="mt-4 border-zinc-100 border-t pt-4">
+									<div className="mb-2 font-medium text-xs text-zinc-600">
+										Filter Presets
+									</div>
+									<div className="flex flex-wrap gap-2">
+										{FILTER_PRESETS.map((preset) => (
+											<button
+												key={preset.id}
+												type="button"
+												className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white"
+												onClick={() => applyFilterPreset(preset.id)}
+											>
+												{preset.label}
+											</button>
+										))}
+									</div>
+								</div>
 							) : null}
-							{showTransferFilters ? (
-								<TransferFilterFields
-									filters={transferFilters}
-									minMinutes={minMinutes}
-									showMinMinutes={tab !== "defconProb"}
-									hasActiveFilters={hasActiveTransferFilters}
-									onFilterChange={updateTransferFilter}
-									onMinMinutesChange={setMinMinutes}
-									onReset={resetTransferFilters}
-								/>
-							) : null}
+							<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
+								{tab === "form" ? (
+									<AttackingThreatFilterFields
+										filters={attackingThreatFilters}
+										visibleMetrics={attackingMetrics}
+										hasActiveFilters={hasActiveAttackingThreatFilters}
+										onChange={updateAttackingThreatFilter}
+										onReset={resetAttackingThreatFilters}
+									/>
+								) : null}
+								{showTransferFilters ? (
+									<TransferFilterFields
+										filters={transferFilters}
+										minMinutes={minMinutes}
+										showMinMinutes={tab !== "defconProb"}
+										hasActiveFilters={hasActiveTransferFilters}
+										onFilterChange={updateTransferFilter}
+										onMinMinutesChange={setMinMinutes}
+										onReset={resetTransferFilters}
+									/>
+								) : null}
+							</div>
 						</div>
 					) : null}
 				</div>
@@ -1580,6 +1631,8 @@ export default function App() {
 							paginate
 							initialPageSize={tablePageSize}
 							onPageSizeChange={setTablePageSize}
+							sorting={tableSorting}
+							onSortingChange={updateTableSorting}
 							columns={clubColumns}
 							stickyDataColumns={1}
 							emptyTitle={clubEmptyTitle}
