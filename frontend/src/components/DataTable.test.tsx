@@ -219,3 +219,31 @@ test("right-aligns numeric columns with fixed-width digits", () => {
 		"text-right",
 	);
 });
+
+test("opens clickable rows from the keyboard without hijacking row buttons", () => {
+	const onRowClick = vi.fn();
+	const onAction = vi.fn();
+	render(
+		<DataTable
+			data={players.slice(0, 1)}
+			columns={columns}
+			onRowClick={onRowClick}
+			renderRowActions={() => (
+				<button type="button" onClick={onAction}>
+					Shortlist
+				</button>
+			)}
+		/>,
+	);
+
+	const row = bodyRows()[0];
+	expect(row).toHaveAttribute("tabindex", "0");
+	fireEvent.keyDown(row, { key: "Enter" });
+	fireEvent.keyDown(row, { key: " " });
+	expect(onRowClick).toHaveBeenCalledTimes(2);
+
+	fireEvent.keyDown(within(row).getByRole("button", { name: "Shortlist" }), {
+		key: "Enter",
+	});
+	expect(onRowClick).toHaveBeenCalledTimes(2);
+});

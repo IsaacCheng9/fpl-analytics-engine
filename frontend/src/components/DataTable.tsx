@@ -337,10 +337,28 @@ export function DataTable<T>({
 								<tr
 									key={row.id}
 									className={`group border-zinc-100 border-t ${rowClassName?.(row.original) ?? ""} hover:bg-zinc-50${
-										onRowClick ? " cursor-pointer" : ""
+										onRowClick
+											? " cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:-outline-offset-2"
+											: ""
 									}`}
+									tabIndex={onRowClick ? 0 : undefined}
 									onClick={
 										onRowClick ? () => onRowClick(row.original) : undefined
+									}
+									onKeyDown={
+										onRowClick
+											? (event) => {
+													// Only the focused row itself opens, so buttons inside it keep
+													// their own keyboard behaviour.
+													if (
+														event.target === event.currentTarget &&
+														(event.key === "Enter" || event.key === " ")
+													) {
+														event.preventDefault();
+														onRowClick(row.original);
+													}
+												}
+											: undefined
 									}
 								>
 									{renderRowActions ? (
