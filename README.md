@@ -73,40 +73,40 @@ where the current squad looks weak for the next gameweek.
 
 ## Screenshots
 
-<img width="3840" height="3600" alt="Attacking Form table" src="https://github.com/user-attachments/assets/20ab0a9f-3b36-4364-9d9f-4d3b8c0f1b54" />
+<img width="3840" height="3600" alt="Attacking Form table" src="https://github.com/user-attachments/assets/5984c709-e672-433e-8907-9ad6a4229840" />
 
 <details>
 <summary>DefCon Form</summary>
 
-<img width="3840" height="3000" alt="DefCon Form table" src="https://github.com/user-attachments/assets/c4c5bdc5-f1f0-465a-a624-3e2f9e469dfd" />
+<img width="3840" height="2906" alt="DefCon Form table" src="https://github.com/user-attachments/assets/21851fa4-8055-4cb1-bd5e-02b2547213ab" />
 
 </details>
 
 <details>
 <summary>DefCon Probability</summary>
 
-<img width="3840" height="3000" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/6fff0436-af28-4175-84fd-02cd3c9b022a" />
+<img width="3840" height="2906" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/7ddef70d-19d5-4b06-af5e-af8bf366d711" />
 
 </details>
 
 <details>
 <summary>Club Form</summary>
 
-<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/6399bfc4-0a71-4bbd-afa2-cc2bd2a29177" />
+<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/f6c21add-0d0e-409b-a267-70ec3fe97879" />
 
 </details>
 
 <details>
 <summary>Model Evidence</summary>
 
-<img width="3840" height="2350" alt="Model Evidence view" src="https://github.com/user-attachments/assets/a97382bc-60ab-48bc-865a-a9a233c332da" />
+<img width="3840" height="2350" alt="Model Evidence view" src="https://github.com/user-attachments/assets/c4fcdc06-2f13-4bc3-be2c-ded89f534432" />
 
 </details>
 
 <details>
 <summary>Detailed Player View</summary>
 
-<img width="3840" height="2440" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/2acd9c48-f5f9-4752-a1bf-f5103481a019" />
+<img width="3840" height="2440" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/12ebbd0c-b92e-481e-b405-b27a856887a4" />
 
 </details>
 
