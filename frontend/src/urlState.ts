@@ -7,6 +7,7 @@ import {
 	useState,
 } from "react";
 import type { Position } from "./api";
+import { parseSortParam } from "./lib/tableSort";
 import {
 	ATTACKING_METRICS,
 	ATTACKING_THREAT_PERIODS,
@@ -92,6 +93,7 @@ export type UrlState = {
 	transferFilters: TransferFilters;
 	shortlist: number[];
 	showShortlistedOnly: boolean;
+	sort: string | null;
 };
 
 export const DEFAULT_URL_STATE: UrlState = {
@@ -121,6 +123,7 @@ export const DEFAULT_URL_STATE: UrlState = {
 	transferFilters: DEFAULT_TRANSFER_FILTERS,
 	shortlist: [],
 	showShortlistedOnly: false,
+	sort: null,
 };
 
 function isBrowser() {
@@ -321,6 +324,7 @@ export function readUrlState(): UrlState {
 			!showSquadView &&
 			shortlist.length > 0 &&
 			params.get("shortlist_only") === "1",
+		sort: parseSortParam(params.get("sort")),
 	};
 }
 
@@ -465,6 +469,10 @@ export function writeUrlState(state: UrlState) {
 		if (state.compareAsOfGw !== DEFAULT_COMPARE_AS_OF_GW) {
 			params.set("compare_as_of_gw", String(state.compareAsOfGw));
 		}
+	}
+
+	if (state.tab !== "evidence" && state.sort !== null) {
+		params.set("sort", state.sort);
 	}
 
 	const search = params.toString();

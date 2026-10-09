@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
 	type FplTeamPick,
@@ -46,6 +46,7 @@ import {
 	formatPlayerCount,
 } from "./lib/filters";
 import { fmtNum, fmtPctPoints, fmtPrice } from "./lib/format";
+import { sortingFromParam, sortingToParam } from "./lib/tableSort";
 import {
 	type ActiveFilterChip,
 	ATTACKING_METRIC_COLUMN_ORDER,
@@ -147,6 +148,7 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
+		sort,
 	} = urlState;
 	const {
 		tab: setTab,
@@ -175,6 +177,7 @@ export default function App() {
 		transferFilters: setTransferFilters,
 		shortlist: setShortlist,
 		showShortlistedOnly: setShowShortlistedOnly,
+		sort: setSort,
 	} = setUrlState;
 	// The team ID input is a draft until imported, so it stays out of the URL.
 	const [fplTeamInput, setFplTeamInput] = useState(
@@ -780,6 +783,11 @@ export default function App() {
 			attackingThreatFilters,
 			attackingMetrics,
 		);
+	const tableSorting = useMemo(() => sortingFromParam(sort), [sort]);
+	function updateTableSorting(next: SortingState) {
+		setSort(sortingToParam(next));
+	}
+
 	// Presets, threat and transfer filters sit behind a toggle; count the ones in
 	// use so a collapsed panel still shows that it is narrowing the table.
 	const hasMoreFilters = tab === "form" || showTransferFilters;
@@ -1065,6 +1073,8 @@ export default function App() {
 				paginate
 				initialPageSize={tablePageSize}
 				onPageSizeChange={setTablePageSize}
+				sorting={tableSorting}
+				onSortingChange={updateTableSorting}
 				columns={columns}
 				onRowClick={(row) => openPlayerDetail(row.element)}
 				rowClassName={playerRowClassName}
@@ -1124,7 +1134,13 @@ export default function App() {
 						<button
 							key={value}
 							type="button"
-							onClick={() => setTab(value)}
+							onClick={() => {
+								// Each tab has different columns, so a sort does not carry over.
+								if (value !== tab) {
+									setTab(value);
+									setSort(null);
+								}
+							}}
 							className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm ${
 								tab === value
 									? "bg-zinc-900 text-white"
@@ -1615,6 +1631,8 @@ export default function App() {
 							paginate
 							initialPageSize={tablePageSize}
 							onPageSizeChange={setTablePageSize}
+							sorting={tableSorting}
+							onSortingChange={updateTableSorting}
 							columns={clubColumns}
 							stickyDataColumns={1}
 							emptyTitle={clubEmptyTitle}

@@ -2447,3 +2447,41 @@ test("folds advanced filters behind a toggle that counts the ones in use", async
 	expect(screen.getByLabelText("Max Price")).toHaveValue(7);
 	expect(screen.getByLabelText("Min Window xGI/90")).toHaveValue(0.3);
 });
+
+test("keeps the table sort in the URL and clears it when switching tabs", async () => {
+	window.history.replaceState(null, "", "/?sort=price:asc");
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Haaland"),
+		).toBeInTheDocument();
+	});
+	const firstPlayer = () =>
+		within(
+			within(screen.getByRole("table")).getAllByRole("row")[1],
+		).getAllByRole("cell")[1];
+	// Mbeumo is the cheapest of the three fixture players.
+	expect(firstPlayer()).toHaveTextContent("Mbeumo");
+
+	fireEvent.click(screen.getByRole("button", { name: "DefCon Form" }));
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("sort")).toBeNull();
+	});
+
+	fireEvent.click(screen.getByRole("button", { name: "Attacking Form" }));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Haaland"),
+		).toBeInTheDocument();
+	});
+	// Numeric columns sort descending first.
+	fireEvent.click(
+		within(screen.getByRole("table")).getByRole("button", { name: /^Price/ }),
+	);
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("sort")).toBe(
+			"price:desc",
+		);
+	});
+	expect(firstPlayer()).toHaveTextContent("Haaland");
+});

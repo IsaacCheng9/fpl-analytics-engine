@@ -8,6 +8,7 @@ import {
 	type RowData,
 	type SortingState,
 	type Table,
+	type Updater,
 	useReactTable,
 } from "@tanstack/react-table";
 import {
@@ -21,6 +22,7 @@ import {
 	type ReactNode,
 	type Ref,
 	useId,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -169,6 +171,8 @@ export function DataTable<T>({
 	paginate = false,
 	initialPageSize = 25,
 	onPageSizeChange,
+	sorting: controlledSorting,
+	onSortingChange,
 }: {
 	data: T[];
 	columns: ColumnDef<T>[];
@@ -186,8 +190,33 @@ export function DataTable<T>({
 	paginate?: boolean;
 	initialPageSize?: number;
 	onPageSizeChange?: (size: number) => void;
+	sorting?: SortingState;
+	onSortingChange?: (sorting: SortingState) => void;
 }) {
-	const [sorting, setSorting] = useState<SortingState>([]);
+	const [localSorting, setLocalSorting] = useState<SortingState>([]);
+	// A caller can own the sort (e.g. to keep it in the URL); ignore sorts on
+	// columns this table does not have, such as a sort carried from another tab.
+	// Memoise it: a new array each render would reset the table to page one.
+	const sorting = useMemo(() => {
+		const columnIds = new Set(
+			columns.map((column) =>
+				String(
+					column.id ?? ("accessorKey" in column ? column.accessorKey : ""),
+				),
+			),
+		);
+		return (controlledSorting ?? localSorting).filter((sort) =>
+			columnIds.has(sort.id),
+		);
+	}, [columns, controlledSorting, localSorting]);
+	const setSorting = (updater: Updater<SortingState>) => {
+		const next = typeof updater === "function" ? updater(sorting) : updater;
+		if (onSortingChange) {
+			onSortingChange(next);
+		} else {
+			setLocalSorting(next);
+		}
+	};
 	const paginationRef = useRef<HTMLElement>(null);
 	const table = useReactTable({
 		data,
