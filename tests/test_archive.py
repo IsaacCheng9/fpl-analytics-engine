@@ -104,6 +104,17 @@ def test_detect_season_rolls_over_the_century() -> None:
     assert season == "2099-00"
 
 
+def test_completed_gameweek_ids_needs_finished_and_data_checked() -> None:
+    events = [
+        {"id": 1, "finished": True, "data_checked": True},
+        {"id": 2, "finished": True, "data_checked": False},
+        {"id": 3, "finished": False, "data_checked": False},
+        {"id": 4},
+    ]
+
+    assert archive.completed_gameweek_ids(events) == {1}
+
+
 def test_archive_season_writes_parquet_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

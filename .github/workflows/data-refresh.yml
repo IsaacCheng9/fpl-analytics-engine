@@ -50,7 +50,7 @@ jobs:
           events = app.get_fpl_data()["events"]
           season = archive.detect_season(events)
           # Reuse the archive's rule so the gate matches what the refresh adds.
-          finalised = max(archive._completed_gameweek_ids(events), default=0)
+          finalised = max(archive.completed_gameweek_ids(events), default=0)
           path = Path("data", season, "player_gw_history.parquet")
           history = pl.read_parquet(path) if path.exists() else pl.DataFrame()
           # Preseason snapshots hold an empty history without a round column.
