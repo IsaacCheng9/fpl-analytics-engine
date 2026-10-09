@@ -722,28 +722,28 @@ test("shows the live preseason status without requesting analytics", async () =>
 	expect(fetchMock).toHaveBeenCalledWith("/api/");
 });
 
-test("collapses the attacking form chart and remembers the preference", async () => {
+test("starts the attacking form chart collapsed and remembers opening it", async () => {
 	const firstRender = render(withProviders(<App />));
 	await waitFor(() => {
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
 	expect(
-		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
-	).toBeInTheDocument();
-
-	const hideButton = screen.getByRole("button", { name: "Hide Chart" });
-	expect(hideButton).toHaveAttribute("aria-expanded", "true");
-	fireEvent.click(hideButton);
-
-	expect(
 		screen.queryByRole("region", { name: "Attacking Form Scatter Chart" }),
 	).not.toBeInTheDocument();
-	expect(screen.getByRole("button", { name: "Show Chart" })).toHaveAttribute(
+
+	const showButton = screen.getByRole("button", { name: "Show Chart" });
+	expect(showButton).toHaveAttribute("aria-expanded", "false");
+	fireEvent.click(showButton);
+
+	expect(
+		screen.getByRole("region", { name: "Attacking Form Scatter Chart" }),
+	).toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Hide Chart" })).toHaveAttribute(
 		"aria-expanded",
-		"false",
+		"true",
 	);
 	expect(window.localStorage.getItem("fpl-form-scatter-collapsed")).toBe(
-		"true",
+		"false",
 	);
 
 	firstRender.unmount();
@@ -752,7 +752,7 @@ test("collapses the attacking form chart and remembers the preference", async ()
 		expect(screen.getByText("Mbeumo")).toBeInTheDocument();
 	});
 	expect(
-		screen.getByRole("button", { name: "Show Chart" }),
+		screen.getByRole("button", { name: "Hide Chart" }),
 	).toBeInTheDocument();
 });
 
