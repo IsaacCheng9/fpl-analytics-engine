@@ -1106,7 +1106,13 @@ export default function App() {
 			<div className="app-shell mx-auto px-6 py-8">
 				<header className="mb-6">
 					<h1 className="font-semibold text-2xl">FPL Analytics Engine</h1>
-					<p className="mt-1 max-w-3xl text-sm text-zinc-500">
+					{/* Phones get a one-line summary so the table starts nearer the top. */}
+					<p className="mt-1 text-sm text-zinc-500 sm:hidden">
+						{tab === "evidence"
+							? "Backtested evidence, replayed with no look-ahead."
+							: `Point-in-time form as of GW ${asOfGw ?? latestGw}, with no look-ahead.`}
+					</p>
+					<p className="mt-1 hidden max-w-3xl text-sm text-zinc-500 sm:block">
 						{tab === "evidence" ? (
 							<>
 								Surfaces backtested evidence for the scouting signals by
@@ -1304,7 +1310,8 @@ export default function App() {
 
 						{isPlayerTab(tab) ? (
 							<form
-								className="flex items-end gap-2"
+								// Phones keep team import with the folded filters to save vertical space.
+								className={`items-end gap-2 sm:flex ${showMoreFilters ? "flex" : "hidden"}`}
 								onSubmit={(event) => {
 									event.preventDefault();
 									importFplTeam();
@@ -1421,7 +1428,7 @@ export default function App() {
 
 				{isPlayerTab(tab) ? (
 					<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-						<p className="text-sm text-zinc-500">
+						<p className="hidden text-sm text-zinc-500 sm:block">
 							Click a player row to open the detailed stats view.
 						</p>
 						<div className="flex flex-wrap items-center gap-2">
@@ -1613,7 +1620,10 @@ export default function App() {
 					</p>
 				) : tab === "form" ? (
 					<>
-						<FormScatter players={visibleFormRows} />
+						{/* A 200-point scatter is unreadable at phone widths. */}
+						<div className="hidden sm:block">
+							<FormScatter players={visibleFormRows} />
+						</div>
 						{renderPlayerTable(visibleFormRows, formColumns)}
 					</>
 				) : tab === "defcon" ? (
