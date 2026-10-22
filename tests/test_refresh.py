@@ -1,6 +1,7 @@
 """Tests for the one-command data refresh workflow."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -187,16 +188,12 @@ def test_backup_cleanup_failure_does_not_report_failed_refresh(
     published.write_bytes(b"published")
     rmtree = refresh.snapshots.shutil.rmtree
 
-    def fail_backup_cleanup(
-        path: str | Path,
-        ignore_errors: bool = False,
-        *,
-        onexc=None,
-        dir_fd: int | None = None,
-    ) -> None:
-        if str(path).split("/")[-1].startswith(".fpl-backup-"):
+    # Forward everything else untouched: TemporaryDirectory cleanup shares this
+    # patched rmtree, and CPython 3.14.9 started passing private keywords to it.
+    def fail_backup_cleanup(path: str | Path, *args: Any, **kwargs: Any) -> None:
+        if Path(path).name.startswith(".fpl-backup-"):
             raise PermissionError("Cannot delete backup")
-        rmtree(path, ignore_errors=ignore_errors, onexc=onexc, dir_fd=dir_fd)
+        rmtree(path, *args, **kwargs)
 
     def fake_steps(options: refresh.RefreshOptions) -> list[refresh.StepResult]:
         (options.data_root / "snapshot.parquet").write_bytes(b"replacement")
