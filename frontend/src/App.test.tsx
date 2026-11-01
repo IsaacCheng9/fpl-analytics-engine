@@ -2098,6 +2098,7 @@ test("toggles club context groups independently and can hide the sorted group", 
 	for (const [label, headers] of [
 		["Matches", ["Matches"]],
 		["xGC", ["Window xGC", "Season xGC", "Delta xGC"]],
+		["xGD", ["Window xGD", "Season xGD"]],
 		["FDR", ["FDR (Next 5)"]],
 	] as const) {
 		fireEvent.click(screen.getByLabelText(label));
@@ -2112,7 +2113,7 @@ test("toggles club context groups independently and can hide the sorted group", 
 	expect(
 		screen.getByRole("button", { name: "Defence Form" }),
 	).toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(8);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(6);
 });
 
 test("clicking a row opens the player detail panel", async () => {
