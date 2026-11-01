@@ -92,7 +92,7 @@ where the current squad looks weak for the next gameweek.
 <details>
 <summary>Club Form</summary>
 
-<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/f6c21add-0d0e-409b-a267-70ec3fe97879" />
+<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/99b87468-7a6d-4c34-b770-018461745f05" />
 
 </details>
 
@@ -255,10 +255,11 @@ opposing club's summed xG in the same fixture. Historical club identity comes
 from the fixture rather than the player's final bootstrap metadata, so players
 who transfer mid-season remain attributed to the club they represented in each
 match. The view compares recent per-match xG and xGC against each club's
-season-to-date baseline, then joins exact next-fixture context and the
-next-five-gameweek FDR. Actual goals and goals conceded are available as
-optional context, but expected data stays the default signal because finishing
-and concession outcomes are noisier.
+season-to-date baseline, and shows per-match xGD (xG minus xGC) for both periods
+as a net measure of how far each club out-creates its opponents. It then joins
+exact next-fixture context and the next-five-gameweek FDR. Actual goals and
+goals conceded are available as optional context, but expected data stays the
+default signal because finishing and concession outcomes are noisier.
 
 Window and season overperformance columns show both total and per-match
 differences. Attacking overperformance is goals scored minus xG; defensive
@@ -269,8 +270,8 @@ underperformance. These describe realised outcomes, not a predicted uplift.
 The collapsible Columns panel controls expected metrics, match counts, FDR,
 actual goals, form summaries and separate total/per-match overperformance
 groups. By default, the table shows Club, Matches, window/season/delta xG and
-xGC, and FDR. Column selections persist in shareable URLs; Reset Columns
-restores this compact view.
+xGC, window/season xGD, and FDR. Column selections persist in shareable URLs;
+Reset Columns restores this compact view.
 
 #### Validation Backtest Results (2025-26 Season)
 
