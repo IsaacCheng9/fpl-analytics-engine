@@ -87,6 +87,10 @@ export interface ClubForm {
 	season_finishing_delta_total: number | null;
 	window_concession_delta_total: number | null;
 	season_concession_delta_total: number | null;
+	window_goal_difference_delta: number | null;
+	season_goal_difference_delta: number | null;
+	window_goal_difference_delta_total: number | null;
+	season_goal_difference_delta_total: number | null;
 	attack_form: number | null;
 	defence_form: number | null;
 	upcoming_fixtures: number | null;
