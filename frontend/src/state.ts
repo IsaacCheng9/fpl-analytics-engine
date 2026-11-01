@@ -22,7 +22,9 @@ export type ClubColumnGroup =
 	| "finishing_total"
 	| "finishing_rate"
 	| "concession_total"
-	| "concession_rate";
+	| "concession_rate"
+	| "goal_difference_total"
+	| "goal_difference_rate";
 export type ClubColumnVisibility = Record<ClubColumnGroup, boolean>;
 export type TransferFilters = {
 	maxPrice: number | null;
@@ -229,6 +231,8 @@ export const CLUB_COLUMN_GROUPS: ClubColumnGroup[] = [
 	"finishing_rate",
 	"concession_total",
 	"concession_rate",
+	"goal_difference_total",
+	"goal_difference_rate",
 ];
 export const CLUB_COLUMN_LABELS: Record<ClubColumnGroup, string> = {
 	matches: "Matches",
@@ -243,6 +247,8 @@ export const CLUB_COLUMN_LABELS: Record<ClubColumnGroup, string> = {
 	finishing_rate: "xG +/- Per Match",
 	concession_total: "xGC +/- Totals",
 	concession_rate: "xGC +/- Per Match",
+	goal_difference_total: "xGD +/- Totals",
+	goal_difference_rate: "xGD +/- Per Match",
 };
 export const DEFAULT_CLUB_COLUMNS: ClubColumnVisibility = {
 	matches: true,
@@ -257,6 +263,8 @@ export const DEFAULT_CLUB_COLUMNS: ClubColumnVisibility = {
 	finishing_rate: false,
 	concession_total: false,
 	concession_rate: false,
+	goal_difference_total: false,
+	goal_difference_rate: false,
 };
 export const FILTER_PRESETS: Array<{ id: FilterPreset; label: string }> = [
 	{ id: "nailed", label: "Nailed Starters" },

@@ -5,7 +5,7 @@ import {
 } from "../state";
 
 const COLUMN_SECTIONS: [string, ClubColumnGroup[]][] = [
-	["Expected & Context", ["matches", "xg", "xgc", "fdr", "form"]],
+	["Expected & Context", ["matches", "xg", "xgc", "xgd", "fdr", "form"]],
 	["Actual Goals", ["goals", "ga"]],
 	[
 		"Over/Underperformance",
@@ -14,6 +14,8 @@ const COLUMN_SECTIONS: [string, ClubColumnGroup[]][] = [
 			"finishing_rate",
 			"concession_total",
 			"concession_rate",
+			"goal_difference_total",
+			"goal_difference_rate",
 		],
 	],
 ];

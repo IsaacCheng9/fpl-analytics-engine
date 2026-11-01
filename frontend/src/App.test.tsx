@@ -238,6 +238,20 @@ const clubRows = [
 		row.season_matches,
 	window_xgd_per_match: row.window_xg_per_match - row.window_xgc_per_match,
 	season_xgd_per_match: row.season_xg_per_match - row.season_xgc_per_match,
+	window_goal_difference_delta:
+		row.window_finishing_delta - row.window_concession_delta,
+	season_goal_difference_delta:
+		row.season_goals_for_per_match -
+		row.season_goals_against_per_match -
+		(row.season_xg_per_match - row.season_xgc_per_match),
+	window_goal_difference_delta_total:
+		(row.window_finishing_delta - row.window_concession_delta) *
+		row.window_matches,
+	season_goal_difference_delta_total:
+		(row.season_goals_for_per_match -
+			row.season_goals_against_per_match -
+			(row.season_xg_per_match - row.season_xgc_per_match)) *
+		row.season_matches,
 }));
 
 const defconRows = [
@@ -1960,6 +1974,8 @@ test("shows signed club overperformance totals and rates with numeric sorting", 
 		"xG +/- Per Match",
 		"xGC +/- Totals",
 		"xGC +/- Per Match",
+		"xGD +/- Totals",
+		"xGD +/- Per Match",
 	]) {
 		fireEvent.click(screen.getByLabelText(label));
 	}
@@ -1982,12 +1998,17 @@ test("shows signed club overperformance totals and rates with numeric sorting", 
 		["Window xGC +/- Per Match", "+0.20"],
 		["Season xGC +/- Total", "+7.60"],
 		["Season xGC +/- Per Match", "+0.20"],
+		["Window xGD +/- Total", "+2.50"],
+		["Window xGD +/- Per Match", "+0.50"],
+		["Season xGD +/- Total", "+15.20"],
+		["Season xGD +/- Per Match", "+0.40"],
 	];
 	for (const [header, value] of values) {
 		expect(cellFor("Arsenal", header)).toHaveTextContent(value);
 	}
 	expect(cellFor("Chelsea", "Window xGC +/- Total")).toHaveTextContent("-1.50");
 	expect(cellFor("Chelsea", "Window xG +/- Total")).toHaveTextContent("-1.00");
+	expect(cellFor("Chelsea", "Window xGD +/- Total")).toHaveTextContent("-2.50");
 	expect(
 		cellFor("Arsenal", "Window xGC +/- Total").style.backgroundColor,
 	).not.toBe(cellFor("Chelsea", "Window xGC +/- Total").style.backgroundColor);
@@ -2098,6 +2119,7 @@ test("toggles club context groups independently and can hide the sorted group", 
 	for (const [label, headers] of [
 		["Matches", ["Matches"]],
 		["xGC", ["Window xGC", "Season xGC", "Delta xGC"]],
+		["xGD", ["Window xGD", "Season xGD"]],
 		["FDR", ["FDR (Next 5)"]],
 	] as const) {
 		fireEvent.click(screen.getByLabelText(label));
@@ -2112,7 +2134,7 @@ test("toggles club context groups independently and can hide the sorted group", 
 	expect(
 		screen.getByRole("button", { name: "Defence Form" }),
 	).toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(8);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(6);
 });
 
 test("clicking a row opens the player detail panel", async () => {

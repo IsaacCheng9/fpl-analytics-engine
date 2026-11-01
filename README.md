@@ -263,9 +263,11 @@ default signal because finishing and concession outcomes are noisier.
 
 Window and season overperformance columns show both total and per-match
 differences. Attacking overperformance is goals scored minus xG; defensive
-overperformance is xGC minus goals conceded. Positive values indicate more
-goals scored or fewer conceded than expected, while negative values indicate
-underperformance. These describe realised outcomes, not a predicted uplift.
+overperformance is xGC minus goals conceded; net overperformance is goal
+difference minus xGD. Positive values indicate more goals scored, fewer
+conceded or a better goal difference than expected, while negative values
+indicate underperformance. These describe realised outcomes, not a predicted
+uplift.
 
 The collapsible Columns panel controls expected metrics, match counts, FDR,
 actual goals, form summaries and separate total/per-match overperformance

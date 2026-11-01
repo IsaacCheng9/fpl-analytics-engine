@@ -241,6 +241,16 @@ def compute_club_form_table(
             (pl.col("season_goals_against") - pl.col("season_xgc")).alias(
                 "season_concession_delta_total"
             ),
+            (
+                pl.col("window_goals_for")
+                - pl.col("window_goals_against")
+                - (pl.col("window_xg") - pl.col("window_xgc"))
+            ).alias("window_goal_difference_delta_total"),
+            (
+                pl.col("season_goals_for")
+                - pl.col("season_goals_against")
+                - (pl.col("season_xg") - pl.col("season_xgc"))
+            ).alias("season_goal_difference_delta_total"),
             (pl.col("window_xg_per_match") - pl.col("season_xg_per_match")).alias(
                 "delta_xg_per_match"
             ),
@@ -275,6 +285,16 @@ def compute_club_form_table(
                 pl.col("season_goals_against_per_match")
                 - pl.col("season_xgc_per_match")
             ).alias("season_concession_delta"),
+            (
+                pl.col("window_goals_for_per_match")
+                - pl.col("window_goals_against_per_match")
+                - (pl.col("window_xg_per_match") - pl.col("window_xgc_per_match"))
+            ).alias("window_goal_difference_delta"),
+            (
+                pl.col("season_goals_for_per_match")
+                - pl.col("season_goals_against_per_match")
+                - (pl.col("season_xg_per_match") - pl.col("season_xgc_per_match"))
+            ).alias("season_goal_difference_delta"),
             pl.lit(as_of_gw).alias("as_of_gw"),
         )
         .with_columns(

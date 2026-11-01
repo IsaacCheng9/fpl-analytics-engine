@@ -88,6 +88,10 @@ export const CLUB_HEAT_KEYS = [
 	"season_finishing_delta_total",
 	"window_concession_delta_total",
 	"season_concession_delta_total",
+	"window_goal_difference_delta",
+	"season_goal_difference_delta",
+	"window_goal_difference_delta_total",
+	"season_goal_difference_delta_total",
 	"attack_form",
 	"defence_form",
 ];
@@ -528,14 +532,31 @@ export function buildClubColumns(
 	ranges: Record<string, Range>,
 	visibleColumns: ClubColumnVisibility,
 ): ColumnDef<ClubForm>[] {
+	const overperformance = {
+		xG: {
+			prefix: "finishing",
+			definition: "goals scored minus xG",
+			positive: "more goals scored",
+		},
+		xGC: {
+			prefix: "concession",
+			definition: "xGC minus goals conceded",
+			positive: "fewer goals conceded",
+		},
+		xGD: {
+			prefix: "goal_difference",
+			definition: "goal difference minus xGD",
+			positive: "a better goal difference",
+		},
+	} as const;
 	function overperformanceColumn(
 		period: "window" | "season",
-		metric: "xG" | "xGC",
+		metric: keyof typeof overperformance,
 		total: boolean,
 	): ColumnDef<ClubForm> {
 		const defensive = metric === "xGC";
-		const key =
-			`${period}_${defensive ? "concession" : "finishing"}_delta${total ? "_total" : ""}` as const;
+		const { prefix, definition, positive } = overperformance[metric];
+		const key = `${period}_${prefix}_delta${total ? "_total" : ""}` as const;
 		const range = ranges[key];
 		const label = period === "window" ? "Window" : "Season";
 		return {
@@ -549,7 +570,7 @@ export function buildClubColumns(
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
 				{
-					tooltip: `${metric} over/underperformance: ${defensive ? "xGC minus goals conceded" : "goals scored minus xG"}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${defensive ? "fewer goals conceded" : "more goals scored"} than expected; negative means underperformance. Descriptive, not a prediction.`,
+					tooltip: `${metric} over/underperformance: ${definition}${total ? " in total" : " per match"} ${period === "window" ? "over the recent window" : "over the season to date"}. Positive means ${positive} than expected; negative means underperformance. Descriptive, not a prediction.`,
 				},
 				range,
 				// Centre on zero so underperformance is never shaded favourably.
@@ -762,6 +783,10 @@ export function buildClubColumns(
 				{ scale: "diverging" },
 			),
 		},
+		overperformanceColumn("window", "xGD", true),
+		overperformanceColumn("window", "xGD", false),
+		overperformanceColumn("season", "xGD", true),
+		overperformanceColumn("season", "xGD", false),
 		{
 			accessorKey: "avg_fdr",
 			header: "FDR (Next 5)",
@@ -796,6 +821,10 @@ export function buildClubColumns(
 		season_concession_delta_total: "concession_total",
 		window_concession_delta: "concession_rate",
 		season_concession_delta: "concession_rate",
+		window_goal_difference_delta_total: "goal_difference_total",
+		season_goal_difference_delta_total: "goal_difference_total",
+		window_goal_difference_delta: "goal_difference_rate",
+		season_goal_difference_delta: "goal_difference_rate",
 	};
 	return columns.filter((column) => {
 		const id =

@@ -103,6 +103,10 @@ class ClubForm(BaseModel):
     season_finishing_delta_total: float | None
     window_concession_delta_total: float | None
     season_concession_delta_total: float | None
+    window_goal_difference_delta: float | None
+    season_goal_difference_delta: float | None
+    window_goal_difference_delta_total: float | None
+    season_goal_difference_delta_total: float | None
     attack_form: float | None
     defence_form: float | None
     upcoming_fixtures: int | None
