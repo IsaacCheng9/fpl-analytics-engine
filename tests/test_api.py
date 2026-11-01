@@ -734,6 +734,7 @@ def test_clubs_form_endpoint_returns_club_context(client: TestClient) -> None:
     assert arsenal["attack_form"] == pytest.approx(0.5)
     assert arsenal["window_xgc_per_match"] == pytest.approx(0.5)
     assert arsenal["defence_form"] == pytest.approx(0.35)
+    assert arsenal["window_xgd_per_match"] == pytest.approx(1.5)
     assert arsenal["window_finishing_delta_total"] == pytest.approx(1.0)
     assert arsenal["season_finishing_delta_total"] == pytest.approx(2.0)
     assert arsenal["season_finishing_delta"] == pytest.approx(1.0)

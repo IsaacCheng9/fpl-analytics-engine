@@ -74,6 +74,8 @@ export interface ClubForm {
 	window_xgc_per_match: number | null;
 	season_xgc_per_match: number | null;
 	delta_xgc_per_match: number | null;
+	window_xgd_per_match: number | null;
+	season_xgd_per_match: number | null;
 	window_goals_against_per_match: number | null;
 	season_goals_against_per_match: number | null;
 	delta_goals_against_per_match: number | null;
