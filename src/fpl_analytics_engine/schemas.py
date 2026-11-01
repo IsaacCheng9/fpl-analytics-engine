@@ -90,6 +90,8 @@ class ClubForm(BaseModel):
     window_xgc_per_match: float | None
     season_xgc_per_match: float | None
     delta_xgc_per_match: float | None
+    window_xgd_per_match: float | None
+    season_xgd_per_match: float | None
     window_goals_against_per_match: float | None
     season_goals_against_per_match: float | None
     delta_goals_against_per_match: float | None

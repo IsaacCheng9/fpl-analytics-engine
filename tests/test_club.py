@@ -139,6 +139,8 @@ def test_compute_club_form_table_compares_window_to_baseline() -> None:
     assert out["window_xgc_per_match"] == pytest.approx(0.75)
     assert out["season_xgc_per_match"] == pytest.approx(1.0)
     assert out["defence_form"] == pytest.approx(0.25)
+    assert out["window_xgd_per_match"] == pytest.approx(1.75 - 0.75)
+    assert out["season_xgd_per_match"] == pytest.approx(4.0 / 3 - 1.0)
     assert out["window_finishing_delta_total"] == pytest.approx(0.5)
     assert out["season_finishing_delta_total"] == pytest.approx(2.0)
     assert out["window_finishing_delta"] == pytest.approx(0.25)

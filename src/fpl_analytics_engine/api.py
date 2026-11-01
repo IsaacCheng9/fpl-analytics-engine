@@ -128,6 +128,8 @@ CLUB_FORM_COLUMNS = [
     "window_xgc_per_match",
     "season_xgc_per_match",
     "delta_xgc_per_match",
+    "window_xgd_per_match",
+    "season_xgd_per_match",
     "window_goals_against_per_match",
     "season_goals_against_per_match",
     "delta_goals_against_per_match",

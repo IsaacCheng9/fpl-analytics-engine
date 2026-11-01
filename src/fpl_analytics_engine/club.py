@@ -251,6 +251,12 @@ def compute_club_form_table(
             (pl.col("window_xgc_per_match") - pl.col("season_xgc_per_match")).alias(
                 "delta_xgc_per_match"
             ),
+            (pl.col("window_xg_per_match") - pl.col("window_xgc_per_match")).alias(
+                "window_xgd_per_match"
+            ),
+            (pl.col("season_xg_per_match") - pl.col("season_xgc_per_match")).alias(
+                "season_xgd_per_match"
+            ),
             (
                 pl.col("window_goals_against_per_match")
                 - pl.col("season_goals_against_per_match")

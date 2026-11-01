@@ -14,6 +14,7 @@ export type ClubColumnGroup =
 	| "matches"
 	| "xg"
 	| "xgc"
+	| "xgd"
 	| "fdr"
 	| "form"
 	| "goals"
@@ -219,6 +220,7 @@ export const CLUB_COLUMN_GROUPS: ClubColumnGroup[] = [
 	"matches",
 	"xg",
 	"xgc",
+	"xgd",
 	"fdr",
 	"form",
 	"goals",
@@ -232,6 +234,7 @@ export const CLUB_COLUMN_LABELS: Record<ClubColumnGroup, string> = {
 	matches: "Matches",
 	xg: "xG",
 	xgc: "xGC",
+	xgd: "xGD",
 	fdr: "FDR",
 	form: "Form Summaries",
 	goals: "Goals",
@@ -245,6 +248,7 @@ export const DEFAULT_CLUB_COLUMNS: ClubColumnVisibility = {
 	matches: true,
 	xg: true,
 	xgc: true,
+	xgd: true,
 	fdr: true,
 	form: false,
 	goals: false,
