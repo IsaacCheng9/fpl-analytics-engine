@@ -76,6 +76,8 @@ export const CLUB_HEAT_KEYS = [
 	"window_xgc_per_match",
 	"season_xgc_per_match",
 	"delta_xgc_per_match",
+	"window_xgd_per_match",
+	"season_xgd_per_match",
 	"window_goals_against_per_match",
 	"delta_goals_against_per_match",
 	"window_finishing_delta",
@@ -738,6 +740,29 @@ export function buildClubColumns(
 			),
 		},
 		{
+			accessorKey: "window_xgd_per_match",
+			header: "Window xGD",
+			cell: heatCell<ClubForm>({ format: fmtDelta }),
+			meta: heatMeta<ClubForm>(
+				{
+					tooltip:
+						"xG minus xGC per match over the recent window; positive means the club is out-creating opponents",
+				},
+				ranges.window_xgd_per_match,
+				{ scale: "diverging" },
+			),
+		},
+		{
+			accessorKey: "season_xgd_per_match",
+			header: "Season xGD",
+			cell: heatCell<ClubForm>({ format: fmtDelta }),
+			meta: heatMeta<ClubForm>(
+				{ tooltip: "xG minus xGC per match, season to date" },
+				ranges.season_xgd_per_match,
+				{ scale: "diverging" },
+			),
+		},
+		{
 			accessorKey: "avg_fdr",
 			header: "FDR (Next 5)",
 			cell: heatCell<ClubForm>({
@@ -760,6 +785,8 @@ export function buildClubColumns(
 		delta_xgc_per_match: "xgc",
 		attack_form: "form",
 		defence_form: "form",
+		window_xgd_per_match: "xgd",
+		season_xgd_per_match: "xgd",
 		avg_fdr: "fdr",
 		window_finishing_delta_total: "finishing_total",
 		season_finishing_delta_total: "finishing_total",

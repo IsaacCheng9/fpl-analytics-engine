@@ -236,6 +236,8 @@ const clubRows = [
 	season_concession_delta_total:
 		(row.season_goals_against_per_match - row.season_xgc_per_match) *
 		row.season_matches,
+	window_xgd_per_match: row.window_xg_per_match - row.window_xgc_per_match,
+	season_xgd_per_match: row.season_xg_per_match - row.season_xgc_per_match,
 }));
 
 const defconRows = [
@@ -1933,7 +1935,7 @@ test("renders the Club Form tab with team-level context", async () => {
 	expect(screen.getByText("Window xG")).toBeInTheDocument();
 	expect(screen.getByText("Delta xGC")).toBeInTheDocument();
 	expect(screen.queryByText("Defence Form")).not.toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(9);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(11);
 	expect(screen.getByText("FDR (Next 5)")).toBeInTheDocument();
 	expect(screen.queryByText("Window Goals")).not.toBeInTheDocument();
 	expect(screen.queryByText("Delta Goals")).not.toBeInTheDocument();
@@ -1952,7 +1954,7 @@ test("shows signed club overperformance totals and rates with numeric sorting", 
 	render(withProviders(<App />));
 	fireEvent.click(await screen.findByText("Club Form"));
 	await screen.findByRole("cell", { name: "Arsenal" });
-	fireEvent.click(screen.getByText("Columns (9)"));
+	fireEvent.click(screen.getByText("Columns (11)"));
 	for (const label of [
 		"xG +/- Totals",
 		"xG +/- Per Match",
@@ -1998,6 +2000,26 @@ test("shows signed club overperformance totals and rates with numeric sorting", 
 	expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Chelsea");
 });
 
+test("shows club xGD by default just before FDR", async () => {
+	render(withProviders(<App />));
+	fireEvent.click(await screen.findByText("Club Form"));
+	await screen.findByRole("cell", { name: "Arsenal" });
+	const table = screen.getByRole("table");
+	const headers = within(table).getAllByRole("columnheader");
+	const headerIndex = (name: string) =>
+		headers.findIndex((cell) => cell.textContent?.includes(name));
+	expect(headerIndex("Window xGD")).toBe(headerIndex("FDR (Next 5)") - 2);
+	expect(headerIndex("Season xGD")).toBe(headerIndex("FDR (Next 5)") - 1);
+	const arsenal = within(table).getByRole("row", { name: /Arsenal/ });
+	const cells = within(arsenal).getAllByRole("cell");
+	expect(cells[headerIndex("Window xGD")]).toHaveTextContent("+1.30");
+	expect(cells[headerIndex("Season xGD")]).toHaveTextContent("+0.60");
+	const chelsea = within(table).getByRole("row", { name: /Chelsea/ });
+	expect(
+		within(chelsea).getAllByRole("cell")[headerIndex("Window xGD")],
+	).toHaveTextContent("-0.70");
+});
+
 test("shows club actual goal columns only when toggled on", async () => {
 	render(withProviders(<App />));
 	fireEvent.click(await screen.findByText("Club Form"));
@@ -2006,7 +2028,7 @@ test("shows club actual goal columns only when toggled on", async () => {
 		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
 	});
 
-	fireEvent.click(screen.getByText("Columns (9)"));
+	fireEvent.click(screen.getByText("Columns (11)"));
 	const goalsToggle = screen.getByLabelText("Goals");
 	const goalsConcededToggle = screen.getByLabelText("Goals Conceded");
 	expect(goalsToggle).not.toBeChecked();
@@ -2049,7 +2071,7 @@ test("persists club column groups and resets to the compact defaults", async () 
 	expect(screen.getAllByRole("columnheader")).toHaveLength(1);
 	fireEvent.click(screen.getByText("Columns (1)"));
 	fireEvent.click(screen.getByRole("button", { name: "Reset Columns" }));
-	expect(screen.getAllByRole("columnheader")).toHaveLength(9);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(11);
 	await waitFor(() =>
 		expect(
 			new URLSearchParams(window.location.search).has("club_columns"),
@@ -2064,14 +2086,14 @@ test("preserves actual goals from legacy club column links", async () => {
 	expect(screen.getByText("Window Goals")).toBeInTheDocument();
 	expect(screen.getByText("Window Goals Conceded")).toBeInTheDocument();
 	expect(screen.getByText("Window xG")).toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(13);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(15);
 });
 
 test("toggles club context groups independently and can hide the sorted group", async () => {
 	window.history.replaceState(null, "", "/?tab=clubs");
 	render(withProviders(<App />));
 	await screen.findByRole("cell", { name: "Arsenal" });
-	fireEvent.click(screen.getByText("Columns (9)"));
+	fireEvent.click(screen.getByText("Columns (11)"));
 	fireEvent.click(screen.getByRole("button", { name: "Window xGC" }));
 	for (const [label, headers] of [
 		["Matches", ["Matches"]],
@@ -2090,7 +2112,7 @@ test("toggles club context groups independently and can hide the sorted group", 
 	expect(
 		screen.getByRole("button", { name: "Defence Form" }),
 	).toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(8);
 });
 
 test("clicking a row opens the player detail panel", async () => {
