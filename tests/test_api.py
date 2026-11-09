@@ -371,13 +371,49 @@ def test_current_context_preserves_players_with_unknown_metadata(
     assert all(value is None for key, value in row.items() if key != "element")
 
 
-def test_form_endpoint_flags_improving_player(client: TestClient) -> None:
+def test_form_endpoint_ranks_every_player_by_projection(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2}).json()
     names = [row["web_name"] for row in body]
-    assert "P1" in names  # improving player is flagged
-    assert "P2" not in names  # declining player has a negative delta
-    # Ranked by delta descending, so the strongest riser leads.
+    # The declining player is kept, because the delta filter is opt-in.
+    assert "P2" in names
+    assert next(row for row in body if row["web_name"] == "P2")["delta_xgi90"] < 0
+    # Ranked by projected xGI, which P1's higher season rate leads.
     assert body[0]["web_name"] == "P1"
+    assert body[0]["projected_xgi"] == pytest.approx(
+        body[0]["est_xgi90"] * body[0]["projected_minutes"] / 90
+    )
+
+
+def test_form_endpoint_filters_by_delta_when_asked(client: TestClient) -> None:
+    body = client.get("/players/form", params={"window": 2, "min_delta": 0}).json()
+    names = [row["web_name"] for row in body]
+    assert "P1" in names
+    assert "P2" not in names
+
+
+def test_form_endpoint_shrinks_towards_the_previous_season(client: TestClient) -> None:
+    def seasons() -> pl.DataFrame:
+        previous = _with_season(_history(), "2024-25").with_columns(
+            pl.col("expected_goal_involvements") * 0,
+            pl.col("round") + 10,
+            pl.col("element").alias("code"),
+        )
+        live = _with_season(_history(), "2025-26").with_columns(
+            pl.col("element").alias("code")
+        )
+        return pl.concat([previous] * 3 + [live])
+
+    api.app.dependency_overrides[api.get_history] = lambda: seasons().filter(
+        pl.col("season") == "2025-26"
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = seasons
+
+    body = client.get("/players/form", params={"window": 2}).json()
+    p1 = next(row for row in body if row["web_name"] == "P1")
+
+    # Three copies of a zero-xGI season give P1 1,080 prior minutes.
+    assert p1["est_xgi90"] == pytest.approx(1.0 / (360 + 900) * 90)
+    assert p1["est_xgi90"] < p1["season_xgi90"]
 
 
 def test_form_endpoint_filters_by_position(client: TestClient) -> None:
@@ -815,7 +851,7 @@ def test_form_and_detail_share_the_comparison_gameweek_window(
     api.app.dependency_overrides[api.get_all_seasons] = lambda: history
     params = {"as_of_gw": 30, "window": 5}
 
-    form_response = client.get("/players/form", params={**params, "min_delta": -1000})
+    form_response = client.get("/players/form", params=params)
     detail_response = client.get("/players/1", params=params)
 
     assert form_response.status_code == detail_response.status_code == 200

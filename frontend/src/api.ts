@@ -55,6 +55,11 @@ export interface FormPlayer extends PlayerContext {
 	delta_xg90: number | null;
 	delta_xa90: number | null;
 	delta_xgi90: number | null;
+	est_xg90: number | null;
+	est_xa90: number | null;
+	est_xgi90: number | null;
+	projected_minutes: number;
+	projected_xgi: number | null;
 	window_xg90_per_million: number | null;
 	window_xa90_per_million: number | null;
 	as_of_gw: number;

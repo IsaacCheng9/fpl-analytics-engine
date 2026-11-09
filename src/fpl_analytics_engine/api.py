@@ -79,6 +79,11 @@ FORM_COLUMNS = [
     "delta_xg90",
     "delta_xa90",
     "delta_xgi90",
+    "est_xg90",
+    "est_xa90",
+    "est_xgi90",
+    "projected_minutes",
+    "projected_xgi",
     "window_xg90_per_million",
     "window_xa90_per_million",
     *CONTEXT_COLUMNS,
@@ -263,6 +268,29 @@ def get_players_snapshot() -> pl.DataFrame:
 def get_all_seasons() -> pl.DataFrame:
     """Return the cross-season enriched history (dependency; overridden in tests)."""
     return _load_all_seasons()
+
+
+def _prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
+    """Return the season before ``season`` as per-player per-90 rates."""
+    if all_seasons.is_empty() or "season" not in all_seasons.columns:
+        return None
+    earlier = [
+        label
+        for label in all_seasons["season"].unique().to_list()
+        if data.season_sort_key(label) < data.season_sort_key(season)
+    ]
+    if not earlier:
+        return None
+    previous = max(earlier, key=data.season_sort_key)
+    return form.prior_season_rates(all_seasons.filter(pl.col("season") == previous))
+
+
+def get_prior_rates(
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    season: Annotated[str, Depends(get_current_season)],
+) -> pl.DataFrame | None:
+    """Return last season's rates for the live season's estimated rates."""
+    return _prior_rates(all_seasons, season)
 
 
 def get_entry_picks_fetcher() -> EntryPicksFetcher:
@@ -611,22 +639,27 @@ def players_form(
     fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
     teams: Annotated[pl.DataFrame, Depends(get_teams)],
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    prior: Annotated[pl.DataFrame | None, Depends(get_prior_rates)],
     window: int = Query(form.DEFAULT_WINDOW, ge=1, le=20),
     position: Position | None = None,
     min_minutes: int = Query(0, ge=0),
-    min_delta: float = 0.0,
+    min_delta: float | None = None,
     top_k: int | None = Query(None, ge=1),
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
     fdr_horizon: int = Query(DEFAULT_FDR_HORIZON, ge=1, le=10),
 ) -> list[FormPlayer]:
-    """Rank players by their recent-versus-season xGI90 form swing.
+    """Rank players by projected xGI per gameweek, with recent-form context.
 
-    Defaults to the latest gameweek in the data; pass ``as_of_gw`` to evaluate
-    the point-in-time view as it would have looked after an earlier gameweek.
+    The projection is the estimated underlying xGI90 (season to date, shrunk
+    towards last season) times projected minutes. The recent-versus-season
+    swing is still reported but is descriptive: backtests found it does not
+    persist, so ``min_delta`` filters on it only when set. Defaults to the
+    latest gameweek in the data; pass ``as_of_gw`` to evaluate the
+    point-in-time view after an earlier gameweek.
     """
     _require_current_history(history)
     gw = _resolve_as_of_gw(history, as_of_gw)
-    table = form.compute_form_table(history, gw, window)
+    table = form.compute_form_table(history, gw, window, prior)
     flagged = form.flag_players(
         table,
         min_window_minutes=min_minutes,

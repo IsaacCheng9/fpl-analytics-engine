@@ -69,6 +69,11 @@ class FormPlayer(PlayerContext):
     delta_xg90: float | None
     delta_xa90: float | None
     delta_xgi90: float | None
+    est_xg90: float | None
+    est_xa90: float | None
+    est_xgi90: float | None
+    projected_minutes: float
+    projected_xgi: float | None
     window_xg90_per_million: float | None
     window_xa90_per_million: float | None
     as_of_gw: int

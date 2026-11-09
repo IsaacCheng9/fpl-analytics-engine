@@ -19,10 +19,12 @@ def _game(
     position: str = "MID",
     value: int = 50,
     starts: int = 1,
+    code: int | None = None,
 ) -> dict:
     """Build one enriched per-gameweek history row for tests."""
     return {
         "element": element,
+        "code": element * 100 if code is None else code,
         "round": round_,
         "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
         "minutes": minutes,
@@ -95,7 +97,7 @@ def test_expected_rates_use_covered_minutes_without_changing_actual_totals(
     assert row["window_xgi90_per_million"] == pytest.approx(1.6 / denominator / 5)
 
 
-def test_precoverage_form_has_unknown_rates_and_does_not_flag_players() -> None:
+def test_precoverage_form_has_unknown_rates_and_no_delta_to_filter() -> None:
     history = _frame(
         [_game(1, gw, xg=5, xa=5, xgi=10) for gw in (14, 15)]
     ).with_columns(pl.lit("2022-23").alias("season"))
@@ -107,7 +109,8 @@ def test_precoverage_form_has_unknown_rates_and_does_not_flag_players() -> None:
     for metric in ("xg", "xa", "xgi"):
         assert row[f"delta_{metric}90"] is None
         assert row[f"window_{metric}90_per_million"] is None
-    assert form.flag_players(table).is_empty()
+    assert row["projected_xgi"] is None
+    assert form.flag_players(table, min_delta_xgi90=0.0).is_empty()
 
 
 def test_covered_window_delta_uses_only_covered_season_baseline() -> None:
@@ -235,20 +238,143 @@ def test_flag_players_ranks_and_filters() -> None:
     assert 2 not in elements  # declining player has a negative delta
 
 
-def test_flag_players_breaks_delta_ties_by_window_threat_then_element() -> None:
+def test_flag_players_ranks_by_projection_then_estimate_then_element() -> None:
     table = pl.DataFrame(
         {
             "element": [3, 1, 2, 4],
             "position": ["MID"] * 4,
             "window_minutes": [270] * 4,
-            "delta_xgi90": [0.0, 0.0, 0.0, 0.1],
-            "window_xgi90": [0.2, 0.5, 0.5, None],
+            "delta_xgi90": [0.5, 0.0, 0.0, -0.1],
+            "projected_xgi": [0.2, 0.2, 0.2, 0.4],
+            "est_xgi90": [0.2, 0.5, 0.5, None],
         }
     )
 
     flagged = form.flag_players(table, min_window_minutes=0, min_delta_xgi90=-1.0)
 
+    # The largest delta does not lead: the delta is descriptive only.
     assert flagged["element"].to_list() == [4, 1, 2, 3]
+
+
+def test_prior_season_rates_use_covered_minutes_per_metric() -> None:
+    history = _frame(
+        [
+            _game(1, 1, xgi=0.6, xg=0.3),
+            _game(1, 2, xgi=0.0, minutes=0),
+            # A missing xA leaves the other metrics' minutes intact.
+            {**_game(1, 3, xgi=0.3, xg=0.3), "expected_assists": None},
+        ]
+    ).with_columns(pl.lit("2025-26").alias("season"))
+
+    rates = form.prior_season_rates(history).to_dicts()
+
+    assert rates == [
+        {
+            "code": 100,
+            "prior_xg90": pytest.approx(0.3),
+            "prior_xa90": pytest.approx(0.0),
+            "prior_xgi90": pytest.approx(0.45),
+            "prior_xg_minutes": 180,
+            "prior_xa_minutes": 90,
+            "prior_xgi_minutes": 180,
+        }
+    ]
+
+
+def test_prior_season_rates_skip_minutes_before_2022_23_coverage() -> None:
+    history = _frame([_game(1, 10, xgi=0.9), _game(1, 20, xgi=0.3)]).with_columns(
+        pl.lit("2022-23").alias("season")
+    )
+
+    row = form.prior_season_rates(history).to_dicts()[0]
+
+    # Only GW16 onwards counts, so the gate sees 90 minutes, not 180.
+    assert row["prior_xgi90"] == pytest.approx(0.3)
+    assert row["prior_xgi_minutes"] == 90
+
+
+def test_estimated_rate_shrinks_towards_last_season_with_enough_minutes() -> None:
+    history = _frame(
+        [_game(1, r, xgi=0.9) for r in (1, 2)]
+        + [_game(2, r, xgi=0.9) for r in (1, 2)]
+        + [_game(3, r, xgi=0.9) for r in (1, 2)]
+    )
+    prior = pl.DataFrame(
+        {
+            "code": [100, 200],
+            "prior_xg90": [0.0, 0.0],
+            "prior_xa90": [0.0, 0.0],
+            "prior_xgi90": [0.3, 0.3],
+            "prior_xg_minutes": [900, 899],
+            "prior_xa_minutes": [900, 899],
+            "prior_xgi_minutes": [900, 899],
+        }
+    )
+
+    table = form.compute_form_table(history, as_of_gw=2, window=1, prior=prior)
+    rows = {row["element"]: row for row in table.to_dicts()}
+
+    # 1.8 season xGI plus 900 minutes at 0.3 per 90, over 180 + 900 minutes.
+    assert rows[1]["est_xgi90"] == pytest.approx((1.8 + 3.0) / 1080 * 90)
+    # One minute short of the gate, or no prior at all, keeps the season rate.
+    assert rows[2]["est_xgi90"] == pytest.approx(0.9)
+    assert rows[3]["est_xgi90"] == pytest.approx(0.9)
+    assert "code" not in table.columns
+
+
+def test_estimated_rate_weighs_only_minutes_with_the_stat() -> None:
+    history = _frame(
+        [_game(1, 1, xgi=0.9), {**_game(1, 2), "expected_goal_involvements": None}]
+    )
+    prior = pl.DataFrame(
+        {
+            "code": [100],
+            **{f"prior_{m}90": [0.3] for m in ("xg", "xa", "xgi")},
+            **{f"prior_{m}_minutes": [900] for m in ("xg", "xa", "xgi")},
+        }
+    )
+
+    row = form.compute_form_table(history, 2, 2, prior).to_dicts()[0]
+
+    # The season rate and its shrinkage weight both use the 90 covered minutes,
+    # while projected minutes still count both games.
+    assert row["est_xgi90"] == pytest.approx((0.9 + 3.0) / 990 * 90)
+    assert row["projected_minutes"] == pytest.approx(90.0)
+
+
+def test_estimated_rate_equals_season_rate_without_prior() -> None:
+    table = form.compute_form_table(_frame([_game(1, 1, xgi=0.45)]), 1, 1)
+
+    assert table["est_xgi90"].to_list() == table["season_xgi90"].to_list()
+
+
+def test_projection_blends_window_and_season_minutes() -> None:
+    rows = [_game(1, r, minutes=0) for r in (1, 2)]
+    rows += [_game(1, r, minutes=90, xgi=0.6) for r in (3, 4)]
+    table = form.compute_form_table(_frame(rows), as_of_gw=4, window=2)
+    row = table.to_dicts()[0]
+
+    # Window 180 / 2 GWs and season 180 / 4 GWs, blended evenly.
+    assert row["projected_minutes"] == pytest.approx(0.5 * 90 + 0.5 * 45)
+    assert row["projected_xgi"] == pytest.approx(0.6 * 67.5 / 90)
+
+
+def test_projection_window_never_exceeds_gameweeks_played() -> None:
+    table = form.compute_form_table(_frame([_game(1, 1, minutes=60)]), 1, 5)
+
+    assert table["projected_minutes"].to_list() == [pytest.approx(60.0)]
+
+
+def test_projection_averages_a_mid_season_signing_over_their_own_gameweeks() -> None:
+    # P1 joins in GW3 and starts both games; P2 was benched in GW1-2.
+    rows = [_game(1, r) for r in (3, 4)]
+    rows += [_game(2, r, minutes=0) for r in (1, 2)] + [_game(2, r) for r in (3, 4)]
+    table = form.compute_form_table(_frame(rows), as_of_gw=4, window=3)
+    rows_by_element = {row["element"]: row for row in table.to_dicts()}
+
+    assert rows_by_element[1]["projected_minutes"] == pytest.approx(90.0)
+    # Window 180 / 3 GWs and season 180 / 4 GWs.
+    assert rows_by_element[2]["projected_minutes"] == pytest.approx(0.5 * 60 + 0.5 * 45)
 
 
 def test_flag_defcon_breaks_hit_rate_ties_by_window_defcon_then_element() -> None:
@@ -291,6 +417,26 @@ def test_backtest_flags_replays_each_gameweek() -> None:
     flags = form.backtest_flags(history, window=2, min_delta_xgi90=0.0)
 
     assert set(flags["as_of_gw"].to_list()) == {2, 3, 4}
+
+
+def test_backtest_flags_ranks_on_the_prior_without_a_delta_filter() -> None:
+    # P1 leads on season rate, but P2 had a far higher rate last season, and
+    # P2's falling form leaves a negative delta that is no longer filtered.
+    history = _frame(
+        [_game(1, r, xgi=0.5) for r in (1, 2)]
+        + [_game(2, 1, xgi=0.6), _game(2, 2, xgi=0.2)]
+    )
+    prior = pl.DataFrame(
+        {
+            "code": [100, 200],
+            **{f"prior_{m}90": [0.0, 1.5] for m in ("xg", "xa", "xgi")},
+            **{f"prior_{m}_minutes": [900, 900] for m in ("xg", "xa", "xgi")},
+        }
+    )
+
+    flags = form.backtest_flags(history, window=1, gw_range=range(2, 3), prior=prior)
+
+    assert flags["element"].to_list() == [2, 1]
 
 
 def test_evaluate_flags_attaches_next_gameweek_points() -> None:
