@@ -233,9 +233,11 @@ point-in-time `as_of_gw`.
 The player table can switch between all players, the imported squad inspection,
 and shortlisted players. The squad inspection view is diagnostic rather than a
 solver: it shows the current squad as one list, with the current next fixture
-and FDR, recent and season threat, minutes, start rate, `P(Hit | 60+ Mins)`,
-ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
-`Low Threat`, `DefCon Upside`, and `Good Hold`.
+and FDR, projected and estimated threat alongside recent and season threat,
+minutes, start rate, `P(Hit | 60+ Mins)`, ownership, and simple flags such as
+`Minutes Risk`, `Fixture Risk`, `Low Threat`, `DefCon Upside`, and `Good Hold`.
+`Low Threat` uses the estimated xGI per 90, the best per-90 predictor in the
+form backtest, so a quiet recent spell alone does not trigger it.
 
 ### Table Colours
 
