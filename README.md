@@ -100,7 +100,7 @@ where the current squad looks weak for the next gameweek.
 <details>
 <summary>Research</summary>
 
-<img width="3840" height="3706" alt="Research view" src="https://github.com/user-attachments/assets/ea2014e7-db92-4afd-8327-42bde8d86c7b" />
+<img width="3840" height="3706" alt="Research view" src="https://github.com/user-attachments/assets/377fd880-3907-4a52-8776-e6dd044b8eb9" />
 
 </details>
 
@@ -193,13 +193,14 @@ very top.
 
 Within minutes, most of the gain comes from accounting for playing time at all.
 Blending in the recent window then adds 0.014–0.018 rank correlation over the
-same projection on season minutes alone – 'Projected xGI (Season Minutes Only)'
-in the Research view – though its top-20 picks scored fewer points than that
-projection's in 2023-24. The even blend is also the most accurate of the three
-minutes forecasts the backtest scores, measured as the mean absolute error
-against every scored player's minutes per gameweek over the next four gameweeks:
+same projection with minutes from the season average alone – 'Projected xGI
+(Ignoring Recent Minutes)' in the Research view – though its top-20 picks scored
+fewer points than that projection's in 2023-24. The even blend is also the most
+accurate of the three minutes forecasts the backtest scores, measured as the
+mean absolute error against every scored player's minutes per gameweek over the
+next four gameweeks:
 
-| Season | Season Minutes | Even Blend (Projected Mins) | Window Minutes |
+| Season | Season Average Only | Even Blend (Projected Mins) | Recent Window Only |
 | --- | --- | --- | --- |
 | 2023-24 | 25.0 | 23.1 | 23.8 |
 | 2024-25 | 22.2 | 20.5 | 21.0 |
