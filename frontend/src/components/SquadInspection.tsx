@@ -92,8 +92,9 @@ function squadFlags(row: SquadInspectionRow): SquadFlag[] {
 	const position = playerPosition(row);
 	const startRate = form?.window_start_rate;
 	const minsPerApp = form?.window_mins_per_appearance;
-	const windowXgi = form?.window_xgi90;
-	const seasonXgi = form?.season_xgi90;
+	// The estimated rate is the best per-90 predictor in the form backtest;
+	// playing time is judged separately by the minutes flags.
+	const estXgi = form?.est_xgi90;
 	const nextFdr = current?.next_fdr;
 	const avgFdr = current?.avg_fdr;
 	const flags: SquadFlag[] = [];
@@ -117,18 +118,9 @@ function squadFlags(row: SquadInspectionRow): SquadFlag[] {
 		flags.push({ label: "Fixture Risk", tone: "watch" });
 	}
 
-	if (
-		position !== "GK" &&
-		typeof windowXgi === "number" &&
-		typeof seasonXgi === "number" &&
-		windowXgi < 0.2 &&
-		seasonXgi < 0.2
-	) {
+	if (position !== "GK" && typeof estXgi === "number" && estXgi < 0.2) {
 		flags.push({ label: "Low Threat", tone: "watch" });
-	} else if (
-		position !== "GK" &&
-		(typeof windowXgi !== "number" || typeof seasonXgi !== "number")
-	) {
+	} else if (position !== "GK" && typeof estXgi !== "number") {
 		flags.push({ label: "No Form Data", tone: "neutral" });
 	}
 
@@ -173,6 +165,8 @@ function SquadRows({
 							<th className="px-3 py-2 font-medium">Price</th>
 							<th className="px-3 py-2 font-medium">Next</th>
 							<th className="px-3 py-2 font-medium">FDR</th>
+							<th className="px-3 py-2 font-medium">Projected xGI</th>
+							<th className="px-3 py-2 font-medium">Est. xGI/90</th>
 							<th className="px-3 py-2 font-medium">Window xGI/90</th>
 							<th className="px-3 py-2 font-medium">Season xGI/90</th>
 							<th className="px-3 py-2 font-medium">Window xG/90</th>
@@ -207,6 +201,12 @@ function SquadRows({
 										className={`px-3 py-2 ${fixtureClass(current?.next_fdr)}`}
 									>
 										{fmtNum(current?.next_fdr ?? null, 0)}
+									</td>
+									<td className="px-3 py-2">
+										{fmtNum(form?.projected_xgi ?? null)}
+									</td>
+									<td className="px-3 py-2">
+										{fmtNum(form?.est_xgi90 ?? null)}
 									</td>
 									<td className="px-3 py-2">
 										{fmtNum(form?.window_xgi90 ?? null)}

@@ -1445,7 +1445,7 @@ test("preserves unknown snapshot labels and venue instead of guessing", async ()
 	const player = await screen.findByText("#1");
 	const row = within(player.closest("tr") as HTMLElement);
 	const cells = row.getAllByRole("cell");
-	for (const index of [1, 2, 3, 13]) {
+	for (const index of [1, 2, 3, 15]) {
 		expect(cells[index]).toHaveTextContent(/^-$/);
 	}
 	expect(cells[4]).toHaveTextContent("GW39 Everton");
@@ -1490,6 +1490,44 @@ test("shows no-form state instead of low threat for missing historical data", as
 	expect(
 		within(sakaRow as HTMLElement).queryByText("Low Threat"),
 	).not.toBeInTheDocument();
+});
+
+test("flags low threat on the estimated rate, not recent form", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		if (String(input).includes("/players/form?")) {
+			const body = broadFormRows.map((row) =>
+				row.element === 1
+					? // A quiet spell, but last season's rate keeps the estimate up.
+						{ ...row, window_xgi90: 0.1, season_xgi90: 0.15, est_xgi90: 0.35 }
+					: row.element === 2
+						? // A hot spell that the estimate does not believe.
+							{ ...row, window_xgi90: 0.5, season_xgi90: 0.3, est_xgi90: 0.15 }
+						: row,
+			);
+			return Promise.resolve(
+				new Response(JSON.stringify(body), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
+	});
+	const squadRow = async (name: string) =>
+		within((await screen.findByText(name)).closest("tr") as HTMLElement);
+	const mbeumo = await squadRow("Mbeumo");
+	expect(mbeumo.queryByText("Low Threat")).not.toBeInTheDocument();
+	// Projected xGI sits after FDR, then the estimated rate.
+	expect(mbeumo.getAllByRole("cell")[6]).toHaveTextContent(/^0\.57$/);
+	expect(mbeumo.getAllByRole("cell")[7]).toHaveTextContent(/^0\.35$/);
+	expect((await squadRow("Saka")).getByText("Low Threat")).toBeInTheDocument();
 });
 
 test("hides stale squad rows while historical context is loading", async () => {
