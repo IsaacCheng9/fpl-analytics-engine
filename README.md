@@ -74,7 +74,7 @@ where the current squad looks weak for the next gameweek.
 
 ## Screenshots
 
-<img width="3840" height="3600" alt="Attacking Form table" src="https://github.com/user-attachments/assets/5984c709-e672-433e-8907-9ad6a4229840" />
+<img width="3840" height="3544" alt="Attacking Form table" src="https://github.com/user-attachments/assets/0199d2ef-40ca-4813-b8f3-160d754e1c4d" />
 
 <details>
 <summary>DefCon Form</summary>
@@ -100,7 +100,7 @@ where the current squad looks weak for the next gameweek.
 <details>
 <summary>Research</summary>
 
-<img width="3840" height="2350" alt="Research view" src="https://github.com/user-attachments/assets/c4fcdc06-2f13-4bc3-be2c-ded89f534432" />
+<img width="3840" height="3262" alt="Research view" src="https://github.com/user-attachments/assets/904adc74-11f5-4e60-a06f-b7c05cc3982c" />
 
 </details>
 
