@@ -100,7 +100,7 @@ where the current squad looks weak for the next gameweek.
 <details>
 <summary>Research</summary>
 
-<img width="3840" height="3262" alt="Research view" src="https://github.com/user-attachments/assets/904adc74-11f5-4e60-a06f-b7c05cc3982c" />
+<img width="3840" height="3706" alt="Research view" src="https://github.com/user-attachments/assets/ea2014e7-db92-4afd-8327-42bde8d86c7b" />
 
 </details>
 
@@ -189,11 +189,27 @@ the season rate instead of the estimated rate lowers its rank correlation by
 only 0.006–0.013, or 0.015–0.035 over GW6–12, when last season weighs most. The
 estimated rate's own top-20 picks score slightly fewer points than the season
 rate's, so its value is in ordering the whole field rather than in picking the
-very top. An exploratory run over 2022-23 to 2025-26 with windows of three to
-eight gameweeks showed the same pattern; it also found the estimated rate
-predicts players' future xGI per 90 better than the season rate in every season
-with a previous season to draw on, and that pulling players without one towards
-a positional average made rankings worse.
+very top.
+
+Within minutes, most of the gain comes from accounting for playing time at all.
+Blending in the recent window then adds 0.014–0.018 rank correlation over the
+same projection on season minutes alone (`projected_xgi_season_minutes`), though
+its top-20 picks scored fewer points than that projection's in 2023-24. The even
+blend is also the most accurate of the three minutes forecasts the backtest
+scores, measured as the mean absolute error against every scored player's
+minutes per gameweek over the next four gameweeks:
+
+| Season | Season Minutes | Even Blend (Projected Mins) | Window Minutes |
+| --- | --- | --- | --- |
+| 2023-24 | 25.0 | 23.1 | 23.8 |
+| 2024-25 | 22.2 | 20.5 | 21.0 |
+| 2025-26 | 22.8 | 21.5 | 22.4 |
+
+An exploratory run over 2022-23 to 2025-26 with windows of three to eight
+gameweeks showed the same pattern; it also found the estimated rate predicts
+players' future xGI per 90 better than the season rate in every season with a
+previous season to draw on, and that pulling players without one towards a
+positional average made rankings worse.
 
 ### Transfer Workflow
 
