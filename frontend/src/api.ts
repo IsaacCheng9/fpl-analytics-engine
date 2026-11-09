@@ -110,6 +110,11 @@ export interface FormSignalValidation {
 	top_future_points: number | null;
 }
 
+export interface MinutesForecastValidation {
+	forecast: string;
+	mean_absolute_error: number | null;
+}
+
 export interface FormValidation {
 	window: number;
 	horizon: number;
@@ -120,6 +125,7 @@ export interface FormValidation {
 	swing_persistence_low: number | null;
 	swing_persistence_high: number | null;
 	minutes_persistence: number | null;
+	minutes_forecast: MinutesForecastValidation[];
 	signals: FormSignalValidation[];
 }
 

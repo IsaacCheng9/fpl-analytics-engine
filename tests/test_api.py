@@ -451,6 +451,11 @@ def test_form_validation_scores_an_archived_season(
     # As-of GW5-7 each score the three outfield players, not the keeper.
     assert (body["n_gameweeks"], body["n_predictions"]) == (3, 9)
     assert [row["signal"] for row in body["signals"]][0] == "projected_xgi"
+    assert [row["forecast"] for row in body["minutes_forecast"]] == [
+        "season_mpg",
+        "projected_minutes",
+        "window_mpg",
+    ]
     # The prior is the season before the archived one, not before the live one.
     prior = priors[0]
     assert prior is not None

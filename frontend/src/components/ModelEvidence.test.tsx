@@ -100,6 +100,7 @@ test("explains when no form-signal gameweeks can be scored", () => {
 		swing_persistence_low: null,
 		swing_persistence_high: null,
 		minutes_persistence: null,
+		minutes_forecast: [],
 		signals: [],
 	});
 
@@ -122,6 +123,7 @@ test("shows a single-slate persistence estimate without an interval", () => {
 		swing_persistence_low: null,
 		swing_persistence_high: null,
 		minutes_persistence: 0.5,
+		minutes_forecast: [],
 		signals: [
 			{
 				signal: "projected_xgi",

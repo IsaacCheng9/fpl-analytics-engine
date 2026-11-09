@@ -143,6 +143,13 @@ class FormSignalValidation(BaseModel):
     top_future_points: float | None
 
 
+class MinutesForecastValidation(BaseModel):
+    """How far one minutes-per-gameweek forecast missed the next gameweeks."""
+
+    forecast: str
+    mean_absolute_error: float | None
+
+
 class FormValidation(BaseModel):
     """Point-in-time backtest of the player form signals for one season."""
 
@@ -155,6 +162,7 @@ class FormValidation(BaseModel):
     swing_persistence_low: float | None
     swing_persistence_high: float | None
     minutes_persistence: float | None
+    minutes_forecast: list[MinutesForecastValidation]
     signals: list[FormSignalValidation]
 
 

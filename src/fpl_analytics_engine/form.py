@@ -37,11 +37,20 @@ VALIDATION_BOOTSTRAP_REPS = 1000
 # Ranking signals scored by the validation backtest, in display order.
 VALIDATION_SIGNALS = (
     "projected_xgi",
+    "projected_xgi_season_minutes",
     "est_xgi90",
     "season_xgi90",
     "window_xgi90",
     "delta_xgi90",
 )
+# Minutes-per-gameweek forecasts compared against the next gameweeks, as the
+# weight each puts on the recent window: season only, the blend projected
+# minutes uses, and window only.
+MINUTES_FORECASTS = {
+    "season_mpg": 0.0,
+    "projected_minutes": PROJECTED_MINUTES_WINDOW_WEIGHT,
+    "window_mpg": 1.0,
+}
 EXPECTED_STATS = {
     "xg": "expected_goals",
     "xa": "expected_assists",
@@ -570,6 +579,11 @@ def backtest_form_signals(
                 .fill_null(0)
                 .cast(pl.Float64),
                 pl.col("future_points").fill_null(0),
+                # The projection without recent minutes, so the backtest shows
+                # what blending in the window's minutes adds.
+                (pl.col("est_xgi90") * pl.col("season_mpg") / 90).alias(
+                    "projected_xgi_season_minutes"
+                ),
             )
             .select(
                 "as_of_gw",
@@ -641,12 +655,14 @@ def summarise_form_validation(
     Returns:
         A summary with the number of predictions and gameweeks, the share of
         the recent xGI90 swing and of the recent minutes swing that persists,
-        and, per signal, the mean per-gameweek Spearman correlation with
-        next-horizon xGI plus the next-horizon xGI and points of its top
-        ``top_k`` picks. Every signal is scored on the same players: those
-        with a value for all of them, which the prediction and gameweek counts
-        describe. Minutes persistence keeps every scored player, because
-        dropping out of the side is itself a minutes swing.
+        the mean absolute error of each ``MINUTES_FORECASTS`` entry against
+        next-horizon minutes per gameweek, and, per signal, the mean
+        per-gameweek Spearman correlation with next-horizon xGI plus the
+        next-horizon xGI and points of its top ``top_k`` picks. Every signal is
+        scored on the same players: those with a value for all of them, which
+        the prediction and gameweek counts describe. Minutes persistence and
+        forecasts keep every scored player, because dropping out of the side
+        is itself a minutes change.
     """
     empty = {
         "n_predictions": 0,
@@ -655,6 +671,7 @@ def summarise_form_validation(
         "swing_persistence_low": None,
         "swing_persistence_high": None,
         "minutes_persistence": None,
+        "minutes_forecast": [],
         "signals": [],
     }
     if scored.is_empty():
@@ -679,6 +696,22 @@ def summarise_form_validation(
         swing=pl.col("window_mpg") - pl.col("season_mpg"),
         weight=pl.lit(1.0),
     )
+
+    minutes_forecast = [
+        {
+            "forecast": forecast,
+            "mean_absolute_error": scored.select(
+                (
+                    weight * pl.col("window_mpg")
+                    + (1 - weight) * pl.col("season_mpg")
+                    - pl.col("future_mpg")
+                )
+                .abs()
+                .mean()
+            ).item(),
+        }
+        for forecast, weight in MINUTES_FORECASTS.items()
+    ]
 
     # Window and delta are null without window minutes; dropping those players
     # from every signal keeps the comparison on one population.
@@ -711,5 +744,6 @@ def summarise_form_validation(
         "swing_persistence_low": low,
         "swing_persistence_high": high,
         "minutes_persistence": minutes,
+        "minutes_forecast": minutes_forecast,
         "signals": signals,
     }

@@ -398,6 +398,10 @@ def test_backtest_form_signals_scores_complete_horizons_only() -> None:
     p4_after_gw8 = scored.filter(pl.col("element") == 4, pl.col("as_of_gw") == 8)
     assert p4_after_gw8["future_mpg"].to_list() == [0.0]
     assert p4_after_gw8["future_points"].to_list() == [0]
+    # The comparison projection swaps projected minutes for season minutes.
+    assert scored["projected_xgi_season_minutes"].to_list() == pytest.approx(
+        (scored["est_xgi90"] * scored["season_mpg"] / 90).to_list()
+    )
 
 
 def test_summarise_form_validation_scores_each_signal() -> None:
@@ -464,6 +468,27 @@ def test_summarise_form_validation_compares_signals_on_one_population() -> None:
     assert projected["mean_rank_correlation"] == pytest.approx(1.5 / 3**0.5)
 
 
+def test_summarise_form_validation_scores_each_minutes_forecast() -> None:
+    scored = _scored_slate(
+        [(1, 0.5, 0.5, 1.0, 4), (2, 0.4, None, 0.0, 0)]
+    ).with_columns(
+        # P1 has returned to the side; P2 has dropped out of it.
+        pl.Series("window_mpg", [90.0, 0.0]),
+        pl.Series("season_mpg", [30.0, 60.0]),
+        pl.Series("future_mpg", [90.0, 0.0]),
+    )
+
+    forecasts = form.summarise_form_validation(scored)["minutes_forecast"]
+
+    # Both players miss by 60 on season minutes and 30 on the even blend,
+    # and the player without window minutes still counts.
+    assert forecasts == [
+        {"forecast": "season_mpg", "mean_absolute_error": pytest.approx(60.0)},
+        {"forecast": "projected_minutes", "mean_absolute_error": pytest.approx(30.0)},
+        {"forecast": "window_mpg", "mean_absolute_error": pytest.approx(0.0)},
+    ]
+
+
 def test_slate_slope_weights_players_and_resamples_slates() -> None:
     frame = pl.DataFrame(
         {
@@ -501,6 +526,7 @@ def test_summarise_form_validation_handles_no_predictions() -> None:
     summary = form.summarise_form_validation(pl.DataFrame())
 
     assert summary["n_predictions"] == 0
+    assert summary["minutes_forecast"] == []
     assert summary["signals"] == []
 
 
