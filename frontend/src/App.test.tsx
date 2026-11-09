@@ -414,12 +414,23 @@ const formValidation = {
 	swing_persistence_low: -0.034,
 	swing_persistence_high: 0.083,
 	minutes_persistence: 0.428,
+	minutes_forecast: [
+		{ forecast: "season_mpg", mean_absolute_error: 22.8 },
+		{ forecast: "projected_minutes", mean_absolute_error: 21.5 },
+		{ forecast: "window_mpg", mean_absolute_error: 22.4 },
+	],
 	signals: [
 		{
 			signal: "projected_xgi",
 			mean_rank_correlation: 0.566,
 			top_future_xgi: 1.71,
 			top_future_points: 14.75,
+		},
+		{
+			signal: "projected_xgi_season_minutes",
+			mean_rank_correlation: 0.549,
+			top_future_xgi: 1.5,
+			top_future_points: 14.52,
 		},
 		{
 			signal: "delta_xgi90",
@@ -1963,6 +1974,10 @@ test("renders the research tab with backtest summaries", async () => {
 	expect(screen.getByText("95% interval -3.4% to +8.3%")).toBeInTheDocument();
 	expect(screen.getByText("+42.8%")).toBeInTheDocument();
 	expect(screen.getByText("Projected xGI (Default Sort)")).toBeInTheDocument();
+	expect(
+		screen.getByText("Projected xGI (Season Minutes Only)"),
+	).toBeInTheDocument();
+	expect(screen.getByText("Projected Mins (Even Blend)")).toBeInTheDocument();
 	expect(screen.getByText("14.8")).toBeInTheDocument();
 	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
 	expect(screen.getByText("Calibrated Count Brier")).toBeInTheDocument();

@@ -64,10 +64,17 @@ function targetLabel(target: string): string {
 
 const FORM_SIGNAL_LABELS: Record<string, string> = {
 	projected_xgi: "Projected xGI (Default Sort)",
+	projected_xgi_season_minutes: "Projected xGI (Season Minutes Only)",
 	est_xgi90: "Est. xGI Per 90",
 	season_xgi90: "Season xGI Per 90",
 	window_xgi90: "Window xGI Per 90",
 	delta_xgi90: "Delta xGI Per 90",
+};
+
+const MINUTES_FORECAST_LABELS: Record<string, string> = {
+	season_mpg: "Season Minutes Per GW",
+	projected_minutes: "Projected Mins (Even Blend)",
+	window_mpg: "Window Minutes Per GW",
 };
 
 function MetricCard({
@@ -124,6 +131,7 @@ function FormSignalSection({
 	const horizon = validation?.horizon ?? 4;
 	const topK = validation?.top_k ?? 20;
 	const signals = validation?.signals ?? [];
+	const forecasts = validation?.minutes_forecast ?? [];
 	// The first as-of gameweek scored is the one after the window first fits,
 	// and it needs the following horizon of results.
 	const firstCompleteGw = formWindow + 1 + horizon;
@@ -148,7 +156,9 @@ function FormSignalSection({
 					the season rate that carried into those gameweeks: 100% means it fully
 					persisted, 0% means players reverted. The xGI swing counts only
 					players with 270+ window minutes and 180+ later minutes, so both sides
-					are real rates.
+					are real rates. The minutes forecasts check the even blend behind
+					Projected Mins against season-only and window-only minutes per
+					gameweek.
 				</p>
 			</div>
 			<div className="grid gap-3 sm:grid-cols-3">
@@ -213,6 +223,41 @@ function FormSignalSection({
 								<td className="px-3 py-2">{fmtNum(row.top_future_xgi, 2)}</td>
 								<td className="px-3 py-2">
 									{fmtNum(row.top_future_points, 1)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200">
+				<table className="w-full min-w-[32rem] border-collapse text-sm">
+					<thead className="bg-zinc-100 text-left text-zinc-600">
+						<tr>
+							<th className="px-3 py-2 font-medium">Minutes Forecast</th>
+							<th className="px-3 py-2 font-medium">
+								<span className="flex items-center gap-1">
+									Mean Absolute Error (Mins Per GW)
+									<InfoTooltip
+										text={`Average gap between each forecast and a player's actual minutes per gameweek over the next ${horizon} gameweeks, across every scored player, including those who dropped out of the side. Lower is better.`}
+									/>
+								</span>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{forecasts.length === 0 ? (
+							<EmptyTableRow
+								columns={2}
+								message="No gameweeks can be scored yet."
+							/>
+						) : null}
+						{forecasts.map((row) => (
+							<tr key={row.forecast} className="border-zinc-100 border-t">
+								<th className="px-3 py-2 text-left font-medium text-zinc-700">
+									{MINUTES_FORECAST_LABELS[row.forecast] ?? row.forecast}
+								</th>
+								<td className="px-3 py-2">
+									{fmtNum(row.mean_absolute_error, 1)}
 								</td>
 							</tr>
 						))}

@@ -123,7 +123,10 @@ test("shows a single-slate persistence estimate without an interval", () => {
 		swing_persistence_low: null,
 		swing_persistence_high: null,
 		minutes_persistence: 0.5,
-		minutes_forecast: [],
+		minutes_forecast: [
+			{ forecast: "season_mpg", mean_absolute_error: 22.83 },
+			{ forecast: "projected_minutes", mean_absolute_error: 21.46 },
+		],
 		signals: [
 			{
 				signal: "projected_xgi",
@@ -144,5 +147,13 @@ test("shows a single-slate persistence estimate without an interval", () => {
 	).toBeInTheDocument();
 	expect(
 		card("Recent Minutes Swing That Persists").getByText("+50.0%"),
+	).toBeInTheDocument();
+	const forecastRow = (label: string) =>
+		within(screen.getByText(label).closest("tr") as HTMLElement);
+	expect(
+		forecastRow("Season Minutes Per GW").getByText("22.8"),
+	).toBeInTheDocument();
+	expect(
+		forecastRow("Projected Mins (Even Blend)").getByText("21.5"),
 	).toBeInTheDocument();
 });
