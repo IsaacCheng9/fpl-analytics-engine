@@ -134,6 +134,30 @@ class ClubFormValidation(BaseModel):
     rmse_improvement_pct: float | None
 
 
+class FormSignalValidation(BaseModel):
+    """How well one form-table ranking signal picked future xGI and points."""
+
+    signal: str
+    mean_rank_correlation: float | None
+    top_future_xgi: float | None
+    top_future_points: float | None
+
+
+class FormValidation(BaseModel):
+    """Point-in-time backtest of the player form signals for one season."""
+
+    window: int
+    horizon: int
+    top_k: int
+    n_predictions: int
+    n_gameweeks: int
+    swing_persistence: float | None
+    swing_persistence_low: float | None
+    swing_persistence_high: float | None
+    minutes_persistence: float | None
+    signals: list[FormSignalValidation]
+
+
 class DefconCalibrationBin(BaseModel):
     """One probability bucket from the DefCon calibration backtest."""
 

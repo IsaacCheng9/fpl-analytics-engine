@@ -23,6 +23,7 @@ from fpl_analytics_engine.schemas import (
     DefconProbabilityPlayer,
     DefconProbabilityValidation,
     FormPlayer,
+    FormValidation,
     FplTeam,
     FplTeamPick,
     PlayerDetail,
@@ -61,6 +62,9 @@ CONTEXT_COLUMNS = [
     "window_mins_per_appearance",
     *FIXTURE_CONTEXT_COLUMNS,
 ]
+# The form backtest only needs expected stats and the previous season's rates,
+# so it reaches back further than the DefCon and club backtests.
+FORM_VALIDATION_START_SEASON = "2023-24"
 # Columns returned by each endpoint, matching the response models in schemas.
 FORM_COLUMNS = [
     "element",
@@ -344,21 +348,23 @@ def _validation_history(
     history: pl.DataFrame,
     all_seasons: pl.DataFrame,
     current_season: str,
+    start_season: str = DEFCON_START_SEASON,
 ) -> pl.DataFrame:
     """Return the history to backtest: the live season or an archived one.
 
     The live season keeps the preseason guard; an archived season is read from
     the cross-season snapshot so completed seasons can be validated in full.
-    Seasons before DefCon existed are rejected, because their backfilled
-    archives also lack the per-fixture club columns the club backtest needs.
+    Seasons before ``start_season`` are rejected. By default that is when
+    DefCon began, because the backfilled archives before it also lack the
+    per-fixture club columns the club backtest needs.
     """
     if season is None or season == current_season:
         _require_current_history(history)
         return history
-    if data.season_sort_key(season) < data.season_sort_key(DEFCON_START_SEASON):
+    if data.season_sort_key(season) < data.season_sort_key(start_season):
         raise HTTPException(
             status_code=422,
-            detail=f"Backtests need {DEFCON_START_SEASON} or later archives.",
+            detail=f"This backtest needs {start_season} or later archives.",
         )
     selected = (
         all_seasons.filter(pl.col("season") == season)
@@ -669,6 +675,37 @@ def players_form(
     )
     flagged = _attach_context(flagged, fixtures_data, teams, players, gw, fdr_horizon)
     return [FormPlayer(**row) for row in flagged.select(FORM_COLUMNS).to_dicts()]
+
+
+@app.get("/players/form-validation")
+def players_form_validation(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    current_season: Annotated[str, Depends(get_current_season)],
+    window: int = Query(form.DEFAULT_WINDOW, ge=1, le=20),
+    horizon: int = Query(form.DEFAULT_VALIDATION_HORIZON, ge=1, le=10),
+    season: str | None = Query(
+        None, pattern=SEASON_PATTERN, description=VALIDATION_SEASON_DESCRIPTION
+    ),
+) -> FormValidation:
+    """Backtest the form-table ranking signals against later gameweeks.
+
+    Each as-of gameweek is replayed point-in-time, then every signal is scored
+    on how well it ranks outfield players' xGI over the next ``horizon``
+    gameweeks. The summary also reports how much of a recent xGI90 or minutes
+    swing persisted.
+    """
+    history = _validation_history(
+        season, history, all_seasons, current_season, FORM_VALIDATION_START_SEASON
+    )
+    prior = _prior_rates(all_seasons, season or current_season)
+    scored = form.backtest_form_signals(history, prior, window, horizon)
+    return FormValidation(
+        window=window,
+        horizon=horizon,
+        top_k=form.VALIDATION_TOP_K,
+        **form.summarise_form_validation(scored),
+    )
 
 
 @app.get("/players/defcon")

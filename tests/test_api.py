@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
-from fpl_analytics_engine import api
+from fpl_analytics_engine import api, form
 
 
 def _game(
@@ -416,6 +416,47 @@ def test_form_endpoint_shrinks_towards_the_previous_season(client: TestClient) -
     assert p1["est_xgi90"] < p1["season_xgi90"]
 
 
+def test_form_validation_scores_an_archived_season(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Eight gameweeks, so outfield players reach 450 season minutes by GW5.
+    eight_gameweeks = pl.concat(
+        [_history(), _history().with_columns(pl.col("round") + 4)]
+    ).with_columns(pl.col("element").alias("code"))
+    # Last season had no xGI, so its prior is recognisable as all zeros.
+    previous = _with_season(eight_gameweeks, "2024-25").with_columns(
+        pl.col("expected_goal_involvements") * 0
+    )
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: pl.concat(
+        [previous] * 3 + [_with_season(eight_gameweeks, "2025-26")]
+    )
+    priors = []
+    backtest = form.backtest_form_signals
+
+    def record_prior(
+        history: pl.DataFrame, prior: pl.DataFrame | None = None, *args: int
+    ) -> pl.DataFrame:
+        priors.append(prior)
+        return backtest(history, prior, *args)
+
+    monkeypatch.setattr(form, "backtest_form_signals", record_prior)
+
+    body = client.get(
+        "/players/form-validation",
+        params={"season": "2025-26", "window": 1, "horizon": 1},
+    ).json()
+
+    assert (body["window"], body["horizon"], body["top_k"]) == (1, 1, 20)
+    # As-of GW5-7 each score the three outfield players, not the keeper.
+    assert (body["n_gameweeks"], body["n_predictions"]) == (3, 9)
+    assert [row["signal"] for row in body["signals"]][0] == "projected_xgi"
+    # The prior is the season before the archived one, not before the live one.
+    prior = priors[0]
+    assert prior is not None
+    assert prior["prior_xgi90"].max() == 0
+
+
 def test_form_endpoint_filters_by_position(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2, "position": "MID"}).json()
     assert {row["position"] for row in body} == {"MID"}
@@ -667,7 +708,12 @@ def test_club_form_validation_can_score_an_archived_season(
 
 
 @pytest.mark.parametrize(
-    "path", ["/players/defcon-probability-validation", "/clubs/form-validation"]
+    "path",
+    [
+        "/players/defcon-probability-validation",
+        "/clubs/form-validation",
+        "/players/form-validation",
+    ],
 )
 def test_validation_season_is_checked_and_independent_of_live_history(
     client: TestClient, path: str
@@ -682,7 +728,14 @@ def test_validation_season_is_checked_and_independent_of_live_history(
     assert client.get(path).status_code == 409
     assert client.get(path, params={"season": "2025-26"}).status_code == 200
     assert client.get(path, params={"season": "2027-28"}).status_code == 404
-    assert client.get(path, params={"season": "2024-25"}).status_code == 422
+    # The form backtest reaches back to 2023-24; the others start at 2025-26.
+    is_form = path == "/players/form-validation"
+    too_early = "2022-23" if is_form else "2024-25"
+    assert client.get(path, params={"season": too_early}).status_code == 422
+    # 2023-24 passes the form check but is absent from this snapshot.
+    assert client.get(path, params={"season": "2023-24"}).status_code == (
+        404 if is_form else 422
+    )
     assert client.get(path, params={"season": "latest"}).status_code == 422
 
 

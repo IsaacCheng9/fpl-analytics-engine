@@ -377,6 +377,133 @@ def test_projection_averages_a_mid_season_signing_over_their_own_gameweeks() -> 
     assert rows_by_element[2]["projected_minutes"] == pytest.approx(0.5 * 60 + 0.5 * 45)
 
 
+def _validation_season() -> pl.DataFrame:
+    rows = []
+    for round_ in range(1, 11):
+        # P1 steady; P2 is dropped after GW8; P3 is a keeper and excluded.
+        rows.append(_game(1, round_, xgi=0.5, points=5))
+        rows.append(_game(2, round_, xgi=0.2, points=2, minutes=90 * (round_ <= 8)))
+        rows.append(_game(3, round_, position="GK"))
+    # P4 stops appearing after GW8, so later completed GWs count as zero.
+    rows += [_game(4, round_, xgi=0.3, points=3) for round_ in range(1, 9)]
+    return _frame(rows)
+
+
+def test_backtest_form_signals_scores_complete_horizons_only() -> None:
+    scored = form.backtest_form_signals(_validation_season(), window=5, horizon=2)
+
+    # GW5 is skipped because its window covers the whole season so far.
+    assert sorted(scored["as_of_gw"].unique().to_list()) == [6, 7, 8]
+    assert set(scored["element"].to_list()) == {1, 2, 4}
+    p4_after_gw8 = scored.filter(pl.col("element") == 4, pl.col("as_of_gw") == 8)
+    assert p4_after_gw8["future_mpg"].to_list() == [0.0]
+    assert p4_after_gw8["future_points"].to_list() == [0]
+
+
+def test_summarise_form_validation_scores_each_signal() -> None:
+    scored = form.backtest_form_signals(_validation_season(), window=5, horizon=2)
+
+    summary = form.summarise_form_validation(scored, top_k=1)
+
+    assert summary["n_predictions"] == scored.height
+    assert summary["n_gameweeks"] == 3
+    assert [row["signal"] for row in summary["signals"]] == list(
+        form.VALIDATION_SIGNALS
+    )
+    projected = summary["signals"][0]
+    # P1 has the highest projection in every slate and scores 10 points each.
+    assert projected["top_future_points"] == pytest.approx(10.0)
+    assert projected["top_future_xgi"] == pytest.approx(1.0)
+
+
+def _scored_slate(
+    rows: list[tuple[int, float, float | None, float, int]],
+) -> pl.DataFrame:
+    """Build one backtest slate of (element, signal, window, xGI, points)."""
+    return pl.DataFrame(
+        [
+            {
+                "as_of_gw": 6,
+                "element": element,
+                **{name: value for name in form.VALIDATION_SIGNALS},
+                # The window signals are null without window minutes.
+                "window_xgi90": window,
+                "delta_xgi90": None if window is None else 0.0,
+                "window_minutes": 0 if window is None else 450,
+                "window_mpg": 90.0,
+                "season_mpg": 90.0,
+                "future_xgi": future_xgi,
+                "future_xgi_minutes": 360.0,
+                "future_mpg": 90.0,
+                "future_points": points,
+            }
+            for element, value, window, future_xgi, points in rows
+        ]
+    )
+
+
+def test_summarise_form_validation_compares_signals_on_one_population() -> None:
+    scored = _scored_slate(
+        [
+            # Listed out of element order to check that ties break on element.
+            (2, 0.5, 0.5, 0.4, 8),
+            (1, 0.5, 0.5, 1.0, 4),
+            (3, 0.1, 0.1, 0.2, 1),
+            # The best projection has no window rate, so no signal scores it.
+            (4, 0.9, None, 0.0, 20),
+        ]
+    )
+
+    summary = form.summarise_form_validation(scored, top_k=1)
+    projected = summary["signals"][0]
+
+    # The count describes the players every signal ranked.
+    assert summary["n_predictions"] == 3
+    assert projected["top_future_points"] == 4
+    # Average ranks (2.5, 2.5, 1) against (3, 2, 1) give 1.5 / sqrt(1.5 * 2).
+    assert projected["mean_rank_correlation"] == pytest.approx(1.5 / 3**0.5)
+
+
+def test_slate_slope_weights_players_and_resamples_slates() -> None:
+    frame = pl.DataFrame(
+        {
+            "as_of_gw": [1, 1, 2, 3, 3],
+            "swing": [1.0, -1.0, 2.0, 0.0, 0.0],
+            "change": [0.6, -0.2, 0.4, 1.0, -1.0],
+            "weight": [2.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    slope, low, high = form._slate_slope(
+        frame, change=pl.col("change"), swing=pl.col("swing"), weight=pl.col("weight")
+    )
+
+    # Slate 1 gives 1.4 / 3 and slate 2 gives 0.8 / 4; slate 3 has no swing.
+    assert slope == pytest.approx(2.2 / 7)
+    assert (low, high) == (pytest.approx(0.8 / 4), pytest.approx(1.4 / 3))
+
+
+def test_slate_slope_needs_two_slates_with_a_swing_for_an_interval() -> None:
+    frame = pl.DataFrame(
+        {"as_of_gw": [1, 2, 2], "swing": [1.0, 0.0, 0.0], "change": [0.5, 1.0, 2.0]}
+    )
+    args = {"change": pl.col("change"), "weight": pl.lit(1.0)}
+
+    assert form._slate_slope(frame, swing=pl.col("swing"), **args) == (
+        pytest.approx(0.5),
+        None,
+        None,
+    )
+    assert form._slate_slope(frame, swing=pl.lit(0.0), **args) == (None, None, None)
+
+
+def test_summarise_form_validation_handles_no_predictions() -> None:
+    summary = form.summarise_form_validation(pl.DataFrame())
+
+    assert summary["n_predictions"] == 0
+    assert summary["signals"] == []
+
+
 def test_flag_defcon_breaks_hit_rate_ties_by_window_defcon_then_element() -> None:
     table = pl.DataFrame(
         {

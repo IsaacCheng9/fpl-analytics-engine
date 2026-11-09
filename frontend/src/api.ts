@@ -103,6 +103,26 @@ export interface ClubForm {
 	as_of_gw: number;
 }
 
+export interface FormSignalValidation {
+	signal: string;
+	mean_rank_correlation: number | null;
+	top_future_xgi: number | null;
+	top_future_points: number | null;
+}
+
+export interface FormValidation {
+	window: number;
+	horizon: number;
+	top_k: number;
+	n_predictions: number;
+	n_gameweeks: number;
+	swing_persistence: number | null;
+	swing_persistence_low: number | null;
+	swing_persistence_high: number | null;
+	minutes_persistence: number | null;
+	signals: FormSignalValidation[];
+}
+
 export interface ClubFormValidation {
 	target: string;
 	n_predictions: number;

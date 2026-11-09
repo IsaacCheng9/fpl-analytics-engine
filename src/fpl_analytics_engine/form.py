@@ -2,10 +2,12 @@
 
 All form metrics are strictly point-in-time: as of a given gameweek, only data
 from that gameweek and earlier is used, for both the recent window and the
-season-to-date baseline. This is what lets :func:`backtest_flags` replay each
-gameweek without leaking future information.
+season-to-date baseline. This is what lets :func:`backtest_flags` and
+:func:`backtest_form_signals` replay each gameweek without leaking future
+information.
 """
 
+import random
 from typing import cast
 
 import polars as pl
@@ -26,6 +28,20 @@ PRIOR_MIN_MINUTES = 900
 # blend with the season rate minimised minutes forecast error in backtests.
 PROJECTED_MINUTES_WINDOW_WEIGHT = 0.5
 PRIOR_METRICS = ("xg", "xa", "xgi")
+DEFAULT_VALIDATION_HORIZON = 4
+VALIDATION_MIN_SEASON_MINUTES = 450
+VALIDATION_MIN_WINDOW_MINUTES = 270
+VALIDATION_MIN_FUTURE_MINUTES = 180
+VALIDATION_TOP_K = 20
+VALIDATION_BOOTSTRAP_REPS = 1000
+# Ranking signals scored by the validation backtest, in display order.
+VALIDATION_SIGNALS = (
+    "projected_xgi",
+    "est_xgi90",
+    "season_xgi90",
+    "window_xgi90",
+    "delta_xgi90",
+)
 EXPECTED_STATS = {
     "xg": "expected_goals",
     "xa": "expected_assists",
@@ -496,3 +512,204 @@ def evaluate_flags(history: pl.DataFrame, flags: pl.DataFrame) -> pl.DataFrame:
         )
         .drop("_next_gw", "_has_outcome")
     )
+
+
+def backtest_form_signals(
+    history: pl.DataFrame,
+    prior: pl.DataFrame | None = None,
+    window: int = DEFAULT_WINDOW,
+    horizon: int = DEFAULT_VALIDATION_HORIZON,
+) -> pl.DataFrame:
+    """Replay the form table point-in-time and attach each player's next games.
+
+    Each as-of gameweek after the first ``window`` with a complete ``horizon``
+    of later results is scored. Until then the window covers the whole season,
+    so the window rate repeats the season rate and every delta is zero.
+    Outfield players with ``VALIDATION_MIN_SEASON_MINUTES`` season minutes are
+    kept; future outcomes are the only use of later data. Players without a
+    row in a later completed gameweek count as playing zero minutes.
+
+    Args:
+        history: Complete, finalised single-season history.
+        prior: Output of :func:`prior_season_rates` for the previous season.
+        window: Form-window size passed to :func:`compute_form_table`.
+        horizon: Number of later gameweeks to score.
+
+    Returns:
+        One row per player per scored as-of gameweek with the ranking signals,
+        minutes per gameweek and next-``horizon`` xGI, minutes and points.
+    """
+    if history.is_empty():
+        return pl.DataFrame()
+    max_round = cast(int, history["round"].max())
+    covered = _covered(history) & pl.col("expected_goal_involvements").is_not_null()
+    frames = []
+    for as_of_gw in range(window + 1, max_round - horizon + 1):
+        future = (
+            history.filter(pl.col("round").is_between(as_of_gw + 1, as_of_gw + horizon))
+            .group_by("element")
+            .agg(
+                pl.col("expected_goal_involvements")
+                .filter(covered)
+                .sum()
+                .alias("future_xgi"),
+                pl.col("minutes").filter(covered).sum().alias("future_xgi_minutes"),
+                pl.col("minutes").sum().alias("future_minutes"),
+                pl.col("total_points").sum().alias("future_points"),
+            )
+        )
+        table = compute_form_table(history, as_of_gw, window, prior).filter(
+            pl.col("position") != "GK",
+            pl.col("season_minutes") >= VALIDATION_MIN_SEASON_MINUTES,
+            pl.col("season_xgi90").is_not_null(),
+        )
+        frames.append(
+            table.join(future, on="element", how="left")
+            .with_columns(
+                pl.col("future_xgi", "future_xgi_minutes", "future_minutes")
+                .fill_null(0)
+                .cast(pl.Float64),
+                pl.col("future_points").fill_null(0),
+            )
+            .select(
+                "as_of_gw",
+                "element",
+                *VALIDATION_SIGNALS,
+                "window_minutes",
+                "window_mpg",
+                "season_mpg",
+                "future_xgi",
+                "future_xgi_minutes",
+                (pl.col("future_minutes") / horizon).alias("future_mpg"),
+                "future_points",
+            )
+        )
+    return pl.concat(frames, how="vertical") if frames else pl.DataFrame()
+
+
+def _slate_slope(
+    scored: pl.DataFrame, change: pl.Expr, swing: pl.Expr, weight: pl.Expr
+) -> tuple[float | None, float | None, float | None]:
+    """Estimate how much of a recent swing persists, with a bootstrap CI.
+
+    The slope is the weighted no-intercept regression of the realised change
+    (future minus baseline) on the recent swing (window minus baseline): 1
+    means the swing fully persists, 0 means players revert to their baseline.
+    Whole as-of gameweeks are resampled, because players in the same slate
+    share fixtures and are not independent.
+    """
+    sums = (
+        scored.group_by("as_of_gw")
+        .agg(
+            (weight * swing * change).sum().alias("num"),
+            (weight * swing**2).sum().alias("den"),
+        )
+        .sort("as_of_gw")
+    )
+    # A slate without any swing carries no information about persistence, and
+    # counting it would let a single real slate pass for a bootstrap interval.
+    pairs = [
+        (num, den)
+        for num, den in zip(sums["num"].to_list(), sums["den"].to_list(), strict=True)
+        if den > 0
+    ]
+    if not pairs:
+        return None, None, None
+    slope = sum(num for num, _ in pairs) / sum(den for _, den in pairs)
+    if len(pairs) < 2:
+        return slope, None, None
+    rng = random.Random(0)
+    samples = []
+    for _ in range(VALIDATION_BOOTSTRAP_REPS):
+        draw = [rng.choice(pairs) for _ in pairs]
+        samples.append(sum(pair[0] for pair in draw) / sum(pair[1] for pair in draw))
+    samples.sort()
+    low = samples[int(0.025 * len(samples))]
+    high = samples[int(0.975 * len(samples)) - 1]
+    return slope, low, high
+
+
+def summarise_form_validation(
+    scored: pl.DataFrame, top_k: int = VALIDATION_TOP_K
+) -> dict:
+    """Score each ranking signal and the persistence of recent swings.
+
+    Args:
+        scored: Output of :func:`backtest_form_signals`.
+        top_k: Players picked per as-of gameweek by each signal.
+
+    Returns:
+        A summary with the number of predictions and gameweeks, the share of
+        the recent xGI90 swing and of the recent minutes swing that persists,
+        and, per signal, the mean per-gameweek Spearman correlation with
+        next-horizon xGI plus the next-horizon xGI and points of its top
+        ``top_k`` picks. Every signal is scored on the same players: those
+        with a value for all of them, which the prediction and gameweek counts
+        describe. Minutes persistence keeps every scored player, because
+        dropping out of the side is itself a minutes swing.
+    """
+    empty = {
+        "n_predictions": 0,
+        "n_gameweeks": 0,
+        "swing_persistence": None,
+        "swing_persistence_low": None,
+        "swing_persistence_high": None,
+        "minutes_persistence": None,
+        "signals": [],
+    }
+    if scored.is_empty():
+        return empty
+
+    # Per-90 persistence needs enough minutes on both sides to be a rate.
+    rates = scored.filter(
+        pl.col("window_minutes") >= VALIDATION_MIN_WINDOW_MINUTES,
+        pl.col("future_xgi_minutes") >= VALIDATION_MIN_FUTURE_MINUTES,
+        pl.col("delta_xgi90").is_not_null(),
+    )
+    swing, low, high = _slate_slope(
+        rates,
+        change=pl.col("future_xgi") / pl.col("future_xgi_minutes") * 90
+        - pl.col("season_xgi90"),
+        swing=pl.col("delta_xgi90"),
+        weight=pl.col("future_xgi_minutes"),
+    )
+    minutes, _, _ = _slate_slope(
+        scored,
+        change=pl.col("future_mpg") - pl.col("season_mpg"),
+        swing=pl.col("window_mpg") - pl.col("season_mpg"),
+        weight=pl.lit(1.0),
+    )
+
+    # Window and delta are null without window minutes; dropping those players
+    # from every signal keeps the comparison on one population.
+    ranked = scored.drop_nulls(list(VALIDATION_SIGNALS))
+    signals = []
+    for signal in VALIDATION_SIGNALS:
+        correlations = (
+            ranked.group_by("as_of_gw")
+            .agg(pl.corr(signal, "future_xgi", method="spearman").alias("rho"))
+            .filter(pl.col("rho").is_not_nan())
+        )
+        # Break ties on element so the picks do not depend on row order.
+        top = (
+            ranked.sort(signal, "element", descending=[True, False])
+            .group_by("as_of_gw", maintain_order=True)
+            .head(top_k)
+        )
+        signals.append(
+            {
+                "signal": signal,
+                "mean_rank_correlation": correlations["rho"].mean(),
+                "top_future_xgi": top["future_xgi"].mean(),
+                "top_future_points": top["future_points"].mean(),
+            }
+        )
+    return {
+        "n_predictions": ranked.height,
+        "n_gameweeks": ranked["as_of_gw"].n_unique(),
+        "swing_persistence": swing,
+        "swing_persistence_low": low,
+        "swing_persistence_high": high,
+        "minutes_persistence": minutes,
+        "signals": signals,
+    }
