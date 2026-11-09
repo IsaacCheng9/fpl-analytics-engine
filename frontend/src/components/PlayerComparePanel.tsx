@@ -532,13 +532,13 @@ function buildCompareRows(
 	add("Season To Date", "Season Range", seasonRangeText, seasonRangeText);
 	addSummary("Season To Date", "Season", leftSeason, rightSeason);
 
+	// Deltas are descriptive, so neither side is highlighted as the winner.
 	for (const metric of DELTA_COMPARE_METRICS) {
-		addNumber(
+		add(
 			"Recent Vs Season",
 			`Delta ${metric.label} Per 90`,
-			left.form?.[metric.delta],
-			right.form?.[metric.delta],
-			{ format: fmtDelta },
+			fmtDelta(left.form?.[metric.delta]),
+			fmtDelta(right.form?.[metric.delta]),
 		);
 	}
 	addNumber(

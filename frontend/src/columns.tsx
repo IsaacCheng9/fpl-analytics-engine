@@ -52,9 +52,6 @@ export const FORM_HEAT_KEYS = [
 	"season_xg90",
 	"season_xa90",
 	"season_xgi90",
-	"delta_xg90",
-	"delta_xa90",
-	"delta_xgi90",
 	"window_xg90_per_million",
 	"window_xa90_per_million",
 	"window_xgi90_per_million",
@@ -196,7 +193,7 @@ function buildFormMetricColumns(
 		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
 		const key = ATTACKING_METRIC_KEYS[metric][group];
 		const formatter: HeatCellOptions =
-			group === "delta" ? { format: fmtDelta, scale: "diverging" } : {};
+			group === "delta" ? { format: fmtDelta } : {};
 		const tooltip =
 			group === "est"
 				? `Estimated underlying ${noun} per 90: season to date, pulled towards last season's rate (worth 900 minutes) for players with 900+ minutes last season`
@@ -205,7 +202,7 @@ function buildFormMetricColumns(
 					: group === "season"
 						? `Expected ${noun} per 90 minutes, season to date`
 						: group === "delta"
-							? `Window ${label} per 90 minus season ${label} per 90; positive means recent form beats the season baseline`
+							? `Window ${label} per 90 minus season ${label} per 90. Descriptive only: backtests found recent swings revert to the season rate`
 							: `Window ${label} per 90 divided by price`;
 		const header =
 			group === "value"
@@ -220,14 +217,19 @@ function buildFormMetricColumns(
 			sortUndefined: "last",
 			header,
 			cell: heatCell<FormPlayer>(formatter),
-			meta: heatMeta<FormPlayer>(
-				{
-					tooltip,
-					headerClassName: styles.header,
-				},
-				ranges[key],
-				formatter,
-			),
+			// The delta is descriptive, so it is left unshaded rather than
+			// coloured as favourable or unfavourable.
+			meta:
+				group === "delta"
+					? { tooltip, headerClassName: styles.header, numeric: true }
+					: heatMeta<FormPlayer>(
+							{
+								tooltip,
+								headerClassName: styles.header,
+							},
+							ranges[key],
+							formatter,
+						),
 		} satisfies ColumnDef<FormPlayer>;
 	});
 }

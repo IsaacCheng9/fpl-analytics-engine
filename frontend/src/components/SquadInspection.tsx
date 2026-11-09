@@ -94,7 +94,6 @@ function squadFlags(row: SquadInspectionRow): SquadFlag[] {
 	const minsPerApp = form?.window_mins_per_appearance;
 	const windowXgi = form?.window_xgi90;
 	const seasonXgi = form?.season_xgi90;
-	const deltaXgi = form?.delta_xgi90;
 	const nextFdr = current?.next_fdr;
 	const avgFdr = current?.avg_fdr;
 	const flags: SquadFlag[] = [];
@@ -131,10 +130,6 @@ function squadFlags(row: SquadInspectionRow): SquadFlag[] {
 		(typeof windowXgi !== "number" || typeof seasonXgi !== "number")
 	) {
 		flags.push({ label: "No Form Data", tone: "neutral" });
-	}
-
-	if (typeof deltaXgi === "number" && deltaXgi >= 0.15) {
-		flags.push({ label: "Rising Threat", tone: "good" });
 	}
 
 	if (typeof defcon?.prob === "number" && defcon.prob >= 0.45) {

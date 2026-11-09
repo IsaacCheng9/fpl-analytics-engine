@@ -1673,6 +1673,9 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	const projectedRow = expectCompareRow("Projected xGI", "0.57", "0.53");
 	expect(projectedRow.cells[0]).toHaveClass("bg-emerald-50");
 	expectCompareRow("Projected Mins", "85", "76");
+	const deltaRow = expectCompareRow("Delta xGI Per 90", "+0.41", "+0.18");
+	expect(deltaRow.cells[0]).not.toHaveClass("bg-emerald-50");
+	expect(deltaRow.cells[1]).not.toHaveClass("bg-emerald-50");
 	const attackFormRow = expectCompareRow("Attack Form", "+0.30", "+0.40");
 	expect(attackFormRow.cells[0]).not.toHaveClass("bg-emerald-50");
 	expect(attackFormRow.cells[1]).toHaveClass("bg-emerald-50");
@@ -1886,6 +1889,9 @@ test("toggles attacking form metric columns", async () => {
 	expect(cellUnder("Projected Mins")).toHaveTextContent(/^85$/);
 	expect(cellUnder("Est. xGI Per 90")).toHaveTextContent(/^0\.60$/);
 	expect(cellUnder("Projected xGI").style.backgroundColor).not.toBe("");
+	// The delta is descriptive, so it carries no favourable shading.
+	expect(cellUnder("Delta xGI Per 90")).toHaveTextContent(/^\+0\.41$/);
+	expect(cellUnder("Delta xGI Per 90").style.backgroundColor).toBe("");
 	const metricLabels = screen
 		.getAllByRole("checkbox")
 		.map((checkbox) => checkbox.parentElement?.textContent ?? "")
