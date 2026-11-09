@@ -6,11 +6,11 @@
 
 **Live dashboard:** [fpl-analytics-engine.vercel.app](https://fpl-analytics-engine.vercel.app)
 
-A Fantasy Premier League analytics engine that surfaces players whose recent
-underlying output has pulled away from their season baseline, and estimates how
-likely each player is to earn a defensive-contribution point. Every metric is
-strictly point-in-time – as of any gameweek, only data from that gameweek and
-earlier is used – so the engine is fully back-testable with no look-ahead.
+A Fantasy Premier League analytics engine that ranks players by projected
+expected goal involvement per gameweek, and estimates how likely each player is
+to earn a defensive-contribution point. Every metric is strictly point-in-time –
+as of any gameweek, only data from that gameweek and earlier is used – so the
+engine is fully back-testable with no look-ahead.
 
 The differentiator over public form tables is the combination of a configurable
 recent-form window, expected-stats (xG/xA/xGI) rather than raw points, transfer
@@ -22,22 +22,23 @@ where the current squad looks weak for the next gameweek.
 
 ## Key Features
 
-- **Point-in-time form engine** – ranks players by the swing between their
-  recent N-gameweek per-90 expected output (xG/xA/xGI) and their season-to-date
-  baseline, so a player heating up shows a positive `delta_xgi90` before the raw
-  points catch up
+- **Point-in-time form engine** – ranks players by projected xGI per gameweek:
+  an estimated underlying xGI per 90, pulled towards last season's rate, times
+  expected minutes. Recent N-gameweek per-90 expected output (xG/xA/xGI) and its
+  swing against the season-to-date baseline stay visible as descriptive context,
+  because backtests found the swing does not persist
 - **DefCon hit-probability model** – a calibrated contribution-count model that
   estimates `P(Hit | 60+ Mins)`, uses the size of each
   defensive-contribution performance, then recalibrates those probabilities
   against prior point-in-time prediction buckets
 - **Backtesting harness** – replays each gameweek on the point-in-time view,
-  flags players, then scores the flags against the following gameweeks, with
-  Brier score and a calibration table for the probability model
-- **Model evidence view** – surfaces the DefCon probability backtest and the
-  corrected club-form validation inside the dashboard, including negative
-  results where recent form did not beat a season-to-date baseline; it shows
-  the last complete season until the live season reaches GW19, with a season
-  selector for any season from 2025-26
+  then scores the form ranking signals, DefCon probabilities and club form
+  against the following gameweeks
+- **Research view** – surfaces the player form-signal backtest, the DefCon
+  probability backtest and the corrected club-form validation inside the
+  dashboard, including negative results where recent form did not beat a
+  season-to-date baseline; it shows the last complete season until the live
+  season reaches GW19, with a season selector for any season from 2025-26
 - **Season archival** – snapshots preseason players and fixtures as soon as the
   FPL game rolls over, then adds current-season per-gameweek detail after GW1
 - **Historical backfill** – adapts the vaastav community archive (2022-23
@@ -47,12 +48,12 @@ where the current squad looks weak for the next gameweek.
   cross-season enriched snapshots, validates the Parquet data, and runs the
   real-data smoke check before refreshed snapshots are pushed
 - **REST API** – a FastAPI gateway exposing the form, DefCon,
-  DefCon-probability, FPL team import, model-evidence, club-form, and
+  DefCon-probability, FPL team import, backtest validation, club-form, and
   player-detail views
 - **Interactive web dashboard** – a React single-page app with sortable,
   filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
-  Form, and Model Evidence views, URL-backed controls, active filter chips,
-  presets, colour-coded signal columns, sticky player context columns, and a
+  Form, and Research views, URL-backed controls, active filter chips, presets,
+  colour-coded signal columns, sticky player context columns, and a
   collapsible form-versus-baseline scatter plot in Attacking Form
 - **Table pagination** – shows 25 rows per page in the player and club tables,
   with 10, 25, 50, 100, or all rows available. Sorting and filtering apply to the
@@ -97,9 +98,9 @@ where the current squad looks weak for the next gameweek.
 </details>
 
 <details>
-<summary>Model Evidence</summary>
+<summary>Research</summary>
 
-<img width="3840" height="2350" alt="Model Evidence view" src="https://github.com/user-attachments/assets/c4fcdc06-2f13-4bc3-be2c-ded89f534432" />
+<img width="3840" height="2350" alt="Research view" src="https://github.com/user-attachments/assets/c4fcdc06-2f13-4bc3-be2c-ded89f534432" />
 
 </details>
 
@@ -114,20 +115,35 @@ where the current squad looks weak for the next gameweek.
 
 ### Form
 
-For a chosen as-of gameweek, each player gets two per-90 expected-output figures
-– one over the last `window` gameweeks, one over the season to date – computed
-from minutes-weighted xG, xA, and xGI. The headline signal is
-`delta_xgi90 = window_xgi90 - season_xgi90`: how far a player's recent
-underlying involvement has risen above their own baseline. Both figures use only
-games up to and including the as-of gameweek, so the table is exactly what was
-knowable at that point in the season. The dashboard exposes xGI, xG, and xA as
-separate metric groups, with window, season, delta, and per-price views for each
-enabled metric.
+For a chosen as-of gameweek, each player gets per-90 expected-output figures
+over the last `window` gameweeks and over the season to date, computed from
+minutes-weighted xG, xA, and xGI. All figures use only games up to and including
+the as-of gameweek, so the table is exactly what was knowable at that point in
+the season.
 
-Flag evaluation uses complete, finalised single-season history. A player with no
-fixture in an observed completed gameweek receives zero next-gameweek points;
-unavailable gameweeks and incomplete recorded points remain unknown. Double
-gameweek points are summed across both fixtures.
+The table ranks players by `projected_xgi`, their expected xGI per gameweek:
+
+- `est_xgi90` – the season-to-date rate pulled towards last season's rate, which
+  counts as 900 extra minutes for players with 900+ expected-stat minutes last
+  season
+	- Last season dominates early on and fades as this season's minutes
+	  accumulate; players without enough minutes last season keep their
+	  season-to-date rate
+- `projected_minutes` – an even blend of recent-window and season-to-date
+  minutes per gameweek, because recent playing-time changes partly persist
+	- Both count only gameweeks since the player joined the game, so a
+	  mid-season signing is not diluted by gameweeks before their arrival
+- `projected_xgi = est_xgi90 * projected_minutes / 90`
+
+The recent swing, `delta_xgi90 = window_xgi90 - season_xgi90`, is still shown
+but is descriptive only (see the backtest results below). The dashboard exposes
+xGI, xG, and xA as separate metric groups, with estimated, window, season,
+delta, and per-price views for each enabled metric.
+
+Form backtests use complete, finalised single-season history and score only
+as-of gameweeks whose later gameweeks have all been played. A player with no
+fixture in a completed later gameweek counts as zero minutes and points, and
+double gameweeks sum both fixtures.
 
 A five-gameweek window at GW30 covers GW26–30 across player form, comparison,
 rolling player detail, and club form. Double gameweeks include every fixture;
@@ -145,6 +161,39 @@ Expected-stat rates use only minutes with an available observation for that
 statistic. For 2022-23, this excludes GW1–15 from expected-stat totals and
 denominators without removing those games from minutes or points totals. Rates
 with no observed minutes remain unavailable rather than appearing as zero.
+
+#### Form Signal Backtest Results
+
+`GET /players/form-validation` replays every as-of gameweek from GW6 to GW34 –
+GW5 is skipped because a five-gameweek window would equal the season – and
+ranks the same outfield players by each signal: those with 450+ season minutes
+and some minutes in the window. Each ranking is scored on the players' xGI over
+the next four gameweeks, and top-20 points are the mean per pick. Persistence is
+the share of a recent swing above or below the season rate that carried into
+those gameweeks: 100% means it fully persisted, 0% means players reverted. The
+xGI swing counts only players with 270+ window minutes and 180+ later minutes,
+so both sides are real rates. The Research view shows 2025-26 onwards, while the
+endpoint also accepts 2023-24 and 2024-25.
+
+| Season | xGI90 Swing Persists (95% Interval) | Minutes Swing Persists | Rank Correlation – Projected / Season / Delta | Top 20 Next-4 Points – Projected / Season / Delta |
+| --- | --- | --- | --- | --- |
+| 2023-24 | 0.0% (-6.2% to +5.1%) | 46.2% | 0.565 / 0.505 / 0.026 | 16.7 / 15.2 / 9.8 |
+| 2024-25 | -1.1% (-7.9% to +5.4%) | 49.1% | 0.619 / 0.556 / 0.030 | 17.3 / 15.5 / 11.5 |
+| 2025-26 | +2.8% (-3.0% to +8.7%) | 40.5% | 0.565 / 0.489 / 0.032 | 14.8 / 13.0 / 10.6 |
+
+Recent xGI per 90 swings do not persist, while roughly half of a recent minutes
+change does, so the window earns its place through playing time rather than
+rate. Ranking by the delta picks players who score far fewer points than ranking
+by season rate. Most of the projection's lead comes from minutes: building it on
+the season rate instead of the estimated rate lowers its rank correlation by
+only 0.006–0.013, or 0.015–0.035 over GW6–12, when last season weighs most. The
+estimated rate's own top-20 picks score slightly fewer points than the season
+rate's, so its value is in ordering the whole field rather than in picking the
+very top. An exploratory run over 2022-23 to 2025-26 with windows of three to
+eight gameweeks showed the same pattern; it also found the estimated rate
+predicts players' future xGI per 90 better than the season rate in every season
+with a previous season to draw on, and that pulling players without one towards
+a positional average made rankings worse.
 
 ### Transfer Workflow
 
@@ -169,7 +218,7 @@ and shortlisted players. The squad inspection view is diagnostic rather than a
 solver: it shows the current squad as one list, with the current next fixture
 and FDR, recent and season threat, minutes, start rate, `P(Hit | 60+ Mins)`,
 ownership, and simple flags such as `Minutes Risk`, `Fixture Risk`,
-`Low Threat`, `Rising Threat`, `DefCon Upside`, and `Good Hold`.
+`Low Threat`, `DefCon Upside`, and `Good Hold`.
 
 ### Table Colours
 
@@ -181,7 +230,9 @@ better, such as xGI per 90 or `P(Hit | 60+ Mins)`, use a single green that
 strengthens with the value. These scales use the league-wide results, so a
 player's colour does not change as filters narrow the table. FDR uses its fixed
 1–5 rating with 3 as neutral, while context columns – price, ownership, playing
-time, games, and hit counts – stay unshaded.
+time, games, and hit counts – stay unshaded. Player xG, xA, and xGI deltas also
+stay unshaded, because backtests found the swing is descriptive rather than
+favourable.
 
 ### Defensive Contribution (DefCon)
 
@@ -511,7 +562,8 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 | `GET /` | Live season, analytical readiness, next deadline, and latest completed gameweek | – |
 | `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
 | `GET /players/current-context` | Current snapshot player metadata and scheduled, unstarted fixture context | – |
-| `GET /players/form` | Players ranked by recent-versus-season xGI90 swing | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/form` | Players ranked by projected xGI per gameweek, with recent-versus-season form | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/form-validation` | Backtest the form ranking signals against the next gameweeks | `window`, `horizon`, `season` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes`, `season` |
@@ -537,10 +589,13 @@ table's as-of cutoff.
 Before GW1, current-season analytical and team-import endpoints return HTTP 409
 rather than silently serving the previous season. Explicit historical player
 detail requests remain available when the live player snapshot supplies a
-matching stable `code`. The two validation endpoints accept an archived
-`season` (2025-26 or later, since earlier archives lack DefCon and per-fixture
-club data) and otherwise backtest the live season. In the deployed app, prefix these routes
-with `/api` (for example, `/api/players/form`).
+matching stable `code`. The validation endpoints accept an archived `season`
+and otherwise backtest the live season. The DefCon and club backtests need
+2025-26 or later, since earlier archives lack DefCon and per-fixture club data;
+the form backtest only needs expected stats and the previous season, so it
+accepts 2023-24 or later. `/players/form` filters on the recent swing only when
+`min_delta` is set. In the deployed app, prefix these routes with `/api` (for
+example, `/api/players/form`).
 
 ### Current Squad Context
 `/players/current-context` supplies squad inspection with current snapshot club,
