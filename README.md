@@ -193,11 +193,11 @@ very top.
 
 Within minutes, most of the gain comes from accounting for playing time at all.
 Blending in the recent window then adds 0.014–0.018 rank correlation over the
-same projection on season minutes alone (`projected_xgi_season_minutes`), though
-its top-20 picks scored fewer points than that projection's in 2023-24. The even
-blend is also the most accurate of the three minutes forecasts the backtest
-scores, measured as the mean absolute error against every scored player's
-minutes per gameweek over the next four gameweeks:
+same projection on season minutes alone – 'Projected xGI (Season Minutes Only)'
+in the Research view – though its top-20 picks scored fewer points than that
+projection's in 2023-24. The even blend is also the most accurate of the three
+minutes forecasts the backtest scores, measured as the mean absolute error
+against every scored player's minutes per gameweek over the next four gameweeks:
 
 | Season | Season Minutes | Even Blend (Projected Mins) | Window Minutes |
 | --- | --- | --- | --- |
