@@ -262,7 +262,7 @@ interface BaseParams {
 }
 
 export interface FormParams extends BaseParams {
-	minDelta: number;
+	minDelta?: number;
 }
 
 export interface DefconParams extends BaseParams {
@@ -320,7 +320,9 @@ export function fetchMeta(): Promise<Meta> {
 
 export function fetchForm(params: FormParams): Promise<FormPlayer[]> {
 	const search = baseSearchParams(params);
-	search.set("min_delta", String(params.minDelta));
+	if (params.minDelta !== undefined) {
+		search.set("min_delta", String(params.minDelta));
+	}
 	return getJson<FormPlayer[]>(`/players/form?${search.toString()}`);
 }
 

@@ -498,6 +498,25 @@ function buildCompareRows(
 		format: (value) => fmtNum(value, 1),
 		lowerIsBetter: true,
 	});
+	addNumber(
+		"Projection",
+		"Projected xGI",
+		left.form?.projected_xgi,
+		right.form?.projected_xgi,
+	);
+	addNumber(
+		"Projection",
+		"Projected Mins",
+		left.form?.projected_minutes,
+		right.form?.projected_minutes,
+		{ format: (value) => fmtNum(value, 0) },
+	);
+	addNumber(
+		"Projection",
+		"Est. xGI Per 90",
+		left.form?.est_xgi90,
+		right.form?.est_xgi90,
+	);
 	const windowRangeText = rangeLabel(windowRange);
 	add("Selected Window", "Window Range", windowRangeText, windowRangeText);
 	addSummary("Selected Window", "Window", leftWindow, rightWindow);

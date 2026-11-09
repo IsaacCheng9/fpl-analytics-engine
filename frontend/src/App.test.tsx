@@ -40,6 +40,11 @@ const formRows = [
 		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.12,
 		season_points_per_million: 5.0,
+		est_xg90: 0.32,
+		est_xa90: 0.28,
+		est_xgi90: 0.6,
+		projected_minutes: 85,
+		projected_xgi: 0.57,
 		window_start_rate: 1.0,
 		window_mins_per_appearance: 88,
 		upcoming_fixtures: 5,
@@ -72,6 +77,11 @@ const formRows = [
 		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.08,
 		season_points_per_million: 4.2,
+		est_xg90: 0.3,
+		est_xa90: 0.33,
+		est_xgi90: 0.63,
+		projected_minutes: 76,
+		projected_xgi: 0.53,
 		window_start_rate: 0.8,
 		window_mins_per_appearance: 79,
 		upcoming_fixtures: 5,
@@ -107,6 +117,11 @@ const broadFormRows = [
 		window_xa90_per_million: 0.01,
 		window_xgi90_per_million: 0.06,
 		season_points_per_million: 4.8,
+		est_xg90: 0.78,
+		est_xa90: 0.16,
+		est_xgi90: 0.94,
+		projected_minutes: 90,
+		projected_xgi: 0.94,
 		window_start_rate: 1.0,
 		window_mins_per_appearance: 90,
 		upcoming_fixtures: 5,
@@ -650,11 +665,10 @@ function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 	let body: unknown = meta;
 	if (url.includes("/players/form")) {
 		const params = new URL(url, "http://test").searchParams;
-		const rows = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
 		body =
 			params.get("as_of_gw") === "30"
-				? withHistoricalFixtureContext(rows)
-				: rows;
+				? withHistoricalFixtureContext(broadFormRows)
+				: broadFormRows;
 	} else if (url.includes("/players/current-context")) {
 		body = currentPlayerContexts;
 	} else if (url.includes("/fpl-team/")) {
@@ -1404,11 +1418,8 @@ test("shows no-form state instead of low threat for missing historical data", as
 	vi.mocked(fetch).mockImplementation((input) => {
 		const url = String(input);
 		if (url.includes("/players/form") && url.includes("as_of_gw=30")) {
-			const params = new URL(url, "http://test").searchParams;
-			const source =
-				params.get("min_delta") === "-1000" ? broadFormRows : formRows;
 			const body = withHistoricalFixtureContext(
-				source.filter((row) => row.element !== 2),
+				broadFormRows.filter((row) => row.element !== 2),
 			);
 			return Promise.resolve(
 				new Response(JSON.stringify(body), {
@@ -1659,6 +1670,9 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	expectCompareRow("Season Points", "10", "13");
 	expectCompareRow("Season xGI", "1.20", "1.60");
 	expectCompareRow("P(Hit | 60+ Mins)", "52%", "45%");
+	const projectedRow = expectCompareRow("Projected xGI", "0.57", "0.53");
+	expect(projectedRow.cells[0]).toHaveClass("bg-emerald-50");
+	expectCompareRow("Projected Mins", "85", "76");
 	const attackFormRow = expectCompareRow("Attack Form", "+0.30", "+0.40");
 	expect(attackFormRow.cells[0]).not.toHaveClass("bg-emerald-50");
 	expect(attackFormRow.cells[1]).toHaveClass("bg-emerald-50");
@@ -1757,11 +1771,60 @@ test("initialises the player compare panel from the URL", async () => {
 		).toBe(true);
 		expect(
 			calls.some((input) =>
-				input.includes(
-					"/api/players/form?window=3&min_minutes=0&as_of_gw=20&min_delta=-1000",
-				),
+				input.endsWith("/api/players/form?window=3&min_minutes=0&as_of_gw=20"),
 			),
 		).toBe(true);
+	});
+});
+
+test("sorts players without window minutes last on a signed column", async () => {
+	const benched = {
+		...broadFormRows[2],
+		element: 4,
+		web_name: "Benched",
+		window_minutes: 0,
+		window_xg90: null,
+		window_xa90: null,
+		window_xgi90: null,
+		delta_xg90: null,
+		delta_xa90: null,
+		delta_xgi90: null,
+	};
+	vi.mocked(fetch).mockImplementation((input) =>
+		String(input).includes("/players/form?")
+			? Promise.resolve(
+					new Response(JSON.stringify([benched, ...broadFormRows]), {
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					}),
+				)
+			: mockApiFetch(input),
+	);
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Benched")).toBeInTheDocument();
+	});
+	const formCalls = vi
+		.mocked(fetch)
+		.mock.calls.map(([input]) => String(input))
+		.filter((url) => url.includes("/players/form?"));
+	// The delta filter is opt-in, so the dashboard never sends it.
+	expect(formCalls.length).toBeGreaterThan(0);
+	expect(formCalls.some((url) => url.includes("min_delta"))).toBe(false);
+
+	const playerOrder = () =>
+		screen
+			.getAllByRole("row")
+			.slice(1)
+			.map((row) => within(row).queryAllByRole("cell")[1]?.textContent);
+	const deltaHeader = screen.getByText("Delta xGI Per 90");
+	fireEvent.click(deltaHeader);
+	await waitFor(() => {
+		expect(playerOrder()).toEqual(["Mbeumo", "Saka", "Haaland", "Benched"]);
+	});
+	fireEvent.click(deltaHeader);
+	await waitFor(() => {
+		expect(playerOrder()).toEqual(["Haaland", "Saka", "Mbeumo", "Benched"]);
 	});
 });
 
@@ -1797,7 +1860,32 @@ test("toggles attacking form metric columns", async () => {
 		headers.findIndex((header) => header.includes(text));
 	expect(headerIndex("Price")).toBeLessThan(headerIndex("FDR (Next 5)"));
 	expect(headerIndex("FDR (Next 5)")).toBeLessThan(headerIndex("Owned %"));
-	expect(headerIndex("Owned %")).toBeLessThan(headerIndex("Mins"));
+	// Match the start so "Projected Mins" does not count as "Mins".
+	expect(headerIndex("Owned %")).toBeLessThan(
+		headers.findIndex((header) => header.startsWith("Mins")),
+	);
+	expect(headerIndex("Projected Mins")).toBeGreaterThan(0);
+	expect(headerIndex("Price")).toBe(headerIndex("Projected xGI") - 1);
+	expect(headerIndex("Projected xGI")).toBe(headerIndex("Projected Mins") - 1);
+	expect(headerIndex("Projected Mins")).toBeLessThan(
+		headerIndex("Est. xGI Per 90"),
+	);
+	expect(headerIndex("Est. xGI Per 90")).toBeLessThan(
+		headerIndex("Window xGI Per 90"),
+	);
+	const mbeumoCells = within(
+		screen.getByText("Mbeumo").closest("tr") as HTMLElement,
+	).getAllByRole("cell");
+	const cellUnder = (text: string) => {
+		const header = screen
+			.getAllByRole("columnheader")
+			.find((cell) => (cell.textContent ?? "").includes(text));
+		return mbeumoCells[(header as HTMLTableCellElement).cellIndex];
+	};
+	expect(cellUnder("Projected xGI")).toHaveTextContent(/^0\.57$/);
+	expect(cellUnder("Projected Mins")).toHaveTextContent(/^85$/);
+	expect(cellUnder("Est. xGI Per 90")).toHaveTextContent(/^0\.60$/);
+	expect(cellUnder("Projected xGI").style.backgroundColor).not.toBe("");
 	const metricLabels = screen
 		.getAllByRole("checkbox")
 		.map((checkbox) => checkbox.parentElement?.textContent ?? "")
