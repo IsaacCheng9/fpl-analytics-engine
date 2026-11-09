@@ -1975,9 +1975,9 @@ test("renders the research tab with backtest summaries", async () => {
 	expect(screen.getByText("+42.8%")).toBeInTheDocument();
 	expect(screen.getByText("Projected xGI (Default Sort)")).toBeInTheDocument();
 	expect(
-		screen.getByText("Projected xGI (Season Minutes Only)"),
+		screen.getByText("Projected xGI (Ignoring Recent Minutes)"),
 	).toBeInTheDocument();
-	expect(screen.getByText("Projected Mins (Even Blend)")).toBeInTheDocument();
+	expect(screen.getByText("Even Blend (Projected Mins)")).toBeInTheDocument();
 	expect(screen.getByText("14.8")).toBeInTheDocument();
 	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
 	expect(screen.getByText("Calibrated Count Brier")).toBeInTheDocument();

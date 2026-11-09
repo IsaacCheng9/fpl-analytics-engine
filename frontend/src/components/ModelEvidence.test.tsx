@@ -151,9 +151,9 @@ test("shows a single-slate persistence estimate without an interval", () => {
 	const forecastRow = (label: string) =>
 		within(screen.getByText(label).closest("tr") as HTMLElement);
 	expect(
-		forecastRow("Season Minutes Per GW").getByText("22.8"),
+		forecastRow("Season Average Only").getByText("22.8"),
 	).toBeInTheDocument();
 	expect(
-		forecastRow("Projected Mins (Even Blend)").getByText("21.5"),
+		forecastRow("Even Blend (Projected Mins)").getByText("21.5"),
 	).toBeInTheDocument();
 });

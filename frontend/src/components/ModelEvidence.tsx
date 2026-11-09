@@ -64,17 +64,25 @@ function targetLabel(target: string): string {
 
 const FORM_SIGNAL_LABELS: Record<string, string> = {
 	projected_xgi: "Projected xGI (Default Sort)",
-	projected_xgi_season_minutes: "Projected xGI (Season Minutes Only)",
+	projected_xgi_season_minutes: "Projected xGI (Ignoring Recent Minutes)",
 	est_xgi90: "Est. xGI Per 90",
 	season_xgi90: "Season xGI Per 90",
 	window_xgi90: "Window xGI Per 90",
 	delta_xgi90: "Delta xGI Per 90",
 };
 
+// Explain the two projections, which differ only in how minutes are expected.
+const FORM_SIGNAL_TOOLTIPS: Record<string, string> = {
+	projected_xgi:
+		"Estimated xGI per 90 times projected minutes, which blend recent-window and season-average minutes per gameweek evenly",
+	projected_xgi_season_minutes:
+		"The same projection with expected minutes taken from the season average alone, ignoring recent playing time. The gap to the default sort shows what recent minutes add",
+};
+
 const MINUTES_FORECAST_LABELS: Record<string, string> = {
-	season_mpg: "Season Minutes Per GW",
-	projected_minutes: "Projected Mins (Even Blend)",
-	window_mpg: "Window Minutes Per GW",
+	season_mpg: "Season Average Only",
+	projected_minutes: "Even Blend (Projected Mins)",
+	window_mpg: "Recent Window Only",
 };
 
 function MetricCard({
@@ -156,9 +164,9 @@ function FormSignalSection({
 					the season rate that carried into those gameweeks: 100% means it fully
 					persisted, 0% means players reverted. The xGI swing counts only
 					players with 270+ window minutes and 180+ later minutes, so both sides
-					are real rates. The minutes forecasts check the even blend behind
-					Projected Mins against season-only and window-only minutes per
-					gameweek.
+					are real rates. The minutes forecasts compare three ways to expect a
+					player's minutes per gameweek: the season average, the recent window,
+					and the even blend of both that Projected Mins uses.
 				</p>
 			</div>
 			<div className="grid gap-3 sm:grid-cols-3">
@@ -215,7 +223,12 @@ function FormSignalSection({
 						{signals.map((row) => (
 							<tr key={row.signal} className="border-zinc-100 border-t">
 								<th className="px-3 py-2 text-left font-medium text-zinc-700">
-									{FORM_SIGNAL_LABELS[row.signal] ?? row.signal}
+									<span className="flex items-center gap-1">
+										{FORM_SIGNAL_LABELS[row.signal] ?? row.signal}
+										{FORM_SIGNAL_TOOLTIPS[row.signal] ? (
+											<InfoTooltip text={FORM_SIGNAL_TOOLTIPS[row.signal]} />
+										) : null}
+									</span>
 								</th>
 								<td className="px-3 py-2">
 									{fmtNum(row.mean_rank_correlation, 3)}
