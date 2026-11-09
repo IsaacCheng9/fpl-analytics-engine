@@ -10,6 +10,7 @@ import {
 	fetchDefconProbability,
 	fetchDefconProbabilityValidation,
 	fetchForm,
+	fetchFormValidation,
 	fetchFplTeam,
 	fetchMeta,
 	type Position,
@@ -452,6 +453,12 @@ export default function App() {
 	const defconValidationQuery = useQuery({
 		queryKey: ["defconValidation", evidenceSeason],
 		queryFn: () => fetchDefconProbabilityValidation({ season: evidenceSeason }),
+		enabled: analyticsReady && tab === "evidence",
+		placeholderData: keepPreviousData,
+	});
+	const formValidationQuery = useQuery({
+		queryKey: ["formValidation", evidenceSeason],
+		queryFn: () => fetchFormValidation({ season: evidenceSeason }),
 		enabled: analyticsReady && tab === "evidence",
 		placeholderData: keepPreviousData,
 	});
@@ -1559,14 +1566,19 @@ export default function App() {
 				) : null}
 
 				{tab === "evidence" ? (
-					defconValidationQuery.isPending || clubValidationQuery.isPending ? (
+					defconValidationQuery.isPending ||
+					clubValidationQuery.isPending ||
+					formValidationQuery.isPending ? (
 						<p className="text-sm text-zinc-500">Loading...</p>
-					) : defconValidationQuery.isError || clubValidationQuery.isError ? (
+					) : defconValidationQuery.isError ||
+						clubValidationQuery.isError ||
+						formValidationQuery.isError ? (
 						<p className="text-red-600 text-sm">
 							Failed to load - is the API running on port 8000?
 						</p>
 					) : (
 						<ModelEvidence
+							formValidation={formValidationQuery.data}
 							defconValidation={defconValidationQuery.data}
 							clubValidation={clubValidationQuery.data ?? []}
 							season={evidenceSeason}
@@ -1574,7 +1586,8 @@ export default function App() {
 							liveSeason={liveSeason}
 							isLoadingSeason={
 								defconValidationQuery.isPlaceholderData ||
-								clubValidationQuery.isPlaceholderData
+								clubValidationQuery.isPlaceholderData ||
+								formValidationQuery.isPlaceholderData
 							}
 							onSeasonChange={setEvidenceSeasonChoice}
 						/>

@@ -280,6 +280,12 @@ export interface ClubFormParams {
 	asOfGw: number | null;
 }
 
+export interface FormValidationParams {
+	window?: number;
+	horizon?: number;
+	season?: string;
+}
+
 export interface ClubFormValidationParams {
 	window?: number;
 	horizon?: number;
@@ -359,6 +365,25 @@ export function fetchClubForm(params: ClubFormParams): Promise<ClubForm[]> {
 		search.set("as_of_gw", String(params.asOfGw));
 	}
 	return getJson<ClubForm[]>(`/clubs/form?${search.toString()}`);
+}
+
+export function fetchFormValidation(
+	params: FormValidationParams = {},
+): Promise<FormValidation> {
+	const search = new URLSearchParams();
+	if (params.window !== undefined) {
+		search.set("window", String(params.window));
+	}
+	if (params.horizon !== undefined) {
+		search.set("horizon", String(params.horizon));
+	}
+	if (params.season !== undefined) {
+		search.set("season", params.season);
+	}
+	const query = search.toString();
+	return getJson<FormValidation>(
+		`/players/form-validation${query ? `?${query}` : ""}`,
+	);
 }
 
 export function fetchClubFormValidation(

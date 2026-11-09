@@ -404,6 +404,32 @@ const defconValidation = {
 		},
 	],
 };
+const formValidation = {
+	window: 5,
+	horizon: 4,
+	top_k: 20,
+	n_predictions: 8028,
+	n_gameweeks: 30,
+	swing_persistence: 0.028,
+	swing_persistence_low: -0.034,
+	swing_persistence_high: 0.083,
+	minutes_persistence: 0.428,
+	signals: [
+		{
+			signal: "projected_xgi",
+			mean_rank_correlation: 0.566,
+			top_future_xgi: 1.71,
+			top_future_points: 14.75,
+		},
+		{
+			signal: "delta_xgi90",
+			mean_rank_correlation: 0.032,
+			top_future_xgi: 1.02,
+			top_future_points: 10.62,
+		},
+	],
+};
+
 const clubValidationRows = [
 	{
 		target: "future_xg_per_match",
@@ -663,7 +689,9 @@ function mockLocalStorage() {
 function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 	const url = String(input);
 	let body: unknown = meta;
-	if (url.includes("/players/form")) {
+	if (url.includes("/players/form-validation")) {
+		body = formValidation;
+	} else if (url.includes("/players/form")) {
 		const params = new URL(url, "http://test").searchParams;
 		body =
 			params.get("as_of_gw") === "30"
@@ -1923,13 +1951,19 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	expect(screen.getByText("P(Hit | 60+ Mins)")).toBeInTheDocument();
 });
 
-test("renders the model evidence tab with backtest summaries", async () => {
+test("renders the research tab with backtest summaries", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(await screen.findByText("Model Evidence"));
+	fireEvent.click(await screen.findByText("Research"));
 
 	await waitFor(() => {
 		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
 	});
+	expect(screen.getByText("Player Form Signals")).toBeInTheDocument();
+	expect(screen.getByText("+2.8%")).toBeInTheDocument();
+	expect(screen.getByText("95% interval -3.4% to +8.3%")).toBeInTheDocument();
+	expect(screen.getByText("+42.8%")).toBeInTheDocument();
+	expect(screen.getByText("Projected xGI (Default Sort)")).toBeInTheDocument();
+	expect(screen.getByText("14.8")).toBeInTheDocument();
 	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
 	expect(screen.getByText("Calibrated Count Brier")).toBeInTheDocument();
 	expect(screen.getByText("0.139")).toBeInTheDocument();
@@ -1959,7 +1993,7 @@ test("renders the model evidence tab with backtest summaries", async () => {
 	});
 });
 
-test("defaults model evidence to the last complete season early in a live season", async () => {
+test("defaults research to the last complete season early in a live season", async () => {
 	window.history.replaceState(null, "", "/?tab=evidence");
 	vi.mocked(fetch).mockImplementation((input) => {
 		const url = String(input);
@@ -1993,7 +2027,7 @@ test("defaults model evidence to the last complete season early in a live season
 		screen.getByText(/until the live season reaches GW19/),
 	).toBeInTheDocument();
 	await waitFor(() => {
-		expect(validationCalls()).toHaveLength(2);
+		expect(validationCalls()).toHaveLength(3);
 	});
 	expect(validationCalls().every((url) => url.includes("season=2025-26"))).toBe(
 		true,
@@ -2004,12 +2038,26 @@ test("defaults model evidence to the last complete season early in a live season
 	await waitFor(() => {
 		expect(
 			validationCalls().filter((url) => url.includes("season=2026-27")),
-		).toHaveLength(2);
+		).toHaveLength(3);
 	});
 	expect(screen.getByLabelText("Season")).toHaveValue("2026-27");
 });
 
-test("hides point-in-time table filters on the model evidence tab", async () => {
+test("shows a load error when the form backtest fails", async () => {
+	window.history.replaceState(null, "", "/?tab=evidence");
+	vi.mocked(fetch).mockImplementation((input) =>
+		String(input).includes("/players/form-validation")
+			? Promise.resolve(new Response("{}", { status: 500 }))
+			: mockApiFetch(input),
+	);
+
+	render(withProviders(<App />));
+
+	expect(await screen.findByText(/Failed to load/)).toBeInTheDocument();
+	expect(screen.queryByText("Player Form Signals")).not.toBeInTheDocument();
+});
+
+test("hides point-in-time table filters on the research tab", async () => {
 	window.history.replaceState(null, "", "/?tab=evidence&as_of_gw=20");
 
 	render(withProviders(<App />));
@@ -2537,8 +2585,8 @@ test("explains an empty club-form backtest instead of showing bare headers", asy
 	render(withProviders(<App />));
 
 	expect(
-		await screen.findByText(/No gameweeks can be scored yet/),
-	).toHaveTextContent("results start once GW16 is complete");
+		await screen.findByText(/results start once GW16 is complete/),
+	).toHaveTextContent("No gameweeks can be scored yet");
 });
 
 test("shades FDR on its fixed scale without a league-wide range", async () => {

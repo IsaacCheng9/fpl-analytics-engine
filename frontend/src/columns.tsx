@@ -202,7 +202,7 @@ function buildFormMetricColumns(
 					: group === "season"
 						? `Expected ${noun} per 90 minutes, season to date`
 						: group === "delta"
-							? `Window ${label} per 90 minus season ${label} per 90. Descriptive only: backtests found recent swings revert to the season rate`
+							? `Window ${label} per 90 minus season ${label} per 90. Descriptive only: backtests found recent swings revert to the season rate (see Research)`
 							: `Window ${label} per 90 divided by price`;
 		const header =
 			group === "value"
@@ -297,7 +297,7 @@ export function buildFormColumns(
 			meta: heatMeta<FormPlayer>(
 				{
 					tooltip:
-						"Expected xGI per gameweek: estimated xGI per 90 times projected minutes. The default ranking, because it ranked future xGI best in backtests",
+						"Expected xGI per gameweek: estimated xGI per 90 times projected minutes. The default ranking, because it ranked future xGI best in backtests (see Research)",
 				},
 				ranges.projected_xgi,
 			),

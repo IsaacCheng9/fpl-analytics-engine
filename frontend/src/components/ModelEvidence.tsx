@@ -1,9 +1,13 @@
-import type { ClubFormValidation, DefconProbabilityValidation } from "../api";
+import type {
+	ClubFormValidation,
+	DefconProbabilityValidation,
+	FormValidation,
+} from "../api";
 import {
 	EVIDENCE_MIN_LIVE_GW,
 	EVIDENCE_START_SEASON,
 } from "../lib/evidenceSeason";
-import { fmtNum } from "../lib/format";
+import { fmtDelta, fmtNum } from "../lib/format";
 import { fieldClass, labelClass } from "../styles";
 import {
 	CalibrationChart,
@@ -18,12 +22,9 @@ function fmtRate(value: number | null | undefined): string {
 	return value == null ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
+// Persistence sits near zero by design, so reuse fmtDelta to avoid "-0.0%".
 function fmtSignedRate(value: number | null | undefined): string {
-	if (value == null) {
-		return "-";
-	}
-	const sign = value > 0 ? "+" : "";
-	return `${sign}${(value * 100).toFixed(1)}%`;
+	return value == null ? "-" : `${fmtDelta(value * 100, 1)}%`;
 }
 
 function fmtSignedNum(value: number | null | undefined): string {
@@ -60,6 +61,14 @@ function targetLabel(target: string): string {
 	}
 	return target;
 }
+
+const FORM_SIGNAL_LABELS: Record<string, string> = {
+	projected_xgi: "Projected xGI (Default Sort)",
+	est_xgi90: "Est. xGI Per 90",
+	season_xgi90: "Season xGI Per 90",
+	window_xgi90: "Window xGI Per 90",
+	delta_xgi90: "Delta xGI Per 90",
+};
 
 function MetricCard({
 	label,
@@ -102,7 +111,120 @@ function EmptyTableRow({
 	);
 }
 
+function FormSignalSection({
+	validation,
+	className,
+	isLoading,
+}: {
+	validation: FormValidation | undefined;
+	className: string;
+	isLoading: boolean;
+}) {
+	const formWindow = validation?.window ?? 5;
+	const horizon = validation?.horizon ?? 4;
+	const topK = validation?.top_k ?? 20;
+	const signals = validation?.signals ?? [];
+	// The first as-of gameweek scored is the one after the window first fits,
+	// and it needs the following horizon of results.
+	const firstCompleteGw = formWindow + 1 + horizon;
+	const swingInterval =
+		validation?.swing_persistence == null
+			? "Not enough scored gameweeks yet"
+			: validation.swing_persistence_low == null ||
+					validation.swing_persistence_high == null
+				? "Too few gameweeks for an interval"
+				: `95% interval ${fmtSignedRate(validation.swing_persistence_low)} to ${fmtSignedRate(validation.swing_persistence_high)}`;
+	const topTooltip = (stat: string) =>
+		`Mean ${stat} per player over the next ${horizon} gameweeks among each signal's top ${topK} picks, averaged across as-of gameweeks.`;
+	return (
+		<section aria-busy={isLoading} className={className}>
+			<div className="mb-3">
+				<h3 className="font-semibold text-base">Player Form Signals</h3>
+				<p className="mt-1 text-sm text-zinc-500">
+					After each as-of gameweek, every signal ranks the same outfield
+					players – those with 450+ season minutes and some minutes in the
+					window – then is scored on their xGI over the next {horizon}{" "}
+					gameweeks. Persistence is the share of a recent swing above or below
+					the season rate that carried into those gameweeks: 100% means it fully
+					persisted, 0% means players reverted. The xGI swing counts only
+					players with 270+ window minutes and 180+ later minutes, so both sides
+					are real rates.
+				</p>
+			</div>
+			<div className="grid gap-3 sm:grid-cols-3">
+				<MetricCard
+					label="Recent xGI Per 90 Swing That Persists"
+					value={fmtSignedRate(validation?.swing_persistence)}
+					detail={swingInterval}
+				/>
+				<MetricCard
+					label="Recent Minutes Swing That Persists"
+					value={fmtSignedRate(validation?.minutes_persistence)}
+					detail="Minutes per gameweek, window versus season"
+				/>
+				<MetricCard
+					label="Predictions"
+					value={fmtNum(validation?.n_predictions, 0)}
+					detail={`${fmtNum(validation?.n_gameweeks, 0)} as-of gameweeks`}
+				/>
+			</div>
+			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200">
+				<table className="w-full min-w-[40rem] border-collapse text-sm">
+					<thead className="bg-zinc-100 text-left text-zinc-600">
+						<tr>
+							<th className="px-3 py-2 font-medium">Signal</th>
+							<th className="px-3 py-2 font-medium">
+								<span className="flex items-center gap-1">
+									Rank Correlation
+									<InfoTooltip
+										text={`Mean Spearman correlation between the signal and each player's total xGI over the next ${horizon} gameweeks, computed per as-of gameweek. Higher means the signal orders players better.`}
+									/>
+								</span>
+							</th>
+							<th className="px-3 py-2 font-medium">
+								<span className="flex items-center gap-1">
+									Top {topK} Next-{horizon} xGI
+									<InfoTooltip text={topTooltip("xGI")} />
+								</span>
+							</th>
+							<th className="px-3 py-2 font-medium">
+								<span className="flex items-center gap-1">
+									Top {topK} Next-{horizon} Points
+									<InfoTooltip text={topTooltip("points")} />
+								</span>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{signals.length === 0 ? (
+							<EmptyTableRow
+								columns={4}
+								message={`No gameweeks can be scored yet. Each needs the following ${horizon} gameweeks of results, so results start once GW${firstCompleteGw} is complete.`}
+							/>
+						) : null}
+						{signals.map((row) => (
+							<tr key={row.signal} className="border-zinc-100 border-t">
+								<th className="px-3 py-2 text-left font-medium text-zinc-700">
+									{FORM_SIGNAL_LABELS[row.signal] ?? row.signal}
+								</th>
+								<td className="px-3 py-2">
+									{fmtNum(row.mean_rank_correlation, 3)}
+								</td>
+								<td className="px-3 py-2">{fmtNum(row.top_future_xgi, 2)}</td>
+								<td className="px-3 py-2">
+									{fmtNum(row.top_future_points, 1)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	);
+}
+
 export function ModelEvidence({
+	formValidation,
 	defconValidation,
 	clubValidation,
 	season,
@@ -111,6 +233,7 @@ export function ModelEvidence({
 	isLoadingSeason = false,
 	onSeasonChange,
 }: {
+	formValidation: FormValidation | undefined;
 	defconValidation: DefconProbabilityValidation | undefined;
 	clubValidation: ClubFormValidation[];
 	season: string;
@@ -163,6 +286,12 @@ export function ModelEvidence({
 					when DefCon was introduced.
 				</p>
 			</section>
+
+			<FormSignalSection
+				validation={formValidation}
+				className={resultSectionClass}
+				isLoading={isLoadingSeason}
+			/>
 
 			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">

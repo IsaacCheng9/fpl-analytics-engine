@@ -62,7 +62,7 @@ export const TAB_LABELS: Record<Tab, string> = {
 	defcon: "DefCon Form",
 	defconProb: "DefCon Probability",
 	clubs: "Club Form",
-	evidence: "Model Evidence",
+	evidence: "Research",
 };
 
 export const TABS: Tab[] = [
