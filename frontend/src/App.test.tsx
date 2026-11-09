@@ -40,6 +40,11 @@ const formRows = [
 		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.12,
 		season_points_per_million: 5.0,
+		est_xg90: 0.32,
+		est_xa90: 0.28,
+		est_xgi90: 0.6,
+		projected_minutes: 85,
+		projected_xgi: 0.57,
 		window_start_rate: 1.0,
 		window_mins_per_appearance: 88,
 		upcoming_fixtures: 5,
@@ -72,6 +77,11 @@ const formRows = [
 		window_xa90_per_million: 0.05,
 		window_xgi90_per_million: 0.08,
 		season_points_per_million: 4.2,
+		est_xg90: 0.3,
+		est_xa90: 0.33,
+		est_xgi90: 0.63,
+		projected_minutes: 76,
+		projected_xgi: 0.53,
 		window_start_rate: 0.8,
 		window_mins_per_appearance: 79,
 		upcoming_fixtures: 5,
@@ -107,6 +117,11 @@ const broadFormRows = [
 		window_xa90_per_million: 0.01,
 		window_xgi90_per_million: 0.06,
 		season_points_per_million: 4.8,
+		est_xg90: 0.78,
+		est_xa90: 0.16,
+		est_xgi90: 0.94,
+		projected_minutes: 90,
+		projected_xgi: 0.94,
 		window_start_rate: 1.0,
 		window_mins_per_appearance: 90,
 		upcoming_fixtures: 5,
@@ -389,6 +404,43 @@ const defconValidation = {
 		},
 	],
 };
+const formValidation = {
+	window: 5,
+	horizon: 4,
+	top_k: 20,
+	n_predictions: 8028,
+	n_gameweeks: 30,
+	swing_persistence: 0.028,
+	swing_persistence_low: -0.034,
+	swing_persistence_high: 0.083,
+	minutes_persistence: 0.428,
+	minutes_forecast: [
+		{ forecast: "season_mpg", mean_absolute_error: 22.8 },
+		{ forecast: "projected_minutes", mean_absolute_error: 21.5 },
+		{ forecast: "window_mpg", mean_absolute_error: 22.4 },
+	],
+	signals: [
+		{
+			signal: "projected_xgi",
+			mean_rank_correlation: 0.566,
+			top_future_xgi: 1.71,
+			top_future_points: 14.75,
+		},
+		{
+			signal: "projected_xgi_season_minutes",
+			mean_rank_correlation: 0.549,
+			top_future_xgi: 1.5,
+			top_future_points: 14.52,
+		},
+		{
+			signal: "delta_xgi90",
+			mean_rank_correlation: 0.032,
+			top_future_xgi: 1.02,
+			top_future_points: 10.62,
+		},
+	],
+};
+
 const clubValidationRows = [
 	{
 		target: "future_xg_per_match",
@@ -648,13 +700,14 @@ function mockLocalStorage() {
 function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 	const url = String(input);
 	let body: unknown = meta;
-	if (url.includes("/players/form")) {
+	if (url.includes("/players/form-validation")) {
+		body = formValidation;
+	} else if (url.includes("/players/form")) {
 		const params = new URL(url, "http://test").searchParams;
-		const rows = params.get("min_delta") === "-1000" ? broadFormRows : formRows;
 		body =
 			params.get("as_of_gw") === "30"
-				? withHistoricalFixtureContext(rows)
-				: rows;
+				? withHistoricalFixtureContext(broadFormRows)
+				: broadFormRows;
 	} else if (url.includes("/players/current-context")) {
 		body = currentPlayerContexts;
 	} else if (url.includes("/fpl-team/")) {
@@ -1404,11 +1457,8 @@ test("shows no-form state instead of low threat for missing historical data", as
 	vi.mocked(fetch).mockImplementation((input) => {
 		const url = String(input);
 		if (url.includes("/players/form") && url.includes("as_of_gw=30")) {
-			const params = new URL(url, "http://test").searchParams;
-			const source =
-				params.get("min_delta") === "-1000" ? broadFormRows : formRows;
 			const body = withHistoricalFixtureContext(
-				source.filter((row) => row.element !== 2),
+				broadFormRows.filter((row) => row.element !== 2),
 			);
 			return Promise.resolve(
 				new Response(JSON.stringify(body), {
@@ -1659,6 +1709,12 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	expectCompareRow("Season Points", "10", "13");
 	expectCompareRow("Season xGI", "1.20", "1.60");
 	expectCompareRow("P(Hit | 60+ Mins)", "52%", "45%");
+	const projectedRow = expectCompareRow("Projected xGI", "0.57", "0.53");
+	expect(projectedRow.cells[0]).toHaveClass("bg-emerald-50");
+	expectCompareRow("Projected Mins", "85", "76");
+	const deltaRow = expectCompareRow("Delta xGI Per 90", "+0.41", "+0.18");
+	expect(deltaRow.cells[0]).not.toHaveClass("bg-emerald-50");
+	expect(deltaRow.cells[1]).not.toHaveClass("bg-emerald-50");
 	const attackFormRow = expectCompareRow("Attack Form", "+0.30", "+0.40");
 	expect(attackFormRow.cells[0]).not.toHaveClass("bg-emerald-50");
 	expect(attackFormRow.cells[1]).toHaveClass("bg-emerald-50");
@@ -1757,11 +1813,60 @@ test("initialises the player compare panel from the URL", async () => {
 		).toBe(true);
 		expect(
 			calls.some((input) =>
-				input.includes(
-					"/api/players/form?window=3&min_minutes=0&as_of_gw=20&min_delta=-1000",
-				),
+				input.endsWith("/api/players/form?window=3&min_minutes=0&as_of_gw=20"),
 			),
 		).toBe(true);
+	});
+});
+
+test("sorts players without window minutes last on a signed column", async () => {
+	const benched = {
+		...broadFormRows[2],
+		element: 4,
+		web_name: "Benched",
+		window_minutes: 0,
+		window_xg90: null,
+		window_xa90: null,
+		window_xgi90: null,
+		delta_xg90: null,
+		delta_xa90: null,
+		delta_xgi90: null,
+	};
+	vi.mocked(fetch).mockImplementation((input) =>
+		String(input).includes("/players/form?")
+			? Promise.resolve(
+					new Response(JSON.stringify([benched, ...broadFormRows]), {
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					}),
+				)
+			: mockApiFetch(input),
+	);
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(screen.getByText("Benched")).toBeInTheDocument();
+	});
+	const formCalls = vi
+		.mocked(fetch)
+		.mock.calls.map(([input]) => String(input))
+		.filter((url) => url.includes("/players/form?"));
+	// The delta filter is opt-in, so the dashboard never sends it.
+	expect(formCalls.length).toBeGreaterThan(0);
+	expect(formCalls.some((url) => url.includes("min_delta"))).toBe(false);
+
+	const playerOrder = () =>
+		screen
+			.getAllByRole("row")
+			.slice(1)
+			.map((row) => within(row).queryAllByRole("cell")[1]?.textContent);
+	const deltaHeader = screen.getByText("Delta xGI Per 90");
+	fireEvent.click(deltaHeader);
+	await waitFor(() => {
+		expect(playerOrder()).toEqual(["Mbeumo", "Saka", "Haaland", "Benched"]);
+	});
+	fireEvent.click(deltaHeader);
+	await waitFor(() => {
+		expect(playerOrder()).toEqual(["Haaland", "Saka", "Mbeumo", "Benched"]);
 	});
 });
 
@@ -1797,7 +1902,35 @@ test("toggles attacking form metric columns", async () => {
 		headers.findIndex((header) => header.includes(text));
 	expect(headerIndex("Price")).toBeLessThan(headerIndex("FDR (Next 5)"));
 	expect(headerIndex("FDR (Next 5)")).toBeLessThan(headerIndex("Owned %"));
-	expect(headerIndex("Owned %")).toBeLessThan(headerIndex("Mins"));
+	// Match the start so "Projected Mins" does not count as "Mins".
+	expect(headerIndex("Owned %")).toBeLessThan(
+		headers.findIndex((header) => header.startsWith("Mins")),
+	);
+	expect(headerIndex("Projected Mins")).toBeGreaterThan(0);
+	expect(headerIndex("Price")).toBe(headerIndex("Projected xGI") - 1);
+	expect(headerIndex("Projected xGI")).toBe(headerIndex("Projected Mins") - 1);
+	expect(headerIndex("Projected Mins")).toBeLessThan(
+		headerIndex("Est. xGI Per 90"),
+	);
+	expect(headerIndex("Est. xGI Per 90")).toBeLessThan(
+		headerIndex("Window xGI Per 90"),
+	);
+	const mbeumoCells = within(
+		screen.getByText("Mbeumo").closest("tr") as HTMLElement,
+	).getAllByRole("cell");
+	const cellUnder = (text: string) => {
+		const header = screen
+			.getAllByRole("columnheader")
+			.find((cell) => (cell.textContent ?? "").includes(text));
+		return mbeumoCells[(header as HTMLTableCellElement).cellIndex];
+	};
+	expect(cellUnder("Projected xGI")).toHaveTextContent(/^0\.57$/);
+	expect(cellUnder("Projected Mins")).toHaveTextContent(/^85$/);
+	expect(cellUnder("Est. xGI Per 90")).toHaveTextContent(/^0\.60$/);
+	expect(cellUnder("Projected xGI").style.backgroundColor).not.toBe("");
+	// The delta is descriptive, so it carries no favourable shading.
+	expect(cellUnder("Delta xGI Per 90")).toHaveTextContent(/^\+0\.41$/);
+	expect(cellUnder("Delta xGI Per 90").style.backgroundColor).toBe("");
 	const metricLabels = screen
 		.getAllByRole("checkbox")
 		.map((checkbox) => checkbox.parentElement?.textContent ?? "")
@@ -1829,13 +1962,23 @@ test("renders the DefCon Probability tab even when context fields are absent", a
 	expect(screen.getByText("P(Hit | 60+ Mins)")).toBeInTheDocument();
 });
 
-test("renders the model evidence tab with backtest summaries", async () => {
+test("renders the research tab with backtest summaries", async () => {
 	render(withProviders(<App />));
-	fireEvent.click(await screen.findByText("Model Evidence"));
+	fireEvent.click(await screen.findByText("Research"));
 
 	await waitFor(() => {
 		expect(screen.getByText("Backtested Evidence")).toBeInTheDocument();
 	});
+	expect(screen.getByText("Player Form Signals")).toBeInTheDocument();
+	expect(screen.getByText("+2.8%")).toBeInTheDocument();
+	expect(screen.getByText("95% interval -3.4% to +8.3%")).toBeInTheDocument();
+	expect(screen.getByText("+42.8%")).toBeInTheDocument();
+	expect(screen.getByText("Projected xGI (Default Sort)")).toBeInTheDocument();
+	expect(
+		screen.getByText("Projected xGI (Ignoring Recent Minutes)"),
+	).toBeInTheDocument();
+	expect(screen.getByText("Even Blend (Projected Mins)")).toBeInTheDocument();
+	expect(screen.getByText("14.8")).toBeInTheDocument();
 	expect(screen.getByText("DefCon Probability Model")).toBeInTheDocument();
 	expect(screen.getByText("Calibrated Count Brier")).toBeInTheDocument();
 	expect(screen.getByText("0.139")).toBeInTheDocument();
@@ -1865,7 +2008,7 @@ test("renders the model evidence tab with backtest summaries", async () => {
 	});
 });
 
-test("defaults model evidence to the last complete season early in a live season", async () => {
+test("defaults research to the last complete season early in a live season", async () => {
 	window.history.replaceState(null, "", "/?tab=evidence");
 	vi.mocked(fetch).mockImplementation((input) => {
 		const url = String(input);
@@ -1899,7 +2042,7 @@ test("defaults model evidence to the last complete season early in a live season
 		screen.getByText(/until the live season reaches GW19/),
 	).toBeInTheDocument();
 	await waitFor(() => {
-		expect(validationCalls()).toHaveLength(2);
+		expect(validationCalls()).toHaveLength(3);
 	});
 	expect(validationCalls().every((url) => url.includes("season=2025-26"))).toBe(
 		true,
@@ -1910,12 +2053,26 @@ test("defaults model evidence to the last complete season early in a live season
 	await waitFor(() => {
 		expect(
 			validationCalls().filter((url) => url.includes("season=2026-27")),
-		).toHaveLength(2);
+		).toHaveLength(3);
 	});
 	expect(screen.getByLabelText("Season")).toHaveValue("2026-27");
 });
 
-test("hides point-in-time table filters on the model evidence tab", async () => {
+test("shows a load error when the form backtest fails", async () => {
+	window.history.replaceState(null, "", "/?tab=evidence");
+	vi.mocked(fetch).mockImplementation((input) =>
+		String(input).includes("/players/form-validation")
+			? Promise.resolve(new Response("{}", { status: 500 }))
+			: mockApiFetch(input),
+	);
+
+	render(withProviders(<App />));
+
+	expect(await screen.findByText(/Failed to load/)).toBeInTheDocument();
+	expect(screen.queryByText("Player Form Signals")).not.toBeInTheDocument();
+});
+
+test("hides point-in-time table filters on the research tab", async () => {
 	window.history.replaceState(null, "", "/?tab=evidence&as_of_gw=20");
 
 	render(withProviders(<App />));
@@ -2443,8 +2600,8 @@ test("explains an empty club-form backtest instead of showing bare headers", asy
 	render(withProviders(<App />));
 
 	expect(
-		await screen.findByText(/No gameweeks can be scored yet/),
-	).toHaveTextContent("results start once GW16 is complete");
+		await screen.findByText(/results start once GW16 is complete/),
+	).toHaveTextContent("No gameweeks can be scored yet");
 });
 
 test("shades FDR on its fixed scale without a league-wide range", async () => {

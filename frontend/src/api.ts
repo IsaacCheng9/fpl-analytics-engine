@@ -55,6 +55,11 @@ export interface FormPlayer extends PlayerContext {
 	delta_xg90: number | null;
 	delta_xa90: number | null;
 	delta_xgi90: number | null;
+	est_xg90: number | null;
+	est_xa90: number | null;
+	est_xgi90: number | null;
+	projected_minutes: number;
+	projected_xgi: number | null;
 	window_xg90_per_million: number | null;
 	window_xa90_per_million: number | null;
 	as_of_gw: number;
@@ -96,6 +101,32 @@ export interface ClubForm {
 	upcoming_fixtures: number | null;
 	avg_fdr: number | null;
 	as_of_gw: number;
+}
+
+export interface FormSignalValidation {
+	signal: string;
+	mean_rank_correlation: number | null;
+	top_future_xgi: number | null;
+	top_future_points: number | null;
+}
+
+export interface MinutesForecastValidation {
+	forecast: string;
+	mean_absolute_error: number | null;
+}
+
+export interface FormValidation {
+	window: number;
+	horizon: number;
+	top_k: number;
+	n_predictions: number;
+	n_gameweeks: number;
+	swing_persistence: number | null;
+	swing_persistence_low: number | null;
+	swing_persistence_high: number | null;
+	minutes_persistence: number | null;
+	minutes_forecast: MinutesForecastValidation[];
+	signals: FormSignalValidation[];
 }
 
 export interface ClubFormValidation {
@@ -237,7 +268,7 @@ interface BaseParams {
 }
 
 export interface FormParams extends BaseParams {
-	minDelta: number;
+	minDelta?: number;
 }
 
 export interface DefconParams extends BaseParams {
@@ -253,6 +284,12 @@ export interface DefconProbabilityParams {
 export interface ClubFormParams {
 	window: number;
 	asOfGw: number | null;
+}
+
+export interface FormValidationParams {
+	window?: number;
+	horizon?: number;
+	season?: string;
 }
 
 export interface ClubFormValidationParams {
@@ -295,7 +332,9 @@ export function fetchMeta(): Promise<Meta> {
 
 export function fetchForm(params: FormParams): Promise<FormPlayer[]> {
 	const search = baseSearchParams(params);
-	search.set("min_delta", String(params.minDelta));
+	if (params.minDelta !== undefined) {
+		search.set("min_delta", String(params.minDelta));
+	}
 	return getJson<FormPlayer[]>(`/players/form?${search.toString()}`);
 }
 
@@ -332,6 +371,25 @@ export function fetchClubForm(params: ClubFormParams): Promise<ClubForm[]> {
 		search.set("as_of_gw", String(params.asOfGw));
 	}
 	return getJson<ClubForm[]>(`/clubs/form?${search.toString()}`);
+}
+
+export function fetchFormValidation(
+	params: FormValidationParams = {},
+): Promise<FormValidation> {
+	const search = new URLSearchParams();
+	if (params.window !== undefined) {
+		search.set("window", String(params.window));
+	}
+	if (params.horizon !== undefined) {
+		search.set("horizon", String(params.horizon));
+	}
+	if (params.season !== undefined) {
+		search.set("season", params.season);
+	}
+	const query = search.toString();
+	return getJson<FormValidation>(
+		`/players/form-validation${query ? `?${query}` : ""}`,
+	);
 }
 
 export function fetchClubFormValidation(

@@ -3,7 +3,12 @@ import type { FormPlayer, Position } from "./api";
 export type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
 export type AttackingMetric = "xg" | "xa" | "xgi";
 export type AttackingMetricVisibility = Record<AttackingMetric, boolean>;
-export type AttackingMetricColumn = "window" | "season" | "delta" | "value";
+export type AttackingMetricColumn =
+	| "est"
+	| "window"
+	| "season"
+	| "delta"
+	| "value";
 export type AttackingThreatPeriod = "window" | "season";
 export type OwnershipFilter = "all" | "owned" | "not-owned";
 export type AttackingThreatFilters = Record<
@@ -57,7 +62,7 @@ export const TAB_LABELS: Record<Tab, string> = {
 	defcon: "DefCon Form",
 	defconProb: "DefCon Probability",
 	clubs: "Club Form",
-	evidence: "Model Evidence",
+	evidence: "Research",
 };
 
 export const TABS: Tab[] = [
@@ -80,7 +85,6 @@ export const DEFAULT_POSITION: Position | "" = "";
 export const DEFAULT_MIN_MINUTES = 180;
 export const DEFAULT_MIN_HIT_RATE = 0;
 const DEFAULT_MIN_GAMES = 5;
-export const FORM_MIN_DELTA_FLOOR = -1000;
 export const DEFAULT_AS_OF_GW: number | null = null;
 export const DEFAULT_SELECTED_ELEMENT: number | null = null;
 export const DEFAULT_PLAYER_WINDOW = 5;
@@ -115,6 +119,7 @@ export const ATTACKING_METRIC_GROUP_LABELS: Record<
 	AttackingMetricColumn,
 	string
 > = {
+	est: "Est.",
 	window: "Window",
 	season: "Season",
 	delta: "Delta",
@@ -130,18 +135,21 @@ export const ATTACKING_METRIC_KEYS: Record<
 	Record<AttackingMetricColumn, keyof FormPlayer & string>
 > = {
 	xg: {
+		est: "est_xg90",
 		window: "window_xg90",
 		season: "season_xg90",
 		delta: "delta_xg90",
 		value: "window_xg90_per_million",
 	},
 	xa: {
+		est: "est_xa90",
 		window: "window_xa90",
 		season: "season_xa90",
 		delta: "delta_xa90",
 		value: "window_xa90_per_million",
 	},
 	xgi: {
+		est: "est_xgi90",
 		window: "window_xgi90",
 		season: "season_xgi90",
 		delta: "delta_xgi90",

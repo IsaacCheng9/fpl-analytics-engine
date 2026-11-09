@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
-from fpl_analytics_engine import api
+from fpl_analytics_engine import api, form
 
 
 def _game(
@@ -371,13 +371,95 @@ def test_current_context_preserves_players_with_unknown_metadata(
     assert all(value is None for key, value in row.items() if key != "element")
 
 
-def test_form_endpoint_flags_improving_player(client: TestClient) -> None:
+def test_form_endpoint_ranks_every_player_by_projection(client: TestClient) -> None:
     body = client.get("/players/form", params={"window": 2}).json()
     names = [row["web_name"] for row in body]
-    assert "P1" in names  # improving player is flagged
-    assert "P2" not in names  # declining player has a negative delta
-    # Ranked by delta descending, so the strongest riser leads.
+    # The declining player is kept, because the delta filter is opt-in.
+    assert "P2" in names
+    assert next(row for row in body if row["web_name"] == "P2")["delta_xgi90"] < 0
+    # Ranked by projected xGI, which P1's higher season rate leads.
     assert body[0]["web_name"] == "P1"
+    assert body[0]["projected_xgi"] == pytest.approx(
+        body[0]["est_xgi90"] * body[0]["projected_minutes"] / 90
+    )
+
+
+def test_form_endpoint_filters_by_delta_when_asked(client: TestClient) -> None:
+    body = client.get("/players/form", params={"window": 2, "min_delta": 0}).json()
+    names = [row["web_name"] for row in body]
+    assert "P1" in names
+    assert "P2" not in names
+
+
+def test_form_endpoint_shrinks_towards_the_previous_season(client: TestClient) -> None:
+    def seasons() -> pl.DataFrame:
+        previous = _with_season(_history(), "2024-25").with_columns(
+            pl.col("expected_goal_involvements") * 0,
+            pl.col("round") + 10,
+            pl.col("element").alias("code"),
+        )
+        live = _with_season(_history(), "2025-26").with_columns(
+            pl.col("element").alias("code")
+        )
+        return pl.concat([previous] * 3 + [live])
+
+    api.app.dependency_overrides[api.get_history] = lambda: seasons().filter(
+        pl.col("season") == "2025-26"
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = seasons
+
+    body = client.get("/players/form", params={"window": 2}).json()
+    p1 = next(row for row in body if row["web_name"] == "P1")
+
+    # Three copies of a zero-xGI season give P1 1,080 prior minutes.
+    assert p1["est_xgi90"] == pytest.approx(1.0 / (360 + 900) * 90)
+    assert p1["est_xgi90"] < p1["season_xgi90"]
+
+
+def test_form_validation_scores_an_archived_season(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Eight gameweeks, so outfield players reach 450 season minutes by GW5.
+    eight_gameweeks = pl.concat(
+        [_history(), _history().with_columns(pl.col("round") + 4)]
+    ).with_columns(pl.col("element").alias("code"))
+    # Last season had no xGI, so its prior is recognisable as all zeros.
+    previous = _with_season(eight_gameweeks, "2024-25").with_columns(
+        pl.col("expected_goal_involvements") * 0
+    )
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: pl.concat(
+        [previous] * 3 + [_with_season(eight_gameweeks, "2025-26")]
+    )
+    priors = []
+    backtest = form.backtest_form_signals
+
+    def record_prior(
+        history: pl.DataFrame, prior: pl.DataFrame | None = None, *args: int
+    ) -> pl.DataFrame:
+        priors.append(prior)
+        return backtest(history, prior, *args)
+
+    monkeypatch.setattr(form, "backtest_form_signals", record_prior)
+
+    body = client.get(
+        "/players/form-validation",
+        params={"season": "2025-26", "window": 1, "horizon": 1},
+    ).json()
+
+    assert (body["window"], body["horizon"], body["top_k"]) == (1, 1, 20)
+    # As-of GW5-7 each score the three outfield players, not the keeper.
+    assert (body["n_gameweeks"], body["n_predictions"]) == (3, 9)
+    assert [row["signal"] for row in body["signals"]][0] == "projected_xgi"
+    assert [row["forecast"] for row in body["minutes_forecast"]] == [
+        "season_mpg",
+        "projected_minutes",
+        "window_mpg",
+    ]
+    # The prior is the season before the archived one, not before the live one.
+    prior = priors[0]
+    assert prior is not None
+    assert prior["prior_xgi90"].max() == 0
 
 
 def test_form_endpoint_filters_by_position(client: TestClient) -> None:
@@ -631,7 +713,12 @@ def test_club_form_validation_can_score_an_archived_season(
 
 
 @pytest.mark.parametrize(
-    "path", ["/players/defcon-probability-validation", "/clubs/form-validation"]
+    "path",
+    [
+        "/players/defcon-probability-validation",
+        "/clubs/form-validation",
+        "/players/form-validation",
+    ],
 )
 def test_validation_season_is_checked_and_independent_of_live_history(
     client: TestClient, path: str
@@ -646,7 +733,14 @@ def test_validation_season_is_checked_and_independent_of_live_history(
     assert client.get(path).status_code == 409
     assert client.get(path, params={"season": "2025-26"}).status_code == 200
     assert client.get(path, params={"season": "2027-28"}).status_code == 404
-    assert client.get(path, params={"season": "2024-25"}).status_code == 422
+    # The form backtest reaches back to 2023-24; the others start at 2025-26.
+    is_form = path == "/players/form-validation"
+    too_early = "2022-23" if is_form else "2024-25"
+    assert client.get(path, params={"season": too_early}).status_code == 422
+    # 2023-24 passes the form check but is absent from this snapshot.
+    assert client.get(path, params={"season": "2023-24"}).status_code == (
+        404 if is_form else 422
+    )
     assert client.get(path, params={"season": "latest"}).status_code == 422
 
 
@@ -815,7 +909,7 @@ def test_form_and_detail_share_the_comparison_gameweek_window(
     api.app.dependency_overrides[api.get_all_seasons] = lambda: history
     params = {"as_of_gw": 30, "window": 5}
 
-    form_response = client.get("/players/form", params={**params, "min_delta": -1000})
+    form_response = client.get("/players/form", params=params)
     detail_response = client.get("/players/1", params=params)
 
     assert form_response.status_code == detail_response.status_code == 200

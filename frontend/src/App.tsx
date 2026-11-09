@@ -10,6 +10,7 @@ import {
 	fetchDefconProbability,
 	fetchDefconProbabilityValidation,
 	fetchForm,
+	fetchFormValidation,
 	fetchFplTeam,
 	fetchMeta,
 	type Position,
@@ -77,7 +78,6 @@ import {
 	defaultWindowSize,
 	FILTER_PRESETS,
 	type FilterPreset,
-	FORM_MIN_DELTA_FLOOR,
 	HIT_RATES,
 	isPlayerTab,
 	metricsMatchDefault,
@@ -426,11 +426,7 @@ export default function App() {
 	};
 	const formQuery = useQuery({
 		queryKey: ["form", windowSize, minMinutes, asOfGw],
-		queryFn: () =>
-			fetchForm({
-				...base,
-				minDelta: FORM_MIN_DELTA_FLOOR,
-			}),
+		queryFn: () => fetchForm(base),
 		enabled: analyticsReady && tab === "form",
 	});
 	const defconQuery = useQuery({
@@ -460,6 +456,12 @@ export default function App() {
 		enabled: analyticsReady && tab === "evidence",
 		placeholderData: keepPreviousData,
 	});
+	const formValidationQuery = useQuery({
+		queryKey: ["formValidation", evidenceSeason],
+		queryFn: () => fetchFormValidation({ season: evidenceSeason }),
+		enabled: analyticsReady && tab === "evidence",
+		placeholderData: keepPreviousData,
+	});
 	const clubValidationQuery = useQuery({
 		queryKey: ["clubValidation", evidenceSeason],
 		queryFn: () => fetchClubFormValidation({ season: evidenceSeason }),
@@ -468,11 +470,7 @@ export default function App() {
 	});
 	const squadFormQuery = useQuery({
 		queryKey: ["squadForm", windowSize, asOfGw],
-		queryFn: () =>
-			fetchForm({
-				...squadBase,
-				minDelta: FORM_MIN_DELTA_FLOOR,
-			}),
+		queryFn: () => fetchForm(squadBase),
 		enabled: analyticsReady && isSquadViewActive,
 	});
 	const squadCurrentContextQuery = useQuery({
@@ -498,7 +496,6 @@ export default function App() {
 				window: compareWindow,
 				position: "",
 				minMinutes: 0,
-				minDelta: FORM_MIN_DELTA_FLOOR,
 				asOfGw: compareAsOfGw,
 			}),
 		enabled: analyticsReady && compareOpen,
@@ -1121,13 +1118,14 @@ export default function App() {
 							</>
 						) : (
 							<>
-								Surfaces players whose recent underlying output – expected goal
-								involvement and DefCon hit rate over your chosen window – is
-								outpacing their season-to-date baseline, alongside clubs whose
-								attack or defence has shifted against its season baseline.
-								Figures are point-in-time as of GW {asOfGw ?? latestGw}: only
-								matches up to and including that gameweek are counted, with no
-								look-ahead.
+								Attacking Form ranks players by projected xGI per gameweek – an
+								estimated underlying rate, pulled towards last season's, times
+								expected minutes. DefCon Form ranks recent hit rates, DefCon
+								Probability ranks the calibrated chance of a hit given 60+
+								minutes, and Club Form shows whose attack or defence has shifted
+								against its season baseline. Figures are point-in-time as of GW{" "}
+								{asOfGw ?? latestGw}: only matches up to and including that
+								gameweek are counted, with no look-ahead.
 							</>
 						)}
 					</p>
@@ -1568,14 +1566,19 @@ export default function App() {
 				) : null}
 
 				{tab === "evidence" ? (
-					defconValidationQuery.isPending || clubValidationQuery.isPending ? (
+					defconValidationQuery.isPending ||
+					clubValidationQuery.isPending ||
+					formValidationQuery.isPending ? (
 						<p className="text-sm text-zinc-500">Loading...</p>
-					) : defconValidationQuery.isError || clubValidationQuery.isError ? (
+					) : defconValidationQuery.isError ||
+						clubValidationQuery.isError ||
+						formValidationQuery.isError ? (
 						<p className="text-red-600 text-sm">
 							Failed to load - is the API running on port 8000?
 						</p>
 					) : (
 						<ModelEvidence
+							formValidation={formValidationQuery.data}
 							defconValidation={defconValidationQuery.data}
 							clubValidation={clubValidationQuery.data ?? []}
 							season={evidenceSeason}
@@ -1583,7 +1586,8 @@ export default function App() {
 							liveSeason={liveSeason}
 							isLoadingSeason={
 								defconValidationQuery.isPlaceholderData ||
-								clubValidationQuery.isPlaceholderData
+								clubValidationQuery.isPlaceholderData ||
+								formValidationQuery.isPlaceholderData
 							}
 							onSeasonChange={setEvidenceSeasonChoice}
 						/>

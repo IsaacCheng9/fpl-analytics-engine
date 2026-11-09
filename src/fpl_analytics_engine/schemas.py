@@ -69,6 +69,11 @@ class FormPlayer(PlayerContext):
     delta_xg90: float | None
     delta_xa90: float | None
     delta_xgi90: float | None
+    est_xg90: float | None
+    est_xa90: float | None
+    est_xgi90: float | None
+    projected_minutes: float
+    projected_xgi: float | None
     window_xg90_per_million: float | None
     window_xa90_per_million: float | None
     as_of_gw: int
@@ -127,6 +132,38 @@ class ClubFormValidation(BaseModel):
     baseline_plus_form_rmse: float | None
     rmse_improvement: float | None
     rmse_improvement_pct: float | None
+
+
+class FormSignalValidation(BaseModel):
+    """How well one form-table ranking signal picked future xGI and points."""
+
+    signal: str
+    mean_rank_correlation: float | None
+    top_future_xgi: float | None
+    top_future_points: float | None
+
+
+class MinutesForecastValidation(BaseModel):
+    """How far one minutes-per-gameweek forecast missed the next gameweeks."""
+
+    forecast: str
+    mean_absolute_error: float | None
+
+
+class FormValidation(BaseModel):
+    """Point-in-time backtest of the player form signals for one season."""
+
+    window: int
+    horizon: int
+    top_k: int
+    n_predictions: int
+    n_gameweeks: int
+    swing_persistence: float | None
+    swing_persistence_low: float | None
+    swing_persistence_high: float | None
+    minutes_persistence: float | None
+    minutes_forecast: list[MinutesForecastValidation]
+    signals: list[FormSignalValidation]
 
 
 class DefconCalibrationBin(BaseModel):

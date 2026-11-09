@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import type { DefconProbabilityValidation } from "../api";
+import type { DefconProbabilityValidation, FormValidation } from "../api";
 import { ModelEvidence } from "./ModelEvidence";
 
 const validation: DefconProbabilityValidation = {
@@ -36,9 +36,13 @@ const validation: DefconProbabilityValidation = {
 	],
 };
 
-function renderEvidence(defconValidation = validation) {
+function renderEvidence(
+	defconValidation = validation,
+	formValidation: FormValidation | undefined = undefined,
+) {
 	render(
 		<ModelEvidence
+			formValidation={formValidation}
 			defconValidation={defconValidation}
 			clubValidation={[]}
 			season="2025-26"
@@ -82,5 +86,74 @@ test("omits the diagram and small-sample note when nothing is scored", () => {
 	expect(screen.queryByText(/Greyed buckets/)).not.toBeInTheDocument();
 	expect(
 		screen.getByText(/No predictions can be scored yet/),
+	).toBeInTheDocument();
+});
+
+test("explains when no form-signal gameweeks can be scored", () => {
+	renderEvidence(validation, {
+		window: 5,
+		horizon: 4,
+		top_k: 20,
+		n_predictions: 0,
+		n_gameweeks: 0,
+		swing_persistence: null,
+		swing_persistence_low: null,
+		swing_persistence_high: null,
+		minutes_persistence: null,
+		minutes_forecast: [],
+		signals: [],
+	});
+
+	expect(
+		screen.getByText(/results start once GW10 is complete/),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText("Not enough scored gameweeks yet"),
+	).toBeInTheDocument();
+});
+
+test("shows a single-slate persistence estimate without an interval", () => {
+	renderEvidence(validation, {
+		window: 5,
+		horizon: 4,
+		top_k: 20,
+		n_predictions: 250,
+		n_gameweeks: 1,
+		swing_persistence: -0.0004,
+		swing_persistence_low: null,
+		swing_persistence_high: null,
+		minutes_persistence: 0.5,
+		minutes_forecast: [
+			{ forecast: "season_mpg", mean_absolute_error: 22.83 },
+			{ forecast: "projected_minutes", mean_absolute_error: 21.46 },
+		],
+		signals: [
+			{
+				signal: "projected_xgi",
+				mean_rank_correlation: 0.6,
+				top_future_xgi: 1.5,
+				top_future_points: 15,
+			},
+		],
+	});
+
+	const card = (label: string) =>
+		within(screen.getByText(label).parentElement as HTMLElement);
+	const swing = card("Recent xGI Per 90 Swing That Persists");
+	// A near-zero estimate reads as 0.0%, not -0.0%.
+	expect(swing.getByText("0.0%")).toBeInTheDocument();
+	expect(
+		swing.getByText("Too few gameweeks for an interval"),
+	).toBeInTheDocument();
+	expect(
+		card("Recent Minutes Swing That Persists").getByText("+50.0%"),
+	).toBeInTheDocument();
+	const forecastRow = (label: string) =>
+		within(screen.getByText(label).closest("tr") as HTMLElement);
+	expect(
+		forecastRow("Season Average Only").getByText("22.8"),
+	).toBeInTheDocument();
+	expect(
+		forecastRow("Even Blend (Projected Mins)").getByText("21.5"),
 	).toBeInTheDocument();
 });

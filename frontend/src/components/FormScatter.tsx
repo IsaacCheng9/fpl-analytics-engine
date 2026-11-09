@@ -12,7 +12,7 @@ import {
 import type { FormPlayer } from "../api";
 
 const CHART_TITLE =
-	"Recent Vs Season xGI Per 90 (Points Above the Line Are Improving)";
+	"Recent Vs Season xGI Per 90 (Points Above the Line Are Running Hot)";
 const COLLAPSED_STORAGE_KEY = "fpl-form-scatter-collapsed";
 const CHART_BODY_ID = "form-scatter-chart";
 

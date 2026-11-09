@@ -42,15 +42,16 @@ type HeatCellOptions = {
 // Metric columns that get heat shading. The range is computed league-wide from
 // an unfiltered query so a player's colour stays fixed as you filter.
 export const FORM_HEAT_KEYS = [
+	"projected_xgi",
+	"est_xg90",
+	"est_xa90",
+	"est_xgi90",
 	"window_xg90",
 	"window_xa90",
 	"window_xgi90",
 	"season_xg90",
 	"season_xa90",
 	"season_xgi90",
-	"delta_xg90",
-	"delta_xa90",
-	"delta_xgi90",
 	"window_xg90_per_million",
 	"window_xa90_per_million",
 	"window_xgi90_per_million",
@@ -181,36 +182,54 @@ function buildFormMetricColumns(
 	const noun = ATTACKING_METRIC_NOUNS[metric];
 	const styles = ATTACKING_METRIC_STYLES[metric];
 	return (
-		["window", "season", "delta", "value"] satisfies AttackingMetricColumn[]
+		[
+			"est",
+			"window",
+			"season",
+			"delta",
+			"value",
+		] satisfies AttackingMetricColumn[]
 	).map((group) => {
 		const groupLabel = ATTACKING_METRIC_GROUP_LABELS[group];
 		const key = ATTACKING_METRIC_KEYS[metric][group];
 		const formatter: HeatCellOptions =
-			group === "delta" ? { format: fmtDelta, scale: "diverging" } : {};
+			group === "delta" ? { format: fmtDelta } : {};
 		const tooltip =
-			group === "window"
-				? `Expected ${noun} per 90 minutes over the recent window`
-				: group === "season"
-					? `Expected ${noun} per 90 minutes, season to date`
-					: group === "delta"
-						? `Window ${label} per 90 minus season ${label} per 90; positive means recent form beats the season baseline`
-						: `Window ${label} per 90 divided by price`;
+			group === "est"
+				? `Estimated underlying ${noun} per 90: season to date, pulled towards last season's rate (worth 900 minutes) for players with 900+ minutes last season`
+				: group === "window"
+					? `Expected ${noun} per 90 minutes over the recent window`
+					: group === "season"
+						? `Expected ${noun} per 90 minutes, season to date`
+						: group === "delta"
+							? `Window ${label} per 90 minus season ${label} per 90. Descriptive only: backtests found recent swings revert to the season rate (see Research)`
+							: `Window ${label} per 90 divided by price`;
 		const header =
 			group === "value"
 				? `${label} Per 90 Per £m`
 				: `${groupLabel} ${label} Per 90`;
 		return {
-			accessorKey: key,
+			id: key,
+			// Players without window minutes have no window rate or delta; read
+			// them as undefined so they sort last in either direction rather
+			// than as zero in the middle of a signed column.
+			accessorFn: (row) => row[key] ?? undefined,
+			sortUndefined: "last",
 			header,
 			cell: heatCell<FormPlayer>(formatter),
-			meta: heatMeta<FormPlayer>(
-				{
-					tooltip,
-					headerClassName: styles.header,
-				},
-				ranges[key],
-				formatter,
-			),
+			// The delta is descriptive, so it is left unshaded rather than
+			// coloured as favourable or unfavourable.
+			meta:
+				group === "delta"
+					? { tooltip, headerClassName: styles.header, numeric: true }
+					: heatMeta<FormPlayer>(
+							{
+								tooltip,
+								headerClassName: styles.header,
+							},
+							ranges[key],
+							formatter,
+						),
 		} satisfies ColumnDef<FormPlayer>;
 	});
 }
@@ -271,6 +290,28 @@ export function buildFormColumns(
 ): ColumnDef<FormPlayer>[] {
 	return [
 		...buildPlayerIdentityColumns<FormPlayer>(),
+		{
+			accessorKey: "projected_xgi",
+			header: "Projected xGI",
+			cell: heatCell<FormPlayer>(),
+			meta: heatMeta<FormPlayer>(
+				{
+					tooltip:
+						"Expected xGI per gameweek: estimated xGI per 90 times projected minutes. The default ranking, because it ranked future xGI best in backtests (see Research)",
+				},
+				ranges.projected_xgi,
+			),
+		},
+		{
+			accessorKey: "projected_minutes",
+			header: "Projected Mins",
+			cell: heatCell<FormPlayer>({ format: (v) => fmtNum(v, 0) }),
+			meta: {
+				tooltip:
+					"Expected minutes per gameweek: an even blend of recent-window and season-to-date minutes per gameweek, because recent playing-time changes partly persist",
+				numeric: true,
+			},
+		},
 		...ATTACKING_METRIC_COLUMN_ORDER.filter(
 			(metric) => visibleMetrics[metric],
 		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
