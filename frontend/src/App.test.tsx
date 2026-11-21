@@ -1275,7 +1275,7 @@ test("opens a current squad inspection view from an imported FPL team", async ()
 	});
 	expect(screen.getByText("GW39 A Chelsea")).toBeInTheDocument();
 	expect(screen.queryByText("GW31 H Historical")).not.toBeInTheDocument();
-	expect(screen.queryByText("Starting XI")).not.toBeInTheDocument();
+	expect(screen.getByText("Starting XI")).toBeInTheDocument();
 	expect(screen.queryByText("Bench")).not.toBeInTheDocument();
 	expect(screen.queryByText("Slot")).not.toBeInTheDocument();
 	expect(screen.getByText("Fixture Risk")).toBeInTheDocument();
@@ -1591,6 +1591,183 @@ test("normalises contradictory squad, ownership and shortlist URL state", async 
 	expect(params.get("shortlist_only")).toBe("1");
 });
 
+test("finds replacements from squad inspection with position, price plus bank, and not-owned filters", async () => {
+	const unownedMidUnderBudget = {
+		...formRows[0],
+		element: 4,
+		web_name: "Gordon",
+		position: "MID",
+		team_name: "Newcastle",
+		price: 9.5,
+	};
+	const unownedMidOverBudget = {
+		...formRows[0],
+		element: 5,
+		web_name: "Salah",
+		position: "MID",
+		team_name: "Liverpool",
+		price: 12.5,
+	};
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/form?")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify([
+						...broadFormRows,
+						unownedMidUnderBudget,
+						unownedMidOverBudget,
+					]),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(
+		null,
+		"",
+		"/?tab=defcon&fpl_team=123&squad_view=1&q=OldSearch&team=Arsenal&shortlist=1&sort=window_defcon:desc",
+	);
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Find replacement for Saka" }),
+		).toBeInTheDocument();
+	});
+
+	fireEvent.change(screen.getByLabelText(/Bank/), {
+		target: { value: "1.5" },
+	});
+	fireEvent.click(
+		screen.getByRole("button", { name: "Find replacement for Saka" }),
+	);
+
+	await waitFor(() => {
+		expect(
+			screen.queryByText("Next-GW Squad Inspection"),
+		).not.toBeInTheDocument();
+	});
+	await waitFor(() => {
+		const table = screen.getByRole("table");
+		expect(within(table).getByText("Gordon")).toBeInTheDocument();
+	});
+	const table = screen.getByRole("table");
+	// Owned MIDs (Mbeumo, Saka), over-budget MID (Salah), and FWD (Haaland) are filtered out.
+	expect(within(table).queryByText("Mbeumo")).not.toBeInTheDocument();
+	expect(within(table).queryByText("Saka")).not.toBeInTheDocument();
+	expect(within(table).queryByText("Salah")).not.toBeInTheDocument();
+	expect(within(table).queryByText("Haaland")).not.toBeInTheDocument();
+
+	expect(screen.getByRole("button", { name: "Attacking Form" })).toHaveClass(
+		"bg-zinc-900",
+	);
+	expect(screen.getByLabelText("Position")).toHaveValue("MID");
+	expect(screen.getByPlaceholderText("e.g. Saka")).toHaveValue("");
+	expect(screen.getByLabelText("Team")).toHaveValue("");
+	expect(screen.getByRole("button", { name: "Not Owned" })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	expect(screen.queryByText("Season History")).not.toBeInTheDocument();
+
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("tab")).toBeNull();
+	expect(params.get("squad_view")).toBeNull();
+	expect(params.get("position")).toBe("MID");
+	expect(params.get("max_price")).toBe("11.5");
+	expect(params.get("squad")).toBe("not-owned");
+	expect(params.get("q")).toBeNull();
+	expect(params.get("team")).toBeNull();
+	expect(params.get("shortlist_only")).toBeNull();
+	expect(params.get("sort")).toBeNull();
+});
+
+test("clears invalid position and omits null price when finding replacement for a manager pick", async () => {
+	const teamWithManager = {
+		...importedTeam,
+		owned_elements: [1, 99],
+		picks: [
+			importedTeam.picks[0],
+			{
+				element: 99,
+				web_name: "Arteta",
+				position: "MNG",
+				team_name: "Arsenal",
+				squad_position: 12,
+				multiplier: 0,
+				is_captain: false,
+				is_vice_captain: false,
+				is_starting: false,
+			},
+		],
+	};
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/fpl-team/")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(teamWithManager), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/current-context")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify([
+						...currentPlayerContexts,
+						{
+							...currentPlayerContexts[0],
+							element: 99,
+							web_name: "Arteta",
+							position: "MNG",
+							price: null,
+						},
+					]),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(
+		null,
+		"",
+		"/?fpl_team=123&squad_view=1&position=DEF&max_price=7",
+	);
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Find replacement for Arteta" }),
+		).toBeInTheDocument();
+	});
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Find replacement for Arteta" }),
+	);
+
+	await waitFor(() => {
+		expect(
+			screen.queryByText("Next-GW Squad Inspection"),
+		).not.toBeInTheDocument();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("position")).toBeNull();
+	expect(params.get("max_price")).toBeNull();
+	expect(params.get("squad")).toBe("not-owned");
+});
+
 test.each([
 	["doubles", [26, 27, 28, 29, 30, 30]],
 	["blanks", [26, 28, 29]],
@@ -1781,6 +1958,44 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 			new URLSearchParams(window.location.search).get("compare"),
 		).toBeNull();
 	});
+});
+
+test("swaps compared players and opens player detail from a compare column header", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?compare=1&compare_a=1&compare_b=2&compare_window=2&compare_as_of_gw=2",
+	);
+
+	render(withProviders(<App />));
+
+	const compareDialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	await within(compareDialog).findByRole("button", { name: "Mbeumo" });
+
+	fireEvent.click(within(compareDialog).getByRole("button", { name: "Swap" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("compare_a")).toBe("2");
+		expect(params.get("compare_b")).toBe("1");
+	});
+	const headers = within(compareDialog).getAllByRole("columnheader");
+	expect(headers[1]).toHaveTextContent("Saka");
+	expect(headers[2]).toHaveTextContent("Mbeumo");
+
+	fireEvent.click(within(compareDialog).getByRole("button", { name: "Saka" }));
+
+	await waitFor(() => {
+		expect(
+			screen.queryByRole("dialog", { name: "Compare Players" }),
+		).not.toBeInTheDocument();
+	});
+	const playerDialog = await screen.findByRole("dialog", { name: "Saka" });
+	expect(playerDialog).toBeInTheDocument();
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("compare")).toBeNull();
+	expect(params.get("player")).toBe("2");
 });
 
 test("hides stale comparison rows while a new as-of context is loading", async () => {

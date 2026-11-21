@@ -17,7 +17,10 @@ import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { PlayerToolbar } from "./components/PlayerToolbar";
 import { SeasonStatus } from "./components/SeasonStatus";
-import { SquadInspection } from "./components/SquadInspection";
+import {
+	type ReplacementRequest,
+	SquadInspection,
+} from "./components/SquadInspection";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { useDashboardQueries } from "./hooks/useDashboardQueries";
 import { useTheme } from "./hooks/useTheme";
@@ -56,6 +59,7 @@ import {
 	defaultTransferFilters,
 	type FilterPreset,
 	isPlayerTab,
+	POSITIONS,
 	type ShortlistablePlayer,
 	TAB_LABELS,
 	TABS,
@@ -375,6 +379,24 @@ export default function App() {
 		setPlayerSeason(DEFAULT_PLAYER_SEASON);
 	}
 
+	function findReplacement(request: ReplacementRequest) {
+		if (tab !== "form") {
+			setTab("form");
+			setSort(null);
+		}
+		setShowSquadView(false);
+		const nextPosition = POSITIONS.find((value) => value === request.position);
+		setPosition(nextPosition ?? DEFAULT_POSITION);
+		setTransferFilters((current) => ({
+			...current,
+			maxPrice: request.maxPrice ?? null,
+		}));
+		setOwnershipFilter("not-owned");
+		setPlayerSearch(DEFAULT_PLAYER_SEARCH);
+		setTeamFilter(DEFAULT_TEAM_FILTER);
+		setShowShortlistedOnly(false);
+	}
+
 	function openComparePanel() {
 		setCompareOpen(true);
 		setCompareWindow(windowSize);
@@ -398,6 +420,16 @@ export default function App() {
 		if (element !== null && element === compareLeftElement) {
 			setCompareLeftElement(null);
 		}
+	}
+
+	function swapComparePlayers() {
+		setCompareLeftElement(compareRightElement);
+		setCompareRightElement(compareLeftElement);
+	}
+
+	function openPlayerFromCompare(element: number) {
+		setCompareOpen(false);
+		openPlayerDetail(element);
 	}
 
 	function toggleShortlist(element: number) {
@@ -1018,6 +1050,7 @@ export default function App() {
 							}
 						}}
 						onPlayerClick={openPlayerDetail}
+						onFindReplacement={findReplacement}
 					/>
 				) : active?.isPending ? (
 					<p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
@@ -1123,6 +1156,8 @@ export default function App() {
 						onAsOfGwChange={setCompareAsOfGw}
 						onLeftChange={updateCompareLeft}
 						onRightChange={updateCompareRight}
+						onSwap={swapComparePlayers}
+						onOpenPlayer={openPlayerFromCompare}
 						onRetryContext={() => {
 							if (compareFormQuery.isError) {
 								void compareFormQuery.refetch();
