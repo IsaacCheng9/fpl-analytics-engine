@@ -206,8 +206,8 @@ function summariseGameweeks(
 	const xg = sumGameweekMetric(gameweeks, "expected_goals");
 	const xa = sumGameweekMetric(gameweeks, "expected_assists");
 	const xgi = sumGameweekMetric(gameweeks, "expected_goal_involvements");
-	const defcon = sumGameweekMetric(gameweeks, "defensive_contribution");
-	const defconGames = gameweeks.filter(
+	const defcon = sumGameweekMetric(appearances, "defensive_contribution");
+	const defconGames = appearances.filter(
 		(gameweek) => gameweek.defcon_hit !== null,
 	);
 	const defconHits = defconGames.filter((gameweek) => gameweek.defcon_hit);

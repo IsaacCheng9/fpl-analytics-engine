@@ -15,13 +15,26 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2.0
 # Identify as a browser; the FPL API rejects some default client user agents.
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fpl-analytics-engine/0.1)"}
+# Reuse one HTTP session so archival runs share pooled keep-alive connections.
+SESSION = requests.Session()
+
+
+def _is_retryable(exc: requests.RequestException) -> bool:
+    """Return whether an FPL API error is transient and worth retrying."""
+    if not isinstance(exc, requests.HTTPError):
+        return True
+    response = exc.response
+    if response is None:
+        return True
+    return response.status_code == 429 or response.status_code >= 500
 
 
 def _get_json(url: str) -> dict:
     """Fetch and decode a JSON payload from the FPL API.
 
-    Retry transient failures with a linear backoff so a single network blip
-    does not abort a long archival run.
+    Retry transient failures (network errors, HTTP 429 and 5xx) with a linear
+    backoff so a single blip does not abort a long archival run, while failing
+    fast on client errors such as 404.
 
     Args:
         url: The fully-qualified endpoint URL to request.
@@ -30,17 +43,18 @@ def _get_json(url: str) -> dict:
         The decoded JSON response.
 
     Raises:
-        requests.RequestException: If every attempt fails.
+        requests.RequestException: If a non-retryable error occurs or every
+            attempt fails.
     """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = requests.get(
+            response = SESSION.get(
                 url, headers=HEADERS, timeout=REQUEST_TIMEOUT_SECONDS
             )
             response.raise_for_status()
             return response.json()
-        except requests.RequestException:
-            if attempt == MAX_RETRIES:
+        except requests.RequestException as exc:
+            if attempt == MAX_RETRIES or not _is_retryable(exc):
                 raise
             time.sleep(RETRY_BACKOFF_SECONDS * attempt)
     # Unreachable: the loop always returns or raises, but satisfies the checker.

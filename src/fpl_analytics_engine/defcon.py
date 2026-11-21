@@ -32,6 +32,42 @@ DEFAULT_COUNT_CALIBRATION_BINS = 10
 DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH = 50.0
 
 
+def _empty_probabilities_frame(
+    position_dtype: pl.DataType | type[pl.DataType],
+) -> pl.DataFrame:
+    """Return a typed empty probability table matching model outputs."""
+    return pl.DataFrame(
+        schema={
+            "element": pl.Int64,
+            "web_name": pl.String,
+            "position": position_dtype,
+            "team_name": pl.String,
+            "games": pl.UInt32,
+            "hits": pl.UInt32,
+            "raw_rate": pl.Float64,
+            "prob": pl.Float64,
+            "as_of_gw": pl.Int64,
+        }
+    )
+
+
+def _latest_player_meta(history: pl.DataFrame, as_of_gw: int) -> pl.DataFrame:
+    """Return each player's latest metadata as of ``as_of_gw``."""
+    point_in_time = history.filter(pl.col("round") <= as_of_gw)
+    sort_cols = ["round"]
+    if "kickoff_time" in point_in_time.columns:
+        sort_cols.append("kickoff_time")
+    return (
+        point_in_time.sort(sort_cols, nulls_last=True)
+        .group_by("element")
+        .agg(
+            pl.col("web_name").last(),
+            pl.col("position").last(),
+            pl.col("team_name").last(),
+        )
+    )
+
+
 def _estimate_position_priors(
     per_player: pl.DataFrame,
     min_games_for_prior: int,
@@ -87,12 +123,17 @@ def _estimate_position_priors(
                 "beta_prior": (1 - mean) * concentration,
             }
         )
-    priors = pl.DataFrame(rows)
-    if priors.height > 0:
-        priors = priors.with_columns(
-            pl.col("position").cast(per_player.schema["position"])
+    if not rows:
+        return pl.DataFrame(
+            schema={
+                "position": per_player.schema["position"],
+                "alpha_prior": pl.Float64,
+                "beta_prior": pl.Float64,
+            }
         )
-    return priors
+    return pl.DataFrame(rows).with_columns(
+        pl.col("position").cast(per_player.schema["position"])
+    )
 
 
 def defcon_probabilities(
@@ -119,17 +160,25 @@ def defcon_probabilities(
         One row per eligible player with the empirical hit rate, the
         shrinkage-adjusted probability, and the supporting game counts.
     """
+    position_dtype = history.schema.get("position", pl.String)
     eligible = history.filter(
         (pl.col("round") <= as_of_gw)
         & (pl.col("minutes") >= min_minutes)
         & pl.col("defcon_hit").is_not_null()
     )
-    per_player = eligible.group_by("element").agg(
-        pl.col("web_name").last(),
-        pl.col("position").last(),
-        pl.col("team_name").last(),
-        pl.col("defcon_hit").sum().alias("hits"),
-        pl.len().alias("games"),
+    if eligible.is_empty():
+        return _empty_probabilities_frame(position_dtype)
+
+    # Resolve club and labels from full point-in-time history so mid-season
+    # transfers always carry their latest club even before a 60+ min game.
+    meta = _latest_player_meta(history, as_of_gw)
+    per_player = (
+        eligible.group_by("element")
+        .agg(
+            pl.col("defcon_hit").sum().alias("hits"),
+            pl.len().alias("games"),
+        )
+        .join(meta, on="element", how="left")
     )
     priors = _estimate_position_priors(
         per_player, min_games_for_prior, prior_strength, empirical_bayes
@@ -217,6 +266,8 @@ def backtest_defcon_probabilities(
         Per-appearance rows with ``prob``, the raw-rate baseline, and the
         realised ``hit`` (0.0 or 1.0).
     """
+    if history.is_empty():
+        return pl.DataFrame()
     max_round = cast(int, history["round"].max())
     if gw_range is None:
         gw_range = range(1, max_round)
@@ -418,19 +469,27 @@ def defcon_count_probabilities(
         One row per eligible player with the empirical hit rate and the
         count-model probability.
     """
+    position_dtype = history.schema.get("position", pl.String)
     eligible = history.filter(
         (pl.col("round") <= as_of_gw)
         & (pl.col("minutes") >= min_minutes)
         & pl.col("defcon_hit").is_not_null()
     )
-    per_player = eligible.group_by("element").agg(
-        pl.col("web_name").last(),
-        pl.col("position").last(),
-        pl.col("team_name").last(),
-        pl.col("defcon_threshold").first().alias("threshold"),
-        pl.col("defensive_contribution").sum().alias("total_count"),
-        pl.col("defcon_hit").sum().alias("hits"),
-        pl.len().alias("games"),
+    if eligible.is_empty():
+        return _empty_probabilities_frame(position_dtype)
+
+    # Resolve club and labels from full point-in-time history so mid-season
+    # transfers always carry their latest club even before a 60+ min game.
+    meta = _latest_player_meta(history, as_of_gw)
+    per_player = (
+        eligible.group_by("element")
+        .agg(
+            pl.col("defcon_threshold").first().alias("threshold"),
+            pl.col("defensive_contribution").sum().alias("total_count"),
+            pl.col("defcon_hit").sum().alias("hits"),
+            pl.len().alias("games"),
+        )
+        .join(meta, on="element", how="left")
     )
     priors = _gamma_position_priors(
         per_player, min_games_for_prior, prior_strength, empirical_bayes
@@ -457,7 +516,20 @@ def defcon_count_probabilities(
                 "as_of_gw": as_of_gw,
             }
         )
-    return pl.DataFrame(records)
+    return pl.DataFrame(
+        records,
+        schema={
+            "element": pl.Int64,
+            "web_name": pl.String,
+            "position": position_dtype,
+            "team_name": pl.String,
+            "games": pl.UInt32,
+            "hits": pl.UInt32,
+            "raw_rate": pl.Float64,
+            "prob": pl.Float64,
+            "as_of_gw": pl.Int64,
+        },
+    )
 
 
 def _count_and_binary_probabilities(
@@ -574,6 +646,8 @@ def backtest_defcon_count_probabilities(
         Per-appearance rows with calibrated ``prob``, uncalibrated
         ``count_prob``, ``binary_prob`` and realised ``hit``.
     """
+    if history.is_empty():
+        return pl.DataFrame()
     max_round = cast(int, history["round"].max())
     if gw_range is None:
         gw_range = range(1, max_round)
@@ -718,7 +792,21 @@ def calibrated_defcon_count_probabilities(
         min_games_for_prior,
     )
     if current.is_empty():
-        return current
+        return current.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("prob")
+        ).select(
+            "element",
+            "web_name",
+            "position",
+            "team_name",
+            "games",
+            "hits",
+            "raw_rate",
+            "prob",
+            "count_prob",
+            "binary_prob",
+            "as_of_gw",
+        )
 
     calibration_rows = _raw_count_calibration_rows(
         history,

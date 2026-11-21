@@ -1239,6 +1239,42 @@ def test_player_detail_uses_live_season_as_current(client: TestClient) -> None:
     assert client.get("/players/7").status_code == 404
 
 
+def test_defcon_probability_endpoints_return_empty_when_no_rows_qualify(
+    client: TestClient,
+) -> None:
+    prob = client.get("/players/defcon-probability", params={"min_minutes": 200})
+    validation = client.get(
+        "/players/defcon-probability-validation", params={"min_minutes": 200}
+    )
+
+    assert prob.status_code == 200
+    assert prob.json() == []
+    assert validation.status_code == 200
+    assert validation.json()["n_predictions"] == 0
+    assert validation.json()["calibration"] == []
+
+
+@pytest.mark.parametrize(
+    "path", ["/fpl-team/0", "/fpl-team/-1", "/players/0", "/players/-1"]
+)
+def test_non_positive_path_ids_are_rejected_before_fetching(
+    client: TestClient, path: str
+) -> None:
+    called = False
+
+    def fail_if_called(entry_id: int, event: int) -> dict:
+        nonlocal called
+        called = True
+        return {}
+
+    api.app.dependency_overrides[api.get_entry_picks_fetcher] = lambda: fail_if_called
+
+    response = client.get(path)
+
+    assert response.status_code == 422
+    assert not called
+
+
 def test_default_snapshot_caches_validation_and_prior_rates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

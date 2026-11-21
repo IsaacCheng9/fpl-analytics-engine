@@ -169,3 +169,23 @@ def test_season_summaries_scope_2022_23_expected_stats_to_gw16_onward() -> None:
     assert by_season["2022-23"]["xa90"] == pytest.approx((0.6 / 180) * 90)
     assert by_season["2022-23"]["xgi90"] == pytest.approx((1.6 / 180) * 90)
     assert by_season["2023-24"]["xgi90"] == pytest.approx((1.0 / 180) * 90)
+
+
+def test_player_defcon_metrics_exclude_zero_minute_rows() -> None:
+    rows = [
+        _row(1, minutes=90, defcon=12, defcon_hit=True),
+        _row(2, minutes=0, defcon=0, defcon_hit=False),
+        _row(3, minutes=90, defcon=8, defcon_hit=False),
+        _row(4, minutes=0, defcon=0, defcon_hit=False),
+    ]
+    frame = _frame(rows)
+
+    gws = player.player_gameweeks(frame, window=4).sort("round")
+    by_round = {row["round"]: row for row in gws.to_dicts()}
+    # Raw row counts stay untouched, but rolling mean ignores 0-minute rows.
+    assert by_round[2]["defensive_contribution"] == 0
+    assert by_round[2]["rolling_defcon"] == pytest.approx(12.0)
+    assert by_round[4]["rolling_defcon"] == pytest.approx(10.0)
+
+    summary = player.season_summaries(frame).to_dicts()[0]
+    assert summary["defcon_hit_rate"] == pytest.approx(0.5)

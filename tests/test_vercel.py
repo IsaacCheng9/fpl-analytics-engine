@@ -249,13 +249,22 @@ def test_vercel_live_team_imports_are_not_cdn_cacheable(client: TestClient) -> N
     assert vercel_entrypoint.CDN_CACHE_HEADER not in response.headers
 
 
-def test_vercel_frontend_is_not_cdn_cacheable(tmp_path: Path) -> None:
+def test_vercel_frontend_and_static_files_are_cdn_cacheable(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
-    dist.mkdir()
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
     (dist / "index.html").write_text("Frontend", encoding="utf-8")
+    (dist / "og-image.png").write_bytes(b"png")
+    (assets / "app.js").write_text("console.log('ok')", encoding="utf-8")
     client = TestClient(vercel_entrypoint.create_app(dist))
 
-    response = client.get("/")
+    for path in ("/", "/players/1", "/og-image.png", "/assets/app.js"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers[vercel_entrypoint.CDN_CACHE_HEADER] == (
+            vercel_entrypoint.CDN_CACHE_CONTROL
+        )
 
-    assert response.status_code == 200
-    assert vercel_entrypoint.CDN_CACHE_HEADER not in response.headers
+    missing = client.get("/..%2Fprivate.txt")
+    assert missing.status_code == 404
+    assert vercel_entrypoint.CDN_CACHE_HEADER not in missing.headers

@@ -11,21 +11,93 @@ permissions:
 jobs:
   bump_version:
     if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    concurrency:
+      group: version-main
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     name: Bump version with commitizen
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: "${{ secrets.GITHUB_TOKEN }}"
-      - id: cz
-        name: Create bump and changelog
-        uses: commitizen-tools/commitizen-action@338bbd841b75aaee6bf5340e1fa12f6ab58ff9ff
+
+      - name: Check whether main already has a version bump
+        id: check_head
+        run: |
+          HEAD_MSG=$(git log -1 --pretty=%s)
+          if [[ "$HEAD_MSG" == bump:* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Latest main commit is already a version bump, skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install uv
+        if: steps.check_head.outputs.skip != 'true'
+        uses: astral-sh/setup-uv@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          commitizen_version: 4.16.5
-          # Avoid creating a CHANGELOG.md file.
-          changelog: false
+          enable-cache: true
+
+      - name: Bump version and update uv.lock
+        id: bump
+        if: steps.check_head.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          for attempt in 1 2 3; do
+            git fetch origin main --tags --force
+            git reset --hard origin/main
+
+            HEAD_MSG=$(git log -1 --pretty=%s)
+            if [[ "$HEAD_MSG" == bump:* ]]; then
+              echo "Latest main commit is already a version bump, skipping."
+              exit 0
+            fi
+
+            OLD_VERSION=$(grep -m 1 '^version = "' pyproject.toml | cut -d'"' -f2)
+
+            # Exit code 21 means no bump-worthy commits - exit cleanly for
+            # unmapped prefixes such as chore or docs.
+            set +e
+            uvx --from commitizen==4.16.5 cz bump --yes --files-only
+            rc=$?
+            set -e
+            if [ "$rc" -eq 21 ]; then
+              echo "No bump-worthy commits found, skipping."
+              exit 0
+            elif [ "$rc" -ne 0 ]; then
+              exit "$rc"
+            fi
+
+            uv lock
+
+            NEW_VERSION=$(grep -m 1 '^version = "' pyproject.toml | cut -d'"' -f2)
+
+            git add pyproject.toml uv.lock
+            git commit -m "bump: version $OLD_VERSION → $NEW_VERSION"
+            git tag "$NEW_VERSION"
+
+            if git push origin HEAD:main; then
+              git push origin "refs/tags/$NEW_VERSION"
+              echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # Another PR landed on main during the bump window - drop the local
+            # tag and retry against the updated main tip.
+            echo "Push raced with a newer commit on main (attempt $attempt/3); retrying..."
+            git tag -d "$NEW_VERSION"
+          done
+
+          echo "Failed to push version bump after 3 attempts."
+          exit 1
+
       - name: Print version
-        run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
+        if: steps.bump.outputs.version != ''
+        run: echo "Bumped to version ${{ steps.bump.outputs.version }}"
