@@ -28,6 +28,24 @@
       content="FPL Analytics Engine Attacking Form table ranking players by projected xGI"
     />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (() => {
+        let theme = "system";
+        try {
+          const stored = localStorage.getItem("fpl-theme");
+          if (stored === "light" || stored === "dark" || stored === "system") {
+            theme = stored;
+          }
+        } catch {}
+        const prefersDark =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.classList.toggle(
+          "dark",
+          theme === "dark" || (theme === "system" && prefersDark),
+        );
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
