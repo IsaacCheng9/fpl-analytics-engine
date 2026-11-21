@@ -36,8 +36,24 @@ type HeatScaleKind = "sequential" | "diverging";
 type HeatCellOptions = {
 	lowerIsBetter?: boolean;
 	scale?: HeatScaleKind;
-	format?: (value: number | null) => string;
+	format?: (value: number | null | undefined) => string;
 };
+
+// Map nullable API numbers to undefined so TanStack Table always sorts missing
+// values last in either direction rather than coercing null to 0.
+function nullableNumericColumn<T, K extends keyof T & string>(
+	key: K,
+): {
+	id: K;
+	accessorFn: (row: T) => T[K] | undefined;
+	sortUndefined: "last";
+} {
+	return {
+		id: key,
+		accessorFn: (row) => row[key] ?? undefined,
+		sortUndefined: "last",
+	};
+}
 
 // Metric columns that get heat shading. The range is computed league-wide from
 // an unfiltered query so a player's colour stays fixed as you filter.
@@ -131,9 +147,10 @@ function HeatCell({
 
 // Build the text renderer for a numeric cell; heatMeta owns any shading.
 function heatCell<T>(opts: HeatCellOptions = {}) {
-	const format = opts.format ?? ((value: number | null) => fmtNum(value));
+	const format =
+		opts.format ?? ((value: number | null | undefined) => fmtNum(value));
 	return (info: CellContext<T, unknown>) => {
-		const value = info.getValue<number | null>();
+		const value = info.getValue<number | null | undefined>();
 		return <HeatCell value={value} text={format(value)} />;
 	};
 }
@@ -243,9 +260,9 @@ function buildPlayerIdentityColumns<
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
 		{
-			accessorKey: "price",
+			...nullableNumericColumn<T, "price">("price"),
 			header: "Price",
-			cell: (info) => fmtPrice(info.getValue<number | null>()),
+			cell: (info) => fmtPrice(info.getValue<number | null | undefined>()),
 			meta: { numeric: true },
 		},
 	];
@@ -257,7 +274,7 @@ function buildPlayerContextColumns<
 >(): ColumnDef<T>[] {
 	return [
 		{
-			accessorKey: "avg_fdr",
+			...nullableNumericColumn<T, "avg_fdr">("avg_fdr"),
 			header: "FDR (Next 5)",
 			cell: heatCell<T>({
 				lowerIsBetter: true,
@@ -269,7 +286,7 @@ function buildPlayerContextColumns<
 			}),
 		},
 		{
-			accessorKey: "current_ownership",
+			...nullableNumericColumn<T, "current_ownership">("current_ownership"),
 			header: "Owned %",
 			cell: heatCell<T>({
 				lowerIsBetter: true,
@@ -291,7 +308,7 @@ export function buildFormColumns(
 	return [
 		...buildPlayerIdentityColumns<FormPlayer>(),
 		{
-			accessorKey: "projected_xgi",
+			...nullableNumericColumn<FormPlayer, "projected_xgi">("projected_xgi"),
 			header: "Projected xGI",
 			cell: heatCell<FormPlayer>(),
 			meta: heatMeta<FormPlayer>(
@@ -303,7 +320,9 @@ export function buildFormColumns(
 			),
 		},
 		{
-			accessorKey: "projected_minutes",
+			...nullableNumericColumn<FormPlayer, "projected_minutes">(
+				"projected_minutes",
+			),
 			header: "Projected Mins",
 			cell: heatCell<FormPlayer>({ format: (v) => fmtNum(v, 0) }),
 			meta: {
@@ -316,7 +335,9 @@ export function buildFormColumns(
 			(metric) => visibleMetrics[metric],
 		).flatMap((metric) => buildFormMetricColumns(ranges, metric)),
 		{
-			accessorKey: "season_points_per_million",
+			...nullableNumericColumn<FormPlayer, "season_points_per_million">(
+				"season_points_per_million",
+			),
 			header: "Points Per £m",
 			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 1),
@@ -328,7 +349,7 @@ export function buildFormColumns(
 		},
 		...buildPlayerContextColumns<FormPlayer>(),
 		{
-			accessorKey: "window_minutes",
+			...nullableNumericColumn<FormPlayer, "window_minutes">("window_minutes"),
 			header: "Mins",
 			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -339,7 +360,9 @@ export function buildFormColumns(
 			},
 		},
 		{
-			accessorKey: "window_mins_per_appearance",
+			...nullableNumericColumn<FormPlayer, "window_mins_per_appearance">(
+				"window_mins_per_appearance",
+			),
 			header: "Mins Per App",
 			cell: heatCell<FormPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -351,7 +374,9 @@ export function buildFormColumns(
 			},
 		},
 		{
-			accessorKey: "window_start_rate",
+			...nullableNumericColumn<FormPlayer, "window_start_rate">(
+				"window_start_rate",
+			),
 			header: "Start %",
 			cell: heatCell<FormPlayer>({ format: fmtPct }),
 			meta: {
@@ -368,7 +393,9 @@ export function buildDefconColumns(
 	return [
 		...buildPlayerIdentityColumns<DefconPlayer>(),
 		{
-			accessorKey: "window_defcon_hit_rate",
+			...nullableNumericColumn<DefconPlayer, "window_defcon_hit_rate">(
+				"window_defcon_hit_rate",
+			),
 			header: "Hit Rate",
 			cell: heatCell<DefconPlayer>({
 				format: fmtPct,
@@ -382,7 +409,7 @@ export function buildDefconColumns(
 			),
 		},
 		{
-			accessorKey: "window_defcon",
+			...nullableNumericColumn<DefconPlayer, "window_defcon">("window_defcon"),
 			header: "Avg DefCon",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 1),
@@ -396,7 +423,9 @@ export function buildDefconColumns(
 			),
 		},
 		{
-			accessorKey: "window_defcon_hits",
+			...nullableNumericColumn<DefconPlayer, "window_defcon_hits">(
+				"window_defcon_hits",
+			),
 			header: "Hits",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -407,7 +436,7 @@ export function buildDefconColumns(
 			},
 		},
 		{
-			accessorKey: "window_games",
+			...nullableNumericColumn<DefconPlayer, "window_games">("window_games"),
 			header: "Games",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -415,7 +444,9 @@ export function buildDefconColumns(
 			meta: { tooltip: "Eligible games in the window", numeric: true },
 		},
 		{
-			accessorKey: "season_points_per_million",
+			...nullableNumericColumn<DefconPlayer, "season_points_per_million">(
+				"season_points_per_million",
+			),
 			header: "Points Per £m",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 1),
@@ -427,7 +458,9 @@ export function buildDefconColumns(
 		},
 		...buildPlayerContextColumns<DefconPlayer>(),
 		{
-			accessorKey: "window_minutes",
+			...nullableNumericColumn<DefconPlayer, "window_minutes">(
+				"window_minutes",
+			),
 			header: "Mins",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -438,7 +471,9 @@ export function buildDefconColumns(
 			},
 		},
 		{
-			accessorKey: "window_mins_per_appearance",
+			...nullableNumericColumn<DefconPlayer, "window_mins_per_appearance">(
+				"window_mins_per_appearance",
+			),
 			header: "Mins Per App",
 			cell: heatCell<DefconPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -450,7 +485,9 @@ export function buildDefconColumns(
 			},
 		},
 		{
-			accessorKey: "window_start_rate",
+			...nullableNumericColumn<DefconPlayer, "window_start_rate">(
+				"window_start_rate",
+			),
 			header: "Start %",
 			cell: heatCell<DefconPlayer>({
 				format: fmtPct,
@@ -469,7 +506,7 @@ export function buildDefconProbColumns(
 	return [
 		...buildPlayerIdentityColumns<DefconProbabilityPlayer>(),
 		{
-			accessorKey: "prob",
+			...nullableNumericColumn<DefconProbabilityPlayer, "prob">("prob"),
 			header: "P(Hit | 60+ Mins)",
 			cell: heatCell<DefconProbabilityPlayer>({ format: fmtPct }),
 			meta: heatMeta<DefconProbabilityPlayer>(
@@ -481,7 +518,7 @@ export function buildDefconProbColumns(
 			),
 		},
 		{
-			accessorKey: "raw_rate",
+			...nullableNumericColumn<DefconProbabilityPlayer, "raw_rate">("raw_rate"),
 			header: "Raw Rate",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: fmtPct,
@@ -492,7 +529,9 @@ export function buildDefconProbColumns(
 			),
 		},
 		{
-			accessorKey: "window_defcon",
+			...nullableNumericColumn<DefconProbabilityPlayer, "window_defcon">(
+				"window_defcon",
+			),
 			header: "Avg DefCon",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 1),
@@ -506,7 +545,7 @@ export function buildDefconProbColumns(
 			),
 		},
 		{
-			accessorKey: "games",
+			...nullableNumericColumn<DefconProbabilityPlayer, "games">("games"),
 			header: "Games",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -517,7 +556,7 @@ export function buildDefconProbColumns(
 			},
 		},
 		{
-			accessorKey: "hits",
+			...nullableNumericColumn<DefconProbabilityPlayer, "hits">("hits"),
 			header: "Hits",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -528,7 +567,10 @@ export function buildDefconProbColumns(
 			},
 		},
 		{
-			accessorKey: "season_points_per_million",
+			...nullableNumericColumn<
+				DefconProbabilityPlayer,
+				"season_points_per_million"
+			>("season_points_per_million"),
 			header: "Points Per £m",
 			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 1) }),
 			meta: heatMeta<DefconProbabilityPlayer>(
@@ -538,7 +580,9 @@ export function buildDefconProbColumns(
 		},
 		...buildPlayerContextColumns<DefconProbabilityPlayer>(),
 		{
-			accessorKey: "window_minutes",
+			...nullableNumericColumn<DefconProbabilityPlayer, "window_minutes">(
+				"window_minutes",
+			),
 			header: "Mins",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: (v) => fmtNum(v, 0),
@@ -549,7 +593,10 @@ export function buildDefconProbColumns(
 			},
 		},
 		{
-			accessorKey: "window_mins_per_appearance",
+			...nullableNumericColumn<
+				DefconProbabilityPlayer,
+				"window_mins_per_appearance"
+			>("window_mins_per_appearance"),
 			header: "Mins Per App",
 			cell: heatCell<DefconProbabilityPlayer>({ format: (v) => fmtNum(v, 0) }),
 			meta: {
@@ -559,7 +606,9 @@ export function buildDefconProbColumns(
 			},
 		},
 		{
-			accessorKey: "window_start_rate",
+			...nullableNumericColumn<DefconProbabilityPlayer, "window_start_rate">(
+				"window_start_rate",
+			),
 			header: "Start %",
 			cell: heatCell<DefconProbabilityPlayer>({
 				format: fmtPct,
@@ -608,8 +657,15 @@ export function buildClubColumns(
 			accessorFn: (row) => {
 				const value = row[key];
 				// Preserve the API's conceded-minus-expected sign; show favourable values as positive.
-				return value == null ? null : defensive ? -value : value;
+				return value == null
+					? undefined
+					: defensive
+						? value === 0
+							? 0
+							: -value
+						: value;
 			},
+			sortUndefined: "last",
 			header: `${label} ${metric} +/- ${total ? "Total" : "Per Match"}`,
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
@@ -625,7 +681,7 @@ export function buildClubColumns(
 	const columns: ColumnDef<ClubForm>[] = [
 		{ accessorKey: "team_name", header: "Club" },
 		{
-			accessorKey: "window_matches",
+			...nullableNumericColumn<ClubForm, "window_matches">("window_matches"),
 			header: "Matches",
 			cell: heatCell<ClubForm>({
 				format: (v) => fmtNum(v, 0),
@@ -633,7 +689,9 @@ export function buildClubColumns(
 			meta: { tooltip: "Club matches in the recent window", numeric: true },
 		},
 		{
-			accessorKey: "window_xg_per_match",
+			...nullableNumericColumn<ClubForm, "window_xg_per_match">(
+				"window_xg_per_match",
+			),
 			header: "Window xG",
 			cell: heatCell<ClubForm>(),
 			meta: heatMeta<ClubForm>(
@@ -642,7 +700,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "season_xg_per_match",
+			...nullableNumericColumn<ClubForm, "season_xg_per_match">(
+				"season_xg_per_match",
+			),
 			header: "Season xG",
 			cell: heatCell<ClubForm>(),
 			meta: heatMeta<ClubForm>(
@@ -651,7 +711,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "delta_xg_per_match",
+			...nullableNumericColumn<ClubForm, "delta_xg_per_match">(
+				"delta_xg_per_match",
+			),
 			header: "Delta xG",
 			cell: heatCell<ClubForm>({
 				format: fmtDelta,
@@ -672,7 +734,9 @@ export function buildClubColumns(
 		...(visibleColumns.goals
 			? [
 					{
-						accessorKey: "window_goals_for_per_match",
+						...nullableNumericColumn<ClubForm, "window_goals_for_per_match">(
+							"window_goals_for_per_match",
+						),
 						header: "Window Goals",
 						cell: heatCell<ClubForm>(),
 						meta: heatMeta<ClubForm>(
@@ -683,7 +747,9 @@ export function buildClubColumns(
 						),
 					},
 					{
-						accessorKey: "delta_goals_for_per_match",
+						...nullableNumericColumn<ClubForm, "delta_goals_for_per_match">(
+							"delta_goals_for_per_match",
+						),
 						header: "Delta Goals",
 						cell: heatCell<ClubForm>({
 							format: fmtDelta,
@@ -700,7 +766,7 @@ export function buildClubColumns(
 				]
 			: []),
 		{
-			accessorKey: "attack_form",
+			...nullableNumericColumn<ClubForm, "attack_form">("attack_form"),
 			header: "Attack Form",
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
@@ -712,7 +778,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "window_xgc_per_match",
+			...nullableNumericColumn<ClubForm, "window_xgc_per_match">(
+				"window_xgc_per_match",
+			),
 			header: "Window xGC",
 			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
@@ -726,7 +794,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "season_xgc_per_match",
+			...nullableNumericColumn<ClubForm, "season_xgc_per_match">(
+				"season_xgc_per_match",
+			),
 			header: "Season xGC",
 			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
@@ -738,7 +808,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "delta_xgc_per_match",
+			...nullableNumericColumn<ClubForm, "delta_xgc_per_match">(
+				"delta_xgc_per_match",
+			),
 			header: "Delta xGC",
 			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,
@@ -760,7 +832,10 @@ export function buildClubColumns(
 		...(visibleColumns.ga
 			? [
 					{
-						accessorKey: "window_goals_against_per_match",
+						...nullableNumericColumn<
+							ClubForm,
+							"window_goals_against_per_match"
+						>("window_goals_against_per_match"),
 						header: "Window Goals Conceded",
 						cell: heatCell<ClubForm>({
 							lowerIsBetter: true,
@@ -774,7 +849,9 @@ export function buildClubColumns(
 						),
 					},
 					{
-						accessorKey: "delta_goals_against_per_match",
+						...nullableNumericColumn<ClubForm, "delta_goals_against_per_match">(
+							"delta_goals_against_per_match",
+						),
 						header: "Delta Goals Conceded",
 						cell: heatCell<ClubForm>({
 							lowerIsBetter: true,
@@ -792,7 +869,7 @@ export function buildClubColumns(
 				]
 			: []),
 		{
-			accessorKey: "defence_form",
+			...nullableNumericColumn<ClubForm, "defence_form">("defence_form"),
 			header: "Defence Form",
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
@@ -805,7 +882,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "window_xgd_per_match",
+			...nullableNumericColumn<ClubForm, "window_xgd_per_match">(
+				"window_xgd_per_match",
+			),
 			header: "Window xGD",
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
@@ -818,7 +897,9 @@ export function buildClubColumns(
 			),
 		},
 		{
-			accessorKey: "season_xgd_per_match",
+			...nullableNumericColumn<ClubForm, "season_xgd_per_match">(
+				"season_xgd_per_match",
+			),
 			header: "Season xGD",
 			cell: heatCell<ClubForm>({ format: fmtDelta }),
 			meta: heatMeta<ClubForm>(
@@ -832,7 +913,7 @@ export function buildClubColumns(
 		overperformanceColumn("season", "xGD", true),
 		overperformanceColumn("season", "xGD", false),
 		{
-			accessorKey: "avg_fdr",
+			...nullableNumericColumn<ClubForm, "avg_fdr">("avg_fdr"),
 			header: "FDR (Next 5)",
 			cell: heatCell<ClubForm>({
 				lowerIsBetter: true,

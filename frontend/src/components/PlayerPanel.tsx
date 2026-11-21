@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	CartesianGrid,
 	Line,
@@ -143,6 +143,29 @@ export function PlayerPanel({
 		(summary) => summary.season === detail.selected_season,
 	);
 
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
+
+	useEffect(() => {
+		const previousFocus =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement
+				: null;
+		dialogRef.current?.focus();
+
+		function onKeyDown(event: KeyboardEvent) {
+			if (event.key === "Escape" && !event.defaultPrevented) {
+				onCloseRef.current();
+			}
+		}
+		document.addEventListener("keydown", onKeyDown);
+		return () => {
+			document.removeEventListener("keydown", onKeyDown);
+			previousFocus?.focus();
+		};
+	}, []);
+
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
 			<button
@@ -151,10 +174,17 @@ export function PlayerPanel({
 				className="fixed inset-0 cursor-default bg-black/40"
 				onClick={onClose}
 			/>
-			<div className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="player-panel-title"
+				tabIndex={-1}
+				className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl outline-none"
+			>
 				<div className="mb-4 flex items-start justify-between">
 					<div>
-						<h2 className="font-semibold text-xl">
+						<h2 id="player-panel-title" className="font-semibold text-xl">
 							{detail?.web_name ?? "Player"}
 						</h2>
 						{detail ? (

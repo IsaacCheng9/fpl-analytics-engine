@@ -153,6 +153,7 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
+		evidenceSeason: evidenceSeasonChoice,
 		sort,
 	} = urlState;
 	const {
@@ -182,16 +183,13 @@ export default function App() {
 		transferFilters: setTransferFilters,
 		shortlist: setShortlist,
 		showShortlistedOnly: setShowShortlistedOnly,
+		evidenceSeason: setEvidenceSeasonChoice,
 		sort: setSort,
 	} = setUrlState;
 	// The team ID input is a draft until imported, so it stays out of the URL.
 	const [fplTeamInput, setFplTeamInput] = useState(
 		urlState.fplTeamId?.toString() ?? "",
 	);
-	// Null follows the default season, which moves to the live season at GW19.
-	const [evidenceSeasonChoice, setEvidenceSeasonChoice] = useState<
-		string | null
-	>(null);
 
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
@@ -452,8 +450,15 @@ export default function App() {
 		enabled: analyticsReady && tab === "clubs",
 	});
 	const liveSeason = meta.data?.season ?? "";
+	const availableEvidenceSeasons = liveSeason
+		? evidenceSeasons(liveSeason)
+		: [];
 	const evidenceSeason =
-		evidenceSeasonChoice ?? defaultEvidenceSeason(liveSeason, latestGw);
+		evidenceSeasonChoice !== null &&
+		(availableEvidenceSeasons.length === 0 ||
+			availableEvidenceSeasons.includes(evidenceSeasonChoice))
+			? evidenceSeasonChoice
+			: defaultEvidenceSeason(liveSeason, latestGw);
 	// Keep the previous season on screen while a newly selected one loads, so
 	// the season selector stays put.
 	const defconValidationQuery = useQuery({
@@ -1098,7 +1103,14 @@ export default function App() {
 		return <SeasonStatus state="loading" />;
 	}
 	if (meta.isError || meta.data === undefined) {
-		return <SeasonStatus state="error" />;
+		return (
+			<SeasonStatus
+				state="error"
+				onRetry={() => {
+					void meta.refetch();
+				}}
+			/>
+		);
 	}
 	if (!analyticsReady) {
 		return <SeasonStatus meta={meta.data} state="preseason" />;
@@ -1579,9 +1591,28 @@ export default function App() {
 					) : defconValidationQuery.isError ||
 						clubValidationQuery.isError ||
 						formValidationQuery.isError ? (
-						<p className="text-red-600 text-sm">
-							Failed to load - is the API running on port 8000?
-						</p>
+						<div className="flex items-center gap-3">
+							<p className="text-red-600 text-sm">
+								Failed to load research data. Try again in a moment.
+							</p>
+							<button
+								type="button"
+								className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+								onClick={() => {
+									if (defconValidationQuery.isError) {
+										void defconValidationQuery.refetch();
+									}
+									if (clubValidationQuery.isError) {
+										void clubValidationQuery.refetch();
+									}
+									if (formValidationQuery.isError) {
+										void formValidationQuery.refetch();
+									}
+								}}
+							>
+								Retry
+							</button>
+						</div>
 					) : (
 						<Suspense
 							fallback={<p className="text-sm text-zinc-500">Loading...</p>}
@@ -1624,14 +1655,39 @@ export default function App() {
 							squadCurrentContextQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
+						onRetry={() => {
+							if (fplTeamQuery.isError || teamImportIdentityError) {
+								void fplTeamQuery.refetch();
+							}
+							if (squadFormQuery.isError) {
+								void squadFormQuery.refetch();
+							}
+							if (squadCurrentContextQuery.isError) {
+								void squadCurrentContextQuery.refetch();
+							}
+							if (squadDefconProbabilityQuery.isError) {
+								void squadDefconProbabilityQuery.refetch();
+							}
+						}}
 						onPlayerClick={openPlayerDetail}
 					/>
 				) : activeLoading ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
 				) : activeError ? (
-					<p className="text-red-600 text-sm">
-						Failed to load - is the API running on port 8000?
-					</p>
+					<div className="flex items-center gap-3">
+						<p className="text-red-600 text-sm">
+							Failed to load data. Try again in a moment.
+						</p>
+						<button
+							type="button"
+							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							onClick={() => {
+								void active?.refetch();
+							}}
+						>
+							Retry
+						</button>
+					</div>
 				) : tab === "form" ? (
 					<>
 						{/* A 200-point scatter is unreadable at phone widths. */}
@@ -1719,6 +1775,20 @@ export default function App() {
 						onAsOfGwChange={setCompareAsOfGw}
 						onLeftChange={updateCompareLeft}
 						onRightChange={updateCompareRight}
+						onRetryContext={() => {
+							if (compareFormQuery.isError) {
+								void compareFormQuery.refetch();
+							}
+							if (compareDefconQuery.isError) {
+								void compareDefconQuery.refetch();
+							}
+							if (compareDefconProbabilityQuery.isError) {
+								void compareDefconProbabilityQuery.refetch();
+							}
+							if (compareClubQuery.isError) {
+								void compareClubQuery.refetch();
+							}
+						}}
 						onClose={closeComparePanel}
 					/>
 				</Suspense>
