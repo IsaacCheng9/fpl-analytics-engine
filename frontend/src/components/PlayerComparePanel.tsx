@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeftRight } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef } from "react";
 import {
 	type ClubForm,
@@ -13,6 +14,11 @@ import {
 	type CompareSide,
 	winningSide,
 } from "../lib/compareRows";
+import {
+	COMPARE_LEFT_COLOR,
+	COMPARE_RIGHT_COLOR,
+	CompareTrendCharts,
+} from "./CompareTrendCharts";
 import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
 
 function valueCellClass(row: CompareRow, side: "left" | "right"): string {
@@ -38,6 +44,8 @@ export function PlayerComparePanel({
 	onAsOfGwChange,
 	onLeftChange,
 	onRightChange,
+	onSwap,
+	onOpenPlayer,
 	onRetryContext,
 	onClose,
 }: {
@@ -57,6 +65,8 @@ export function PlayerComparePanel({
 	onAsOfGwChange: (gameweek: number | null) => void;
 	onLeftChange: (element: number | null) => void;
 	onRightChange: (element: number | null) => void;
+	onSwap: () => void;
+	onOpenPlayer: (element: number) => void;
 	onRetryContext?: () => void;
 	onClose: () => void;
 }) {
@@ -122,6 +132,9 @@ export function PlayerComparePanel({
 		[left, right, window, asOfGw, latestGw],
 	);
 	const canCompare = leftElement !== null && rightElement !== null;
+	const leftName = left.detail?.web_name ?? left.option?.web_name ?? "Player 1";
+	const rightName =
+		right.detail?.web_name ?? right.option?.web_name ?? "Player 2";
 	const isLoading =
 		canCompare &&
 		(contextLoading || leftQuery.isPending || rightQuery.isPending);
@@ -183,7 +196,7 @@ export function PlayerComparePanel({
 					</button>
 				</div>
 
-				<div className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]">
+				<div className="mb-4 grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_auto] md:items-end">
 					<PlayerCombobox
 						id="compare-left-player"
 						label="First Player"
@@ -191,6 +204,16 @@ export function PlayerComparePanel({
 						value={leftElement}
 						onChange={onLeftChange}
 					/>
+					<button
+						type="button"
+						onClick={onSwap}
+						disabled={!canCompare}
+						title="Swap first and second players"
+						className="inline-flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						<ArrowLeftRight aria-hidden="true" className="h-3.5 w-3.5" />
+						<span>Swap</span>
+					</button>
 					<PlayerCombobox
 						id="compare-right-player"
 						label="Second Player"
@@ -238,7 +261,7 @@ export function PlayerComparePanel({
 					</label>
 				</div>
 
-				{!canCompare ? (
+				{leftElement === null || rightElement === null ? (
 					<p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
 						Select two players to compare.
 					</p>
@@ -270,60 +293,88 @@ export function PlayerComparePanel({
 						</button>
 					</div>
 				) : (
-					<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
-						<table className="w-full min-w-[44rem] border-collapse text-sm">
-							<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600">
-								<tr>
-									<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
-									<th className="w-1/3 px-3 py-2 font-medium">
-										{left.detail?.web_name ??
-											left.option?.web_name ??
-											"Player 1"}
-									</th>
-									<th className="w-1/3 px-3 py-2 font-medium">
-										{right.detail?.web_name ??
-											right.option?.web_name ??
-											"Player 2"}
-									</th>
-								</tr>
-							</thead>
-							<tbody>
-								{rows.map((row, index) => {
-									const showSection =
-										index === 0 || rows[index - 1]?.section !== row.section;
-									return (
-										<Fragment key={`${row.section}-${row.label}`}>
-											{showSection ? (
-												<tr>
-													<th
-														colSpan={3}
-														className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700"
-													>
-														{row.section}
+					<>
+						<CompareTrendCharts
+							leftName={leftName}
+							rightName={rightName}
+							leftGameweeks={left.detail?.gameweeks ?? []}
+							rightGameweeks={right.detail?.gameweeks ?? []}
+						/>
+						<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
+							<table className="w-full min-w-[44rem] border-collapse text-sm">
+								<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600">
+									<tr>
+										<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
+										<th className="w-1/3 px-3 py-2 font-medium">
+											<button
+												type="button"
+												title="Open player detail"
+												onClick={() => onOpenPlayer(leftElement)}
+												className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-500"
+											>
+												<span
+													aria-hidden="true"
+													className="inline-block size-2 shrink-0 rounded-full"
+													style={{ backgroundColor: COMPARE_LEFT_COLOR }}
+												/>
+												<span>{leftName}</span>
+											</button>
+										</th>
+										<th className="w-1/3 px-3 py-2 font-medium">
+											<button
+												type="button"
+												title="Open player detail"
+												onClick={() => onOpenPlayer(rightElement)}
+												className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
+											>
+												<span
+													aria-hidden="true"
+													className="inline-block size-2 shrink-0 rounded-full"
+													style={{ backgroundColor: COMPARE_RIGHT_COLOR }}
+												/>
+												<span>{rightName}</span>
+											</button>
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									{rows.map((row, index) => {
+										const showSection =
+											index === 0 || rows[index - 1]?.section !== row.section;
+										return (
+											<Fragment key={`${row.section}-${row.label}`}>
+												{showSection ? (
+													<tr>
+														<th
+															colSpan={3}
+															className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700"
+														>
+															{row.section}
+														</th>
+													</tr>
+												) : null}
+												<tr className="border-zinc-100 border-t">
+													<th className="px-3 py-2 text-left font-medium text-zinc-600">
+														{row.label}
 													</th>
+													<td
+														className={`px-3 py-2 ${valueCellClass(row, "left")}`}
+													>
+														{row.left}
+													</td>
+													<td
+														className={`px-3 py-2 ${valueCellClass(row, "right")}`}
+													>
+														{row.right}
+													</td>
 												</tr>
-											) : null}
-											<tr className="border-zinc-100 border-t">
-												<th className="px-3 py-2 text-left font-medium text-zinc-600">
-													{row.label}
-												</th>
-												<td
-													className={`px-3 py-2 ${valueCellClass(row, "left")}`}
-												>
-													{row.left}
-												</td>
-												<td
-													className={`px-3 py-2 ${valueCellClass(row, "right")}`}
-												>
-													{row.right}
-												</td>
-											</tr>
-										</Fragment>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
+											</Fragment>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+					</>
 				)}
 			</div>
 		</div>

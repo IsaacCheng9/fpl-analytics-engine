@@ -419,6 +419,16 @@ export default function App() {
 		}
 	}
 
+	function swapComparePlayers() {
+		setCompareLeftElement(compareRightElement);
+		setCompareRightElement(compareLeftElement);
+	}
+
+	function openPlayerFromCompare(element: number) {
+		setCompareOpen(false);
+		openPlayerDetail(element);
+	}
+
 	function toggleShortlist(element: number) {
 		setShortlist((current) =>
 			current.includes(element)
@@ -1125,6 +1135,8 @@ export default function App() {
 						onAsOfGwChange={setCompareAsOfGw}
 						onLeftChange={updateCompareLeft}
 						onRightChange={updateCompareRight}
+						onSwap={swapComparePlayers}
+						onOpenPlayer={openPlayerFromCompare}
 						onRetryContext={() => {
 							if (compareFormQuery.isError) {
 								void compareFormQuery.refetch();
