@@ -8,12 +8,19 @@ Players are tracked across seasons by their stable ``code``, since the FPL
 
 import polars as pl
 
+from fpl_analytics_engine import fixtures
 from fpl_analytics_engine.domain import (
     PARTIAL_EXPECTED_STAT_SEASON,
     PARTIAL_EXPECTED_STAT_START_GW,
 )
 
 DEFAULT_ROLLING_WINDOW = 5
+_OPTIONAL_MATCH_COLUMNS = {
+    "was_home": pl.Boolean,
+    "goals_scored": pl.Int64,
+    "assists": pl.Int64,
+    "bonus": pl.Int64,
+}
 
 
 def _has_expected_stats() -> pl.Expr:
@@ -23,26 +30,77 @@ def _has_expected_stats() -> pl.Expr:
     )
 
 
-def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
-    """Per-gameweek detail for one player within a single season.
+def _attach_match_context(
+    frame: pl.DataFrame, teams: pl.DataFrame | None
+) -> pl.DataFrame:
+    """Attach optional match context and season-specific opponent names."""
+    optional_exprs = [
+        (
+            pl.col(name).cast(dtype)
+            if name in frame.columns
+            else pl.lit(None, dtype=dtype)
+        ).alias(name)
+        for name, dtype in _OPTIONAL_MATCH_COLUMNS.items()
+    ]
+    result = frame.with_columns(optional_exprs)
+    existing_opponent_cols = [
+        name
+        for name in ("opponent_name", "opponent_short_name")
+        if name in result.columns
+    ]
+    if existing_opponent_cols:
+        result = result.drop(existing_opponent_cols)
+
+    labels = (
+        fixtures.team_labels(teams)
+        if teams is not None
+        else pl.DataFrame(
+            schema={"id": pl.Int64, "name": pl.String, "short_name": pl.String}
+        )
+    )
+    if "opponent_team" not in result.columns or labels.is_empty():
+        return result.with_columns(
+            pl.lit(None, dtype=pl.String).alias("opponent_name"),
+            pl.lit(None, dtype=pl.String).alias("opponent_short_name"),
+        )
+
+    opponents = labels.select(
+        pl.col("id").alias("opponent_team"),
+        pl.col("name").alias("opponent_name"),
+        pl.col("short_name").alias("opponent_short_name"),
+    )
+    return result.with_columns(pl.col("opponent_team").cast(pl.Int64)).join(
+        opponents, on="opponent_team", how="left"
+    )
+
+
+def player_gameweeks(
+    season_history: pl.DataFrame,
+    window: int,
+    teams: pl.DataFrame | None = None,
+) -> pl.DataFrame:
+    """Compute per-gameweek detail for one player within a single season.
 
     Args:
         season_history: One player's rows for a single season.
         window: Number of gameweeks in the rolling window, including all
             double-gameweek fixtures without backfilling blank gameweeks.
+        teams: Season-specific team metadata for resolving ``opponent_team``
+            ids to names and short names. Leave null when unavailable.
 
     Returns:
-        The rows sorted by gameweek, with a ``price`` column, rolling expected
-        attacking output per 90, and the rolling mean defensive-contribution
-        count over the trailing ``window`` gameweeks. Every fixture in a
-        double gameweek shares the same end-of-gameweek rolling figures.
+        The rows sorted by gameweek, with a ``price`` column, optional match
+        context, rolling expected attacking output per 90, and the rolling
+        mean defensive-contribution count over the trailing ``window``
+        gameweeks. Every fixture in a double gameweek shares the same
+        end-of-gameweek rolling figures.
     """
     sort_columns = ["round"]
     if "kickoff_time" in season_history.columns:
         sort_columns.append("kickoff_time")
 
     has_expected_stats = _has_expected_stats()
-    return (
+    result = (
         season_history.sort(sort_columns)
         .with_columns(
             (pl.col("value") / 10).alias("price"),
@@ -112,6 +170,7 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             "_rolling_expected_min",
         )
     )
+    return _attach_match_context(result, teams)
 
 
 def season_summaries(player_history: pl.DataFrame) -> pl.DataFrame:

@@ -1,5 +1,6 @@
 """FastAPI gateway exposing point-in-time form and DefCon player views."""
 
+import re
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
@@ -30,6 +31,7 @@ from fpl_analytics_engine.schemas import (
     PlayerDetail,
     PlayerGameweek,
     PlayerSeasonSummary,
+    UpcomingFixture,
 )
 
 DATA_ROOT = Path("data")
@@ -52,6 +54,7 @@ FIXTURE_CONTEXT_COLUMNS = [
     "next_opponent_name",
     "next_was_home",
     "next_fdr",
+    "next_fixtures",
     "current_ownership",
 ]
 # Adds point-in-time value efficiency and playing time, for the form-derived
@@ -159,6 +162,7 @@ CLUB_FORM_COLUMNS = [
     "defence_form",
     "upcoming_fixtures",
     "avg_fdr",
+    "next_fixtures",
     "as_of_gw",
 ]
 CLUB_FORM_VALIDATION_COLUMNS = [
@@ -188,6 +192,7 @@ PROBABILITY_CONTEXT_COLUMNS = [
 DEFAULT_CALIBRATION_BINS = 10
 DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES = 60
 EntryPicksFetcher = Callable[[int, int], dict]
+SeasonTeamsLoader = Callable[[str], pl.DataFrame]
 
 
 @lru_cache
@@ -220,6 +225,20 @@ def _load_fixtures() -> pl.DataFrame:
 def _load_teams() -> pl.DataFrame:
     """Load and cache the team metadata for the fixture-id-to-name bridge."""
     return data.load_teams(_current_data_dir())
+
+
+@lru_cache
+def _load_season_teams(season: str) -> pl.DataFrame:
+    """Load and cache team metadata for one archived season, if present."""
+    empty = pl.DataFrame(
+        schema={"id": pl.Int64, "name": pl.String, "short_name": pl.String}
+    )
+    if not re.fullmatch(SEASON_PATTERN, season):
+        return empty
+    path = DATA_ROOT / season / "teams.parquet"
+    if not path.exists():
+        return empty
+    return pl.read_parquet(path)
 
 
 @lru_cache
@@ -258,6 +277,11 @@ def get_fixtures_data() -> pl.DataFrame:
 def get_teams() -> pl.DataFrame:
     """Return the team metadata (dependency; overridden in tests)."""
     return _load_teams()
+
+
+def get_season_teams_loader() -> SeasonTeamsLoader:
+    """Return the per-season teams loader (dependency; overridden in tests)."""
+    return _load_season_teams
 
 
 def get_events() -> pl.DataFrame:
@@ -435,17 +459,29 @@ def _attach_context(
 def _attach_club_fdr(
     table: pl.DataFrame,
     fixtures_data: pl.DataFrame,
+    teams: pl.DataFrame,
     gw: int,
     horizon: int,
 ) -> pl.DataFrame:
-    """Attach upcoming fixture difficulty to a club table."""
+    """Attach upcoming fixture difficulty and fixture strip to a club table."""
     fdr = fixtures.team_fixture_difficulty(fixtures_data.to_dicts(), gw, horizon)
+    upcoming = fixtures.upcoming_fixtures_frame(
+        fixtures.team_upcoming_fixtures(fixtures_data, teams, gw, horizon)
+    )
     context = fdr.select(
         "team",
         pl.col("n_fixtures").alias("upcoming_fixtures"),
         pl.col("avg_difficulty").alias("avg_fdr"),
     )
-    return table.join(context, on="team", how="left")
+    return (
+        table.join(context, on="team", how="left")
+        .join(upcoming, on="team", how="left")
+        .with_columns(
+            pl.col("next_fixtures").fill_null(
+                pl.lit([], dtype=fixtures.UPCOMING_FIXTURE_DTYPE)
+            )
+        )
+    )
 
 
 def _brier_or_none(scored: pl.DataFrame, prob_col: str) -> float | None:
@@ -640,7 +676,11 @@ def players_current_context(
         (pl.col(name) if name in teams.columns else pl.lit(None))
         .cast(dtype)
         .alias(name)
-        for name, dtype in {"id": pl.Int64, "name": pl.String}.items()
+        for name, dtype in {
+            "id": pl.Int64,
+            "name": pl.String,
+            "short_name": pl.String,
+        }.items()
     )
     metadata = _player_snapshot_metadata(players, teams)
     snapshot = players.select(
@@ -650,6 +690,9 @@ def players_current_context(
         pl.col("selected_by_percent").alias("current_ownership"),
     )
     fdr = fixtures.current_team_fixture_difficulty(fixtures_data)
+    upcoming = fixtures.upcoming_fixtures_frame(
+        fixtures.current_team_upcoming_fixtures(fixtures_data, teams)
+    )
     opponents = teams.select(
         pl.col("id").alias("next_opponent"),
         pl.col("name").alias("next_opponent_name"),
@@ -657,7 +700,13 @@ def players_current_context(
     context = (
         metadata.join(snapshot, on="element", how="left")
         .join(fdr, on="team", how="left")
+        .join(upcoming, on="team", how="left")
         .join(opponents, on="next_opponent", how="left")
+        .with_columns(
+            pl.col("next_fixtures").fill_null(
+                pl.lit([], dtype=fixtures.UPCOMING_FIXTURE_DTYPE)
+            )
+        )
         .rename({"n_fixtures": "upcoming_fixtures", "avg_difficulty": "avg_fdr"})
         .select(list(CurrentPlayerContext.model_fields))
         .sort("element")
@@ -957,6 +1006,7 @@ def players_defcon_probability_validation(
 def clubs_form(
     history: Annotated[pl.DataFrame, Depends(get_history)],
     fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+    teams: Annotated[pl.DataFrame, Depends(get_teams)],
     window: int = Query(club.DEFAULT_WINDOW, ge=1, le=20),
     top_k: int | None = Query(None, ge=1),
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
@@ -972,7 +1022,7 @@ def clubs_form(
     table = club.compute_club_form_table(history, gw, window)
     if top_k is not None:
         table = table.head(top_k)
-    table = _attach_club_fdr(table, fixtures_data, gw, fdr_horizon)
+    table = _attach_club_fdr(table, fixtures_data, teams, gw, fdr_horizon)
     return [ClubForm(**row) for row in table.select(CLUB_FORM_COLUMNS).to_dicts()]
 
 
@@ -1050,6 +1100,23 @@ def clubs_form_validation(
     )
 
 
+def _resolve_team_id(latest: dict, teams: pl.DataFrame) -> int | None:
+    """Resolve a player's club id from their latest row or team metadata."""
+    team_id = latest.get("team")
+    if isinstance(team_id, int) and not isinstance(team_id, bool):
+        return team_id
+    team_name = latest.get("team_name")
+    if not isinstance(team_name, str) or not team_name:
+        return None
+    labels = fixtures.team_labels(teams)
+    if labels.is_empty():
+        return None
+    matched = labels.filter(pl.col("name") == team_name)
+    if matched.is_empty():
+        return None
+    return cast(int, matched["id"][0])
+
+
 @app.get("/players/{element}")
 def player_detail(
     element: Annotated[int, ApiPath(ge=1)],
@@ -1057,6 +1124,9 @@ def player_detail(
     history: Annotated[pl.DataFrame, Depends(get_history)],
     current_season: Annotated[str, Depends(get_current_season)],
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
+    teams: Annotated[pl.DataFrame, Depends(get_teams)],
+    load_season_teams: Annotated[SeasonTeamsLoader, Depends(get_season_teams_loader)],
     window: int = Query(player.DEFAULT_ROLLING_WINDOW, ge=1, le=20),
     season: str | None = None,
     as_of_gw: int | None = Query(None, ge=1, description=AS_OF_GW_DESCRIPTION),
@@ -1123,7 +1193,24 @@ def player_detail(
     )
     seasons = player.season_summaries(summary_history)
     latest = season_history.sort("round", "kickoff_time").row(-1, named=True)
-    gameweeks = player.player_gameweeks(season_history, window)
+    # Resolve opponent ids against the selected season's own teams snapshot so
+    # promoted/relegated ids never mismatch live team metadata.
+    season_teams = (
+        teams
+        if selected_season == current_season
+        else load_season_teams(selected_season)
+    )
+    gameweeks = player.player_gameweeks(season_history, window, teams=season_teams)
+    next_fixtures: list[UpcomingFixture] = []
+    if selected_season == current_season:
+        team_id = _resolve_team_id(latest, teams)
+        if team_id is not None:
+            upcoming_by_team = fixtures.team_upcoming_fixtures(
+                fixtures_data, teams, gw, DEFAULT_FDR_HORIZON
+            )
+            next_fixtures = [
+                UpcomingFixture(**item) for item in upcoming_by_team.get(team_id, [])
+            ]
     gw_cols = list(PlayerGameweek.model_fields)
     season_cols = list(PlayerSeasonSummary.model_fields)
     return PlayerDetail(
@@ -1136,6 +1223,7 @@ def player_detail(
         rolling_window=window,
         selected_season=selected_season,
         available_seasons=available_seasons,
+        next_fixtures=next_fixtures,
         gameweeks=[
             PlayerGameweek(**row) for row in gameweeks.select(gw_cols).to_dicts()
         ],

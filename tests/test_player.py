@@ -189,3 +189,62 @@ def test_player_defcon_metrics_exclude_zero_minute_rows() -> None:
 
     summary = player.season_summaries(frame).to_dicts()[0]
     assert summary["defcon_hit_rate"] == pytest.approx(0.5)
+
+
+def test_player_gameweeks_attaches_match_context_with_season_teams() -> None:
+    rows = [
+        {
+            **_row(1, season="2026-27", points=11),
+            "opponent_team": 3,
+            "was_home": True,
+            "goals_scored": 1,
+            "assists": 1,
+            "bonus": 3,
+        },
+        {
+            **_row(2, season="2026-27", points=2),
+            "opponent_team": 4,
+            "was_home": False,
+            "goals_scored": 0,
+            "assists": 0,
+            "bonus": 0,
+        },
+    ]
+    teams = pl.DataFrame(
+        {
+            "id": [3, 4],
+            "name": ["Bournemouth", "Chelsea"],
+            "short_name": ["BOU", None],
+        }
+    )
+
+    out = player.player_gameweeks(_frame(rows), window=5, teams=teams).sort("round")
+    gw1, gw2 = out.to_dicts()
+
+    assert gw1["opponent_name"] == "Bournemouth"
+    assert gw1["opponent_short_name"] == "BOU"
+    assert gw1["was_home"] is True
+    assert gw1["goals_scored"] == 1
+    assert gw1["assists"] == 1
+    assert gw1["bonus"] == 3
+    assert gw2["opponent_name"] == "Chelsea"
+    assert gw2["opponent_short_name"] == "CHE"
+    assert gw2["was_home"] is False
+    assert gw2["goals_scored"] == 0
+    assert gw2["assists"] == 0
+    assert gw2["bonus"] == 0
+
+
+def test_player_gameweeks_leaves_match_context_null_when_unavailable() -> None:
+    out = player.player_gameweeks(_frame([_row(1, season="2023-24")]), window=5)
+    row = out.row(0, named=True)
+
+    for field in (
+        "opponent_name",
+        "opponent_short_name",
+        "was_home",
+        "goals_scored",
+        "assists",
+        "bonus",
+    ):
+        assert row[field] is None

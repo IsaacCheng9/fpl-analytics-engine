@@ -76,6 +76,9 @@ def client() -> Iterator[TestClient]:
     api.app.dependency_overrides[api.get_history] = _history
     api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame()
     api.app.dependency_overrides[api.get_teams] = _empty_teams
+    api.app.dependency_overrides[api.get_season_teams_loader] = lambda: (
+        lambda _season: _empty_teams()
+    )
     api.app.dependency_overrides[api.get_events] = _empty_events
     api.app.dependency_overrides[api.get_current_season] = lambda: "2025-26"
     api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame()
@@ -248,6 +251,15 @@ def test_current_context_uses_snapshot_club_and_includes_new_signings(
         "next_opponent_name": "Opponent",
         "next_was_home": False,
         "next_fdr": 4,
+        "next_fixtures": [
+            {
+                "gw": 5,
+                "opponent_name": "Opponent",
+                "opponent_short_name": "OPP",
+                "was_home": False,
+                "fdr": 4,
+            }
+        ],
     }
     assert rows[1]["next_opponent_name"] == "Opponent"
 
@@ -368,7 +380,12 @@ def test_current_context_preserves_players_with_unknown_metadata(
     assert response.status_code == 200
     row = response.json()[0]
     assert row["element"] == 1
-    assert all(value is None for key, value in row.items() if key != "element")
+    assert row["next_fixtures"] == []
+    assert all(
+        value is None
+        for key, value in row.items()
+        if key not in {"element", "next_fixtures"}
+    )
 
 
 def test_form_endpoint_ranks_every_player_by_projection(client: TestClient) -> None:
@@ -1307,3 +1324,326 @@ def test_default_snapshot_caches_validation_and_prior_rates(
         assert first.status_code == 200
         assert second.json() == first.json()
         assert api._cached_club_form_validation.cache_info().hits == 1
+
+
+def test_clubs_form_and_player_endpoints_expose_next_fixtures(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_history] = _club_history
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2, 8, 9],
+            "name": ["Arsenal", "Chelsea", "Fulham", "Bournemouth"],
+            "short_name": ["ARS", "CHE", "FUL", "BOU"],
+        }
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "id": [10, 11, 12],
+            "event": [3, 4, 4],
+            "kickoff_time": [
+                "2025-08-23T14:00:00Z",
+                "2025-08-30T14:00:00Z",
+                "2025-09-02T19:45:00Z",
+            ],
+            "team_h": [1, 8, 1],
+            "team_a": [9, 1, 2],
+            "team_h_difficulty": [2, 4, 3],
+            "team_a_difficulty": [5, 2, 4],
+        }
+    )
+
+    body = client.get("/clubs/form", params={"window": 1}).json()
+    arsenal = next(row for row in body if row["team_name"] == "Arsenal")
+
+    assert arsenal["next_fixtures"] == [
+        {
+            "gw": 3,
+            "opponent_name": "Bournemouth",
+            "opponent_short_name": "BOU",
+            "was_home": True,
+            "fdr": 2,
+        },
+        {
+            "gw": 4,
+            "opponent_name": "Fulham",
+            "opponent_short_name": "FUL",
+            "was_home": False,
+            "fdr": 2,
+        },
+        {
+            "gw": 4,
+            "opponent_name": "Chelsea",
+            "opponent_short_name": "CHE",
+            "was_home": True,
+            "fdr": 3,
+        },
+    ]
+
+    api.app.dependency_overrides[api.get_history] = _history
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {
+            "id": [10, 20],
+            "name": ["T", "Opponent"],
+            "short_name": ["TTT", "OPP"],
+        }
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2],
+            "event": [5, 6],
+            "kickoff_time": [
+                "2025-09-10T15:00:00Z",
+                "2025-09-17T15:00:00Z",
+            ],
+            "team_h": [10, 20],
+            "team_a": [20, 10],
+            "team_h_difficulty": [2, 3],
+            "team_a_difficulty": [4, 4],
+        }
+    )
+    expected_strip = [
+        {
+            "gw": 5,
+            "opponent_name": "Opponent",
+            "opponent_short_name": "OPP",
+            "was_home": True,
+            "fdr": 2,
+        },
+        {
+            "gw": 6,
+            "opponent_name": "Opponent",
+            "opponent_short_name": "OPP",
+            "was_home": False,
+            "fdr": 4,
+        },
+    ]
+    for path in (
+        "/players/form",
+        "/players/defcon",
+        "/players/defcon-probability",
+    ):
+        rows = client.get(path).json()
+        assert rows
+        assert rows[0]["next_fixtures"] == expected_strip
+
+
+def test_player_detail_shifts_next_fixtures_by_as_of_gw_and_team_name_fallback(
+    client: TestClient,
+) -> None:
+    # _detail_rows has team_name="Arsenal" without a numeric team column.
+    api.app.dependency_overrides[api.get_all_seasons] = _detail_rows
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "name": ["Arsenal", "Chelsea", "Fulham"],
+            "short_name": ["ARS", "CHE", "FUL"],
+        }
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "event": [2, 3, 7],
+            "kickoff_time": [
+                "2025-08-18T15:00:00Z",
+                "2025-08-25T15:00:00Z",
+                "2025-09-22T15:00:00Z",
+            ],
+            "team_h": [1, 2, 1],
+            "team_a": [2, 1, 3],
+            "team_h_difficulty": [3, 4, 2],
+            "team_a_difficulty": [4, 5, 5],
+        }
+    )
+
+    early = client.get("/players/7", params={"as_of_gw": 1}).json()
+    assert [f["gw"] for f in early["next_fixtures"]] == [2, 3]
+    assert early["next_fixtures"][0]["opponent_short_name"] == "CHE"
+
+    later = client.get("/players/7", params={"as_of_gw": 2}).json()
+    assert [f["gw"] for f in later["next_fixtures"]] == [3, 7]
+    assert later["next_fixtures"][1]["opponent_short_name"] == "FUL"
+
+
+def test_player_detail_uses_season_specific_teams_and_live_next_fixtures(
+    client: TestClient,
+) -> None:
+    live_rows = pl.DataFrame(
+        [
+            {
+                "season": "2026-27",
+                "element": 7,
+                "code": 500,
+                "round": 1,
+                "kickoff_time": "2026-08-15T15:00:00Z",
+                "minutes": 90,
+                "total_points": 12,
+                "value": 100,
+                "expected_goals": 0.6,
+                "expected_assists": 0.3,
+                "expected_goal_involvements": 0.9,
+                "defensive_contribution": 7,
+                "web_name": "Saka",
+                "position": "MID",
+                "team": 1,
+                "team_name": "Arsenal",
+                "defcon_hit": False,
+                "opponent_team": 3,
+                "was_home": True,
+                "goals_scored": 1,
+                "assists": 1,
+                "bonus": 3,
+            }
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    prev_rows = pl.DataFrame(
+        [
+            {
+                "season": "2025-26",
+                "element": 19,
+                "code": 500,
+                "round": 1,
+                "kickoff_time": "2025-08-16T15:00:00Z",
+                "minutes": 90,
+                "total_points": 6,
+                "value": 95,
+                "expected_goals": 0.4,
+                "expected_assists": 0.2,
+                "expected_goal_involvements": 0.6,
+                "defensive_contribution": 5,
+                "web_name": "Saka",
+                "position": "MID",
+                "team": 1,
+                "team_name": "Arsenal",
+                "defcon_hit": False,
+                "opponent_team": 3,
+                "was_home": False,
+                "goals_scored": 1,
+                "assists": 0,
+                "bonus": 1,
+            }
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    older_rows = pl.DataFrame(
+        [
+            {
+                "season": "2023-24",
+                "element": 19,
+                "code": 500,
+                "round": 1,
+                "kickoff_time": "2023-08-12T15:00:00Z",
+                "minutes": 90,
+                "total_points": 10,
+                "value": 85,
+                "expected_goals": 0.5,
+                "expected_assists": 0.1,
+                "expected_goal_involvements": 0.6,
+                "defensive_contribution": None,
+                "web_name": "Saka",
+                "position": "MID",
+                "team_name": "Arsenal",
+                "defcon_hit": None,
+            }
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    all_seasons = pl.concat([older_rows, prev_rows, live_rows], how="diagonal_relaxed")
+    live_teams = pl.DataFrame(
+        {
+            "id": [1, 3],
+            "name": ["Arsenal", "Bournemouth"],
+            "short_name": ["ARS", "BOU"],
+        }
+    )
+    prev_teams = pl.DataFrame(
+        {
+            "id": [1, 3],
+            "name": ["Arsenal", "Burnley"],
+            "short_name": ["ARS", "BUR"],
+        }
+    )
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = lambda: live_rows
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: all_seasons
+    api.app.dependency_overrides[api.get_teams] = lambda: live_teams
+    api.app.dependency_overrides[api.get_season_teams_loader] = lambda: (
+        lambda season: prev_teams if season == "2025-26" else _empty_teams()
+    )
+    api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame(
+        {
+            "id": [20],
+            "event": [2],
+            "kickoff_time": ["2026-08-22T15:00:00Z"],
+            "team_h": [3],
+            "team_a": [1],
+            "team_h_difficulty": [4],
+            "team_a_difficulty": [2],
+        }
+    )
+
+    live_body = client.get("/players/7").json()
+    assert live_body["next_fixtures"] == [
+        {
+            "gw": 2,
+            "opponent_name": "Bournemouth",
+            "opponent_short_name": "BOU",
+            "was_home": False,
+            "fdr": 2,
+        }
+    ]
+    assert live_body["gameweeks"][0]["opponent_name"] == "Bournemouth"
+    assert live_body["gameweeks"][0]["opponent_short_name"] == "BOU"
+    assert live_body["gameweeks"][0]["was_home"] is True
+    assert live_body["gameweeks"][0]["goals_scored"] == 1
+    assert live_body["gameweeks"][0]["assists"] == 1
+    assert live_body["gameweeks"][0]["bonus"] == 3
+
+    prev_body = client.get("/players/7", params={"season": "2025-26"}).json()
+    assert prev_body["next_fixtures"] == []
+    # Same opponent_team id (3) maps to Burnley in 2025-26, not Bournemouth.
+    assert prev_body["gameweeks"][0]["opponent_name"] == "Burnley"
+    assert prev_body["gameweeks"][0]["opponent_short_name"] == "BUR"
+    assert prev_body["gameweeks"][0]["was_home"] is False
+    assert prev_body["gameweeks"][0]["goals_scored"] == 1
+    assert prev_body["gameweeks"][0]["assists"] == 0
+    assert prev_body["gameweeks"][0]["bonus"] == 1
+
+    older_body = client.get("/players/7", params={"season": "2023-24"}).json()
+    assert older_body["next_fixtures"] == []
+    for field in (
+        "opponent_name",
+        "opponent_short_name",
+        "was_home",
+        "goals_scored",
+        "assists",
+        "bonus",
+    ):
+        assert older_body["gameweeks"][0][field] is None
+
+
+def test_default_snapshot_player_detail_season_context() -> None:
+    with TestClient(api.app) as default_client:
+        form_rows = default_client.get("/players/form").json()
+        saka = next(row for row in form_rows if row["web_name"] == "Saka")
+        assert len(saka["next_fixtures"]) > 0
+
+        live = default_client.get(f"/players/{saka['element']}").json()
+        assert len(live["next_fixtures"]) > 0
+        assert live["gameweeks"][0]["opponent_short_name"] is not None
+        assert live["gameweeks"][0]["was_home"] is not None
+        assert live["gameweeks"][0]["goals_scored"] is not None
+
+        prev = default_client.get(
+            f"/players/{saka['element']}", params={"season": "2025-26"}
+        ).json()
+        assert prev["next_fixtures"] == []
+        assert any(row["opponent_name"] == "Burnley" for row in prev["gameweeks"])
+
+        older = default_client.get(
+            f"/players/{saka['element']}", params={"season": "2023-24"}
+        ).json()
+        assert older["next_fixtures"] == []
+        assert older["gameweeks"][0]["opponent_name"] is None
+        assert older["gameweeks"][0]["goals_scored"] is None
