@@ -250,22 +250,24 @@ export function DataTable<T>({
 		if (columnIndex >= stickyDataColumns) {
 			return undefined;
 		}
+		// Drive horizontal offsets and widths through CSS custom properties so
+		// multi-column pinning only activates at md+ and never locks out scrolling
+		// on narrow phone viewports.
 		return {
-			left: stickyLeft(columnIndex),
-			minWidth: stickyColumnWidths[columnIndex],
-			width: stickyColumnWidths[columnIndex],
-		};
+			"--sticky-left": `${stickyLeft(columnIndex)}px`,
+			"--sticky-width": `${stickyColumnWidths[columnIndex]}px`,
+		} as CSSProperties;
 	}
 
 	function stickyHeaderClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "sticky z-40 bg-zinc-100 shadow-[1px_0_0_#e4e4e7]"
+			? "md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-40 bg-zinc-100 md:shadow-[1px_0_0_#e4e4e7]"
 			: "";
 	}
 
 	function stickyBodyClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "sticky z-20 shadow-[1px_0_0_#e4e4e7]"
+			? "md:sticky md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-20 md:shadow-[1px_0_0_#e4e4e7]"
 			: "";
 	}
 
@@ -291,7 +293,7 @@ export function DataTable<T>({
 							<tr key={group.id}>
 								{renderRowActions ? (
 									<th
-										className={`sticky left-0 z-40 w-12 bg-zinc-100 ${cellPadding} text-center align-bottom font-medium shadow-[1px_0_0_#e4e4e7]`}
+										className={`sticky top-0 z-30 w-12 bg-zinc-100 md:left-0 md:z-40 ${cellPadding} text-center align-bottom font-medium md:shadow-[1px_0_0_#e4e4e7]`}
 									>
 										<span className="inline-flex items-center justify-center gap-1">
 											<span aria-hidden="true">{rowActionsHeader}</span>
@@ -392,10 +394,10 @@ export function DataTable<T>({
 								>
 									{renderRowActions ? (
 										<td
-											className={`sticky left-0 z-30 w-12 ${cellPadding} whitespace-nowrap ${
+											className={`w-12 md:sticky md:left-0 md:z-30 ${cellPadding} whitespace-nowrap ${
 												rowStickyClassName?.(row.original) ??
 												"bg-white group-hover:bg-zinc-50"
-											} shadow-[1px_0_0_#f4f4f5]`}
+											} md:shadow-[1px_0_0_#f4f4f5]`}
 										>
 											{renderRowActions(row.original)}
 										</td>
