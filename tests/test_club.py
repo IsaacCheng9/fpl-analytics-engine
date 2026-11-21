@@ -400,14 +400,14 @@ def test_club_backtest_bounded_range_ignores_unfinished_future_targets() -> None
 def test_club_backtest_only_builds_history_through_selected_weeks(
     monkeypatch: pytest.MonkeyPatch, gw_range: range
 ) -> None:
-    compute_form = club.compute_club_form_table
+    compute_form = club._compute_club_form_table
     calls = []
 
-    def record_form(history, as_of_gw, window):
+    def record_form(club_fixtures, as_of_gw, window):
         calls.append(as_of_gw)
-        return compute_form(history, as_of_gw, window)
+        return compute_form(club_fixtures, as_of_gw, window)
 
-    monkeypatch.setattr(club, "compute_club_form_table", record_form)
+    monkeypatch.setattr(club, "_compute_club_form_table", record_form)
 
     club.backtest_club_form_signals(
         _validation_history(), window=1, horizon=1, min_train_rows=2, gw_range=gw_range
@@ -415,3 +415,22 @@ def test_club_backtest_only_builds_history_through_selected_weeks(
 
     expected = list(range(1, 5)) if gw_range == range(3, 5) else []
     assert calls == expected
+
+
+def test_club_validation_aggregates_club_fixtures_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compute_fixtures = club._compute_club_fixtures
+    calls = 0
+
+    def record_fixtures(history: pl.DataFrame) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return compute_fixtures(history)
+
+    monkeypatch.setattr(club, "_compute_club_fixtures", record_fixtures)
+
+    rows = club.club_form_validation_rows(_validation_history(), window=1, horizon=1)
+
+    assert not rows.is_empty()
+    assert calls == 1

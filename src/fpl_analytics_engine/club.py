@@ -173,25 +173,12 @@ def compute_club_gameweeks(history: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def compute_club_form_table(
-    history: pl.DataFrame, as_of_gw: int, window: int = DEFAULT_WINDOW
+def _compute_club_form_table(
+    club_fixtures: pl.DataFrame, as_of_gw: int, window: int = DEFAULT_WINDOW
 ) -> pl.DataFrame:
-    """Compute each club's recent form versus its season-to-date baseline.
-
-    Args:
-        history: Enriched current-season per-gameweek player history.
-        as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
-        window: Number of gameweeks ending at ``as_of_gw``. Include every
-            fixture in that range; do not backfill blanks with older games.
-
-    Returns:
-        One row per club with attacking and defensive per-match metrics for the
-        recent window and season-to-date baseline.
-    """
-    point_in_time = (
-        _compute_club_fixtures(history)
-        .filter(pl.col("round") <= as_of_gw)
-        .sort("round", "kickoff_time")
+    """Compute each club's recent form from pre-aggregated club fixtures."""
+    point_in_time = club_fixtures.filter(pl.col("round") <= as_of_gw).sort(
+        "round", "kickoff_time"
     )
     recent = point_in_time.filter(pl.col("round") > as_of_gw - window)
 
@@ -305,6 +292,24 @@ def compute_club_form_table(
     )
 
 
+def compute_club_form_table(
+    history: pl.DataFrame, as_of_gw: int, window: int = DEFAULT_WINDOW
+) -> pl.DataFrame:
+    """Compute each club's recent form versus its season-to-date baseline.
+
+    Args:
+        history: Enriched current-season per-gameweek player history.
+        as_of_gw: Gameweek to evaluate as of; later gameweeks are ignored.
+        window: Number of gameweeks ending at ``as_of_gw``. Include every
+            fixture in that range; do not backfill blanks with older games.
+
+    Returns:
+        One row per club with attacking and defensive per-match metrics for the
+        recent window and season-to-date baseline.
+    """
+    return _compute_club_form_table(_compute_club_fixtures(history), as_of_gw, window)
+
+
 def _future_club_outcomes(
     club_fixtures: pl.DataFrame,
     as_of_gw: int,
@@ -375,7 +380,7 @@ def club_form_validation_rows(
     for as_of_gw in gw_range:
         if as_of_gw + horizon > max_round:
             continue
-        form_table = compute_club_form_table(history, as_of_gw, window)
+        form_table = _compute_club_form_table(club_fixtures, as_of_gw, window)
         future = _future_club_outcomes(club_fixtures, as_of_gw, horizon)
         frame = (
             form_table.select(
