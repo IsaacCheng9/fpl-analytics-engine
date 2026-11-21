@@ -93,6 +93,7 @@ export type UrlState = {
 	transferFilters: TransferFilters;
 	shortlist: number[];
 	showShortlistedOnly: boolean;
+	evidenceSeason: string | null;
 	sort: string | null;
 };
 
@@ -123,8 +124,11 @@ export const DEFAULT_URL_STATE: UrlState = {
 	transferFilters: DEFAULT_TRANSFER_FILTERS,
 	shortlist: [],
 	showShortlistedOnly: false,
+	evidenceSeason: null,
 	sort: null,
 };
+
+const SEASON_PATTERN = /^\d{4}-\d{2}$/;
 
 function isBrowser() {
 	return typeof window !== "undefined";
@@ -133,13 +137,17 @@ function isBrowser() {
 function parseNumber(
 	value: string | null,
 	fallback: number,
-	{ min, max }: { min?: number; max?: number } = {},
+	{
+		min,
+		max,
+		integer = false,
+	}: { min?: number; max?: number; integer?: boolean } = {},
 ): number {
 	if (value === null || value.trim() === "") {
 		return fallback;
 	}
 	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
+	if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed))) {
 		return fallback;
 	}
 	if (min !== undefined && parsed < min) {
@@ -153,13 +161,17 @@ function parseNumber(
 
 function parseOptionalNumber(
 	value: string | null,
-	{ min, max }: { min?: number; max?: number } = {},
+	{
+		min,
+		max,
+		integer = false,
+	}: { min?: number; max?: number; integer?: boolean } = {},
 ): number | null {
 	if (value === null || value.trim() === "") {
 		return null;
 	}
 	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
+	if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed))) {
 		return null;
 	}
 	if (min !== undefined && parsed < min) {
@@ -169,6 +181,10 @@ function parseOptionalNumber(
 		return null;
 	}
 	return parsed;
+}
+
+function parseSeason(value: string | null): string | null {
+	return value !== null && SEASON_PATTERN.test(value) ? value : null;
 }
 
 function parseTab(value: string | null): Tab {
@@ -248,11 +264,16 @@ export function readUrlState(): UrlState {
 	}
 	const params = new URLSearchParams(window.location.search);
 	const shortlist = parseShortlist(params.get("shortlist"));
-	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), { min: 1 });
+	const fplTeamId = parseOptionalNumber(params.get("fpl_team"), {
+		min: 1,
+		integer: true,
+	});
 	const tab = parseTab(params.get("tab"));
 	const showSquadView =
 		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
-	const windowSize = parseOptionalNumber(params.get("window"));
+	const windowSize = parseOptionalNumber(params.get("window"), {
+		integer: true,
+	});
 	return {
 		tab,
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
@@ -261,14 +282,24 @@ export function readUrlState(): UrlState {
 		position: parsePosition(params.get("position")),
 		minMinutes: parseNumber(params.get("min_minutes"), DEFAULT_MIN_MINUTES, {
 			min: 0,
+			integer: true,
 		}),
 		minHitRate: parseNumber(params.get("min_hit_rate"), DEFAULT_MIN_HIT_RATE, {
 			min: 0,
 			max: 1,
 		}),
-		minGames: parseOptionalNumber(params.get("min_games"), { min: 0 }),
-		asOfGw: parseOptionalNumber(params.get("as_of_gw"), { min: 1 }),
-		selectedElement: parseOptionalNumber(params.get("player"), { min: 1 }),
+		minGames: parseOptionalNumber(params.get("min_games"), {
+			min: 0,
+			integer: true,
+		}),
+		asOfGw: parseOptionalNumber(params.get("as_of_gw"), {
+			min: 1,
+			integer: true,
+		}),
+		selectedElement: parseOptionalNumber(params.get("player"), {
+			min: 1,
+			integer: true,
+		}),
 		fplTeamId,
 		ownershipFilter: showSquadView
 			? DEFAULT_OWNERSHIP_FILTER
@@ -280,15 +311,20 @@ export function readUrlState(): UrlState {
 			params.has("compare_b"),
 		compareLeftElement: parseOptionalNumber(params.get("compare_a"), {
 			min: 1,
+			integer: true,
 		}),
 		compareRightElement: parseOptionalNumber(params.get("compare_b"), {
 			min: 1,
+			integer: true,
 		}),
 		compareWindow: clampWindowSize(
-			parseNumber(params.get("compare_window"), DEFAULT_COMPARE_WINDOW),
+			parseNumber(params.get("compare_window"), DEFAULT_COMPARE_WINDOW, {
+				integer: true,
+			}),
 		),
 		compareAsOfGw: parseOptionalNumber(params.get("compare_as_of_gw"), {
 			min: 1,
+			integer: true,
 		}),
 		transferFilters: {
 			maxPrice: parseOptionalNumber(params.get("max_price"), { min: 0 }),
@@ -306,7 +342,7 @@ export function readUrlState(): UrlState {
 		playerWindow: parseNumber(
 			params.get("player_window"),
 			DEFAULT_PLAYER_WINDOW,
-			{ min: 1, max: WINDOW_MAX },
+			{ min: 1, max: WINDOW_MAX, integer: true },
 		),
 		playerSeason: params.get("season") ?? DEFAULT_PLAYER_SEASON,
 		attackingMetrics: parseAttackingMetrics(params.get("metrics")),
@@ -324,6 +360,7 @@ export function readUrlState(): UrlState {
 			!showSquadView &&
 			shortlist.length > 0 &&
 			params.get("shortlist_only") === "1",
+		evidenceSeason: parseSeason(params.get("evidence_season")),
 		sort: parseSortParam(params.get("sort")),
 	};
 }
@@ -471,6 +508,9 @@ export function writeUrlState(state: UrlState) {
 		}
 	}
 
+	if (state.tab === "evidence" && state.evidenceSeason !== null) {
+		params.set("evidence_season", state.evidenceSeason);
+	}
 	if (state.tab !== "evidence" && state.sort !== null) {
 		params.set("sort", state.sort);
 	}

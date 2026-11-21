@@ -153,6 +153,7 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
+		evidenceSeason: evidenceSeasonChoice,
 		sort,
 	} = urlState;
 	const {
@@ -182,16 +183,13 @@ export default function App() {
 		transferFilters: setTransferFilters,
 		shortlist: setShortlist,
 		showShortlistedOnly: setShowShortlistedOnly,
+		evidenceSeason: setEvidenceSeasonChoice,
 		sort: setSort,
 	} = setUrlState;
 	// The team ID input is a draft until imported, so it stays out of the URL.
 	const [fplTeamInput, setFplTeamInput] = useState(
 		urlState.fplTeamId?.toString() ?? "",
 	);
-	// Null follows the default season, which moves to the live season at GW19.
-	const [evidenceSeasonChoice, setEvidenceSeasonChoice] = useState<
-		string | null
-	>(null);
 
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
