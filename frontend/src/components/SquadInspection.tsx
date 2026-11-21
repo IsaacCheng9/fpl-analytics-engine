@@ -185,11 +185,40 @@ function SquadRows({
 							return (
 								<tr
 									key={row.pick.element}
-									className="cursor-pointer border-zinc-100 border-t bg-white hover:bg-sky-50"
+									tabIndex={0}
+									className="cursor-pointer border-zinc-100 border-t bg-white hover:bg-sky-50 focus-visible:bg-sky-50 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:-outline-offset-2"
 									onClick={() => onPlayerClick(row.pick.element)}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											onPlayerClick(row.pick.element);
+										}
+									}}
 								>
 									<td className="px-3 py-2 font-medium text-zinc-900">
-										{playerName(row)}
+										<span className="inline-flex items-center gap-1.5">
+											<span>{playerName(row)}</span>
+											{row.pick.is_captain ? (
+												<span
+													title="Captain"
+													className="rounded bg-zinc-900 px-1.5 py-0.5 font-semibold text-[10px] text-white"
+												>
+													C
+												</span>
+											) : row.pick.is_vice_captain ? (
+												<span
+													title="Vice-captain"
+													className="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 font-semibold text-[10px] text-zinc-700"
+												>
+													VC
+												</span>
+											) : null}
+											{!row.pick.is_starting ? (
+												<span className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-normal text-[10px] text-zinc-500">
+													Bench
+												</span>
+											) : null}
+										</span>
 									</td>
 									<td className="px-3 py-2">{playerPosition(row) ?? "-"}</td>
 									<td className="px-3 py-2">{playerTeam(row) ?? "-"}</td>

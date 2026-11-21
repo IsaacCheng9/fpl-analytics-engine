@@ -1577,9 +1577,28 @@ export default function App() {
 					) : defconValidationQuery.isError ||
 						clubValidationQuery.isError ||
 						formValidationQuery.isError ? (
-						<p className="text-red-600 text-sm">
-							Failed to load - is the API running on port 8000?
-						</p>
+						<div className="flex items-center gap-3">
+							<p className="text-red-600 text-sm">
+								Failed to load research data. Try again in a moment.
+							</p>
+							<button
+								type="button"
+								className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+								onClick={() => {
+									if (defconValidationQuery.isError) {
+										void defconValidationQuery.refetch();
+									}
+									if (clubValidationQuery.isError) {
+										void clubValidationQuery.refetch();
+									}
+									if (formValidationQuery.isError) {
+										void formValidationQuery.refetch();
+									}
+								}}
+							>
+								Retry
+							</button>
+						</div>
 					) : (
 						<Suspense
 							fallback={<p className="text-sm text-zinc-500">Loading...</p>}
@@ -1627,9 +1646,20 @@ export default function App() {
 				) : activeLoading ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
 				) : activeError ? (
-					<p className="text-red-600 text-sm">
-						Failed to load - is the API running on port 8000?
-					</p>
+					<div className="flex items-center gap-3">
+						<p className="text-red-600 text-sm">
+							Failed to load data. Try again in a moment.
+						</p>
+						<button
+							type="button"
+							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							onClick={() => {
+								void active?.refetch();
+							}}
+						>
+							Retry
+						</button>
+					</div>
 				) : tab === "form" ? (
 					<>
 						{/* A 200-point scatter is unreadable at phone widths. */}

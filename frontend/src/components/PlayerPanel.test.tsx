@@ -405,3 +405,28 @@ test("labels each chart's season average beside its title", async () => {
 	expect(screen.getByText("Season 0.53")).toBeInTheDocument();
 	expect(screen.getByText("Season 8.00")).toBeInTheDocument();
 });
+
+test("exposes dialog semantics and closes on Escape", async () => {
+	const onClose = vi.fn();
+	const client = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	});
+	render(
+		<QueryClientProvider client={client}>
+			<PlayerPanel
+				element={7}
+				window={5}
+				season={null}
+				asOfGw={2}
+				onWindowChange={() => {}}
+				onSeasonChange={() => {}}
+				onClose={onClose}
+			/>
+		</QueryClientProvider>,
+	);
+
+	const dialog = await screen.findByRole("dialog", { name: "Saka" });
+	expect(dialog).toHaveAttribute("aria-modal", "true");
+	fireEvent.keyDown(document, { key: "Escape" });
+	expect(onClose).toHaveBeenCalledTimes(1);
+});

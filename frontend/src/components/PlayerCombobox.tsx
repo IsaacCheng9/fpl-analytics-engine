@@ -1,0 +1,188 @@
+import { useEffect, useMemo, useState } from "react";
+import type { FormPlayer } from "../api";
+
+export type PlayerOption = Pick<
+	FormPlayer,
+	"element" | "web_name" | "position" | "team_name"
+>;
+
+export function playerOptionLabel(option: PlayerOption): string {
+	return `${option.web_name} - ${option.team_name ?? "No Team"} - ${option.position ?? "-"}`;
+}
+
+const MAX_VISIBLE_OPTIONS = 50;
+
+export function PlayerCombobox({
+	id,
+	label,
+	options,
+	value,
+	onChange,
+}: {
+	id: string;
+	label: string;
+	options: PlayerOption[];
+	value: number | null;
+	onChange: (element: number | null) => void;
+}) {
+	const selected = options.find((option) => option.element === value);
+	const selectedLabel = selected ? playerOptionLabel(selected) : "";
+	const [input, setInput] = useState(selectedLabel);
+	const [open, setOpen] = useState(false);
+	const [activeIndex, setActiveIndex] = useState(0);
+
+	useEffect(() => {
+		setInput(selectedLabel);
+	}, [selectedLabel]);
+
+	const filtered = useMemo(() => {
+		const query = input.trim().toLowerCase();
+		const matches =
+			query === "" || query === selectedLabel.toLowerCase()
+				? options
+				: options.filter((option) =>
+						playerOptionLabel(option).toLowerCase().includes(query),
+					);
+		return matches.slice(0, MAX_VISIBLE_OPTIONS);
+	}, [input, options, selectedLabel]);
+
+	function selectOption(option: PlayerOption) {
+		setInput(playerOptionLabel(option));
+		setOpen(false);
+		onChange(option.element);
+	}
+
+	function handleInputChange(nextValue: string) {
+		setInput(nextValue);
+		setActiveIndex(0);
+		if (nextValue.trim() === "") {
+			onChange(null);
+			setOpen(false);
+			return;
+		}
+		const exactMatch = options.find(
+			(option) =>
+				playerOptionLabel(option).toLowerCase() ===
+				nextValue.trim().toLowerCase(),
+		);
+		if (exactMatch) {
+			onChange(exactMatch.element);
+			setOpen(false);
+			return;
+		}
+		setOpen(true);
+	}
+
+	function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			setOpen(true);
+			setActiveIndex((index) =>
+				filtered.length === 0 ? 0 : (index + 1) % filtered.length,
+			);
+			return;
+		}
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			setOpen(true);
+			setActiveIndex((index) =>
+				filtered.length === 0
+					? 0
+					: (index - 1 + filtered.length) % filtered.length,
+			);
+			return;
+		}
+		if (event.key === "Enter" && open && filtered.length > 0) {
+			event.preventDefault();
+			const option = filtered[Math.min(activeIndex, filtered.length - 1)];
+			if (option) {
+				selectOption(option);
+			}
+			return;
+		}
+		if (event.key === "Escape" && open) {
+			event.preventDefault();
+			event.stopPropagation();
+			setOpen(false);
+			setInput(selectedLabel);
+		}
+	}
+
+	const listboxId = `${id}-listbox`;
+	const safeActiveIndex =
+		filtered.length > 0 ? Math.min(activeIndex, filtered.length - 1) : -1;
+	const activeOption =
+		open && safeActiveIndex >= 0 ? filtered[safeActiveIndex] : undefined;
+
+	return (
+		<div className="relative flex min-w-0 flex-1 flex-col text-xs font-medium text-zinc-600">
+			<label htmlFor={id}>{label}</label>
+			<input
+				id={id}
+				type="search"
+				role="combobox"
+				aria-expanded={open}
+				aria-controls={listboxId}
+				aria-autocomplete="list"
+				aria-activedescendant={
+					activeOption ? `${id}-option-${activeOption.element}` : undefined
+				}
+				placeholder="Search player, club, or position..."
+				className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
+				value={input}
+				onFocus={() => {
+					setActiveIndex(0);
+					setOpen(true);
+				}}
+				onChange={(event) => handleInputChange(event.target.value)}
+				onKeyDown={handleKeyDown}
+				onBlur={() => {
+					setOpen(false);
+					setInput(selectedLabel);
+				}}
+			/>
+			{open ? (
+				<div
+					id={listboxId}
+					role="listbox"
+					aria-label={`${label} options`}
+					className="absolute top-full right-0 left-0 z-30 mt-1 max-h-56 overflow-auto rounded-md border border-zinc-200 bg-white py-1 text-sm shadow-lg"
+				>
+					{filtered.length === 0 ? (
+						<div className="px-2.5 py-1.5 text-zinc-500">
+							No matching players
+						</div>
+					) : (
+						filtered.map((option, index) => {
+							const isActive = index === safeActiveIndex;
+							const isSelected = option.element === value;
+							return (
+								<div
+									key={option.element}
+									id={`${id}-option-${option.element}`}
+									role="option"
+									tabIndex={-1}
+									aria-selected={isSelected}
+									className={`cursor-pointer px-2.5 py-1.5 ${
+										isActive
+											? "bg-sky-50 text-sky-900"
+											: isSelected
+												? "bg-zinc-50 font-medium text-zinc-900"
+												: "text-zinc-800 hover:bg-zinc-50"
+									}`}
+									onMouseEnter={() => setActiveIndex(index)}
+									onMouseDown={(event) => {
+										event.preventDefault();
+										selectOption(option);
+									}}
+								>
+									{playerOptionLabel(option)}
+								</div>
+							);
+						})
+					)}
+				</div>
+			) : null}
+		</div>
+	);
+}

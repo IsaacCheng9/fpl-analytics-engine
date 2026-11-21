@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import {
 	type ClubForm,
 	type DefconPlayer,
@@ -17,13 +17,9 @@ import {
 	fmtPctPoints,
 	fmtPrice,
 } from "../lib/format";
+import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
 
 const PARTIAL_SEASON = "2022-23";
-
-type PlayerOption = Pick<
-	FormPlayer,
-	"element" | "web_name" | "position" | "team_name"
->;
 
 type CompareSide = {
 	option: PlayerOption | undefined;
@@ -94,10 +90,6 @@ const SUMMARY_ATTACKING_METRICS = [
 	total: SummaryMetricKey;
 	per90: `${SummaryMetricKey}90`;
 }>;
-
-function playerOptionLabel(option: PlayerOption): string {
-	return `${option.web_name} - ${option.team_name ?? "No Team"} - ${option.position ?? "-"}`;
-}
 
 function comparable(value: number | null | undefined): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -700,61 +692,6 @@ function buildCompareRows(
 	return rows;
 }
 
-function PlayerSelect({
-	id,
-	label,
-	options,
-	value,
-	onChange,
-}: {
-	id: string;
-	label: string;
-	options: PlayerOption[];
-	value: number | null;
-	onChange: (element: number | null) => void;
-}) {
-	const selected = options.find((option) => option.element === value);
-	const selectedLabel = selected ? playerOptionLabel(selected) : "";
-	const [input, setInput] = useState(selectedLabel);
-
-	useEffect(() => {
-		setInput(selectedLabel);
-	}, [selectedLabel]);
-
-	function handleInputChange(nextValue: string) {
-		setInput(nextValue);
-		if (nextValue.trim() === "") {
-			onChange(null);
-			return;
-		}
-		const match = options.find(
-			(option) => playerOptionLabel(option) === nextValue,
-		);
-		if (match) {
-			onChange(match.element);
-		}
-	}
-
-	return (
-		<label className="flex min-w-0 flex-1 flex-col text-xs font-medium text-zinc-600">
-			{label}
-			<input
-				type="search"
-				list={`${id}-options`}
-				className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
-				value={input}
-				onChange={(event) => handleInputChange(event.target.value)}
-				onBlur={() => setInput(selectedLabel)}
-			/>
-			<datalist id={`${id}-options`}>
-				{options.map((option) => (
-					<option key={option.element} value={playerOptionLabel(option)} />
-				))}
-			</datalist>
-		</label>
-	);
-}
-
 function winningSide(row: CompareRow): "left" | "right" | null {
 	if (
 		row.leftValue === undefined ||
@@ -888,6 +825,28 @@ export function PlayerComparePanel({
 		canCompare &&
 		(contextLoading || leftQuery.isPending || rightQuery.isPending);
 	const isError = contextError || leftQuery.isError || rightQuery.isError;
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
+
+	useEffect(() => {
+		const previousFocus =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement
+				: null;
+		dialogRef.current?.focus();
+
+		function onKeyDown(event: KeyboardEvent) {
+			if (event.key === "Escape" && !event.defaultPrevented) {
+				onCloseRef.current();
+			}
+		}
+		document.addEventListener("keydown", onKeyDown);
+		return () => {
+			document.removeEventListener("keydown", onKeyDown);
+			previousFocus?.focus();
+		};
+	}, []);
 
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
@@ -898,10 +857,12 @@ export function PlayerComparePanel({
 				onClick={onClose}
 			/>
 			<div
+				ref={dialogRef}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="player-compare-title"
-				className="relative mx-auto mt-6 w-full max-w-6xl rounded-lg bg-white p-5 shadow-xl"
+				tabIndex={-1}
+				className="relative mx-auto mt-6 w-full max-w-6xl rounded-lg bg-white p-5 shadow-xl outline-none"
 			>
 				<div className="mb-4 flex items-start justify-between gap-4">
 					<div>
@@ -922,14 +883,14 @@ export function PlayerComparePanel({
 				</div>
 
 				<div className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]">
-					<PlayerSelect
+					<PlayerCombobox
 						id="compare-left-player"
 						label="First Player"
 						options={playerOptions}
 						value={leftElement}
 						onChange={onLeftChange}
 					/>
-					<PlayerSelect
+					<PlayerCombobox
 						id="compare-right-player"
 						label="Second Player"
 						options={playerOptions}
