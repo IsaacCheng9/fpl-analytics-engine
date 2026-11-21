@@ -1,20 +1,5 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ColumnDef, SortingState } from "@tanstack/react-table";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import {
-	type FplTeamPick,
-	fetchClubForm,
-	fetchClubFormValidation,
-	fetchCurrentPlayerContext,
-	fetchDefcon,
-	fetchDefconProbability,
-	fetchDefconProbabilityValidation,
-	fetchForm,
-	fetchFormValidation,
-	fetchFplTeam,
-	fetchMeta,
-	type Position,
-} from "./api";
 import {
 	buildClubColumns,
 	buildDefconColumns,
@@ -27,16 +12,18 @@ import {
 	FORM_HEAT_KEYS,
 } from "./columns";
 import { ActiveFilterChips } from "./components/ActiveFilterChips";
-import { AttackingThreatFilterFields } from "./components/AttackingThreatFilterFields";
-import { ClubColumnChooser } from "./components/ClubColumnChooser";
+import { DashboardFilterBar } from "./components/DashboardFilterBar";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
-import { InfoTooltip } from "./components/InfoTooltip";
+import { PlayerToolbar } from "./components/PlayerToolbar";
 import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
-import { TransferFilterFields } from "./components/TransferFilterFields";
-import { WindowSizeControl } from "./components/WindowSizeControl";
-import { defaultEvidenceSeason, evidenceSeasons } from "./lib/evidenceSeason";
+import { useDashboardQueries } from "./hooks/useDashboardQueries";
+import {
+	buildActiveFilterChips,
+	countMoreFilters,
+} from "./lib/activeFilterChips";
+import { evidenceSeasons } from "./lib/evidenceSeason";
 import {
 	filterAttackingThreatCandidates,
 	filterOwnedPlayers,
@@ -45,20 +32,11 @@ import {
 	filterTransferCandidates,
 	formatPlayerCount,
 } from "./lib/filters";
-import { fmtNum, fmtPctPoints, fmtPrice } from "./lib/format";
 import { sortingFromParam, sortingToParam } from "./lib/tableSort";
-import { LIVE_TEAM_STALE_TIME_MS } from "./queryClient";
 import {
-	type ActiveFilterChip,
-	ATTACKING_METRIC_COLUMN_ORDER,
-	ATTACKING_METRIC_LABELS,
-	ATTACKING_METRICS,
-	ATTACKING_THREAT_PERIOD_LABELS,
-	ATTACKING_THREAT_PERIODS,
 	type AttackingMetric,
 	type AttackingThreatPeriod,
 	type ClubColumnGroup,
-	clubColumnVisibilityMatchDefault,
 	DEFAULT_AS_OF_GW,
 	DEFAULT_ATTACKING_METRICS,
 	DEFAULT_CLUB_COLUMNS,
@@ -73,16 +51,9 @@ import {
 	DEFAULT_SHOW_SQUAD_VIEW,
 	DEFAULT_TEAM_FILTER,
 	defaultAttackingThreatFilters,
-	defaultMinGames,
 	defaultTransferFilters,
-	defaultWindowSize,
-	FILTER_PRESETS,
 	type FilterPreset,
-	HIT_RATES,
 	isPlayerTab,
-	metricsMatchDefault,
-	type OwnershipFilter,
-	POSITIONS,
 	type ShortlistablePlayer,
 	TAB_LABELS,
 	TABS,
@@ -91,7 +62,6 @@ import {
 	visibleAttackingThreatFiltersMatchDefault,
 	WINDOW_MIN,
 } from "./state";
-import { inputClass, labelClass } from "./styles";
 import { useUrlState } from "./urlState";
 
 // Load secondary views and charts on demand to keep Recharts out of the initial bundle.
@@ -130,11 +100,9 @@ export default function App() {
 		tab,
 		playerSearch,
 		teamFilter,
-		windowSize: windowSizeChoice,
 		position,
 		minMinutes,
 		minHitRate,
-		minGames: minGamesChoice,
 		asOfGw,
 		selectedElement,
 		playerWindow,
@@ -153,7 +121,6 @@ export default function App() {
 		transferFilters,
 		shortlist,
 		showShortlistedOnly,
-		evidenceSeason: evidenceSeasonChoice,
 		sort,
 	} = urlState;
 	const {
@@ -191,6 +158,43 @@ export default function App() {
 		urlState.fplTeamId?.toString() ?? "",
 	);
 
+	const {
+		meta,
+		analyticsReady,
+		latestGw,
+		liveSeason,
+		evidenceSeason,
+		gameweeksPlayed,
+		windowSize,
+		minGames,
+		isSquadViewActive,
+		fplTeamQuery,
+		teamImportIdentityError,
+		ownedElements,
+		ownedElementList,
+		ownedCount,
+		hasImportedTeam,
+		squadPicks,
+		formQuery,
+		defconQuery,
+		defconProbQuery,
+		clubQuery,
+		defconValidationQuery,
+		formValidationQuery,
+		clubValidationQuery,
+		squadFormQuery,
+		squadCurrentContextQuery,
+		squadDefconProbabilityQuery,
+		compareFormQuery,
+		compareDefconQuery,
+		compareDefconProbabilityQuery,
+		compareClubQuery,
+		comparePlayerOptions,
+		compareOptionElements,
+		active,
+		teamOptions,
+	} = useDashboardQueries(urlState);
+
 	useEffect(() => {
 		if (shortlist.length === 0 && showShortlistedOnly) {
 			setShowShortlistedOnly(false);
@@ -210,6 +214,57 @@ export default function App() {
 		showSquadView,
 		setOwnershipFilter,
 		setShowSquadView,
+	]);
+
+	useEffect(() => {
+		if (!compareOpen || comparePlayerOptions.length === 0) {
+			return;
+		}
+		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
+		const defaultElement = defaults.find((element) =>
+			compareOptionElements.has(element),
+		);
+		setCompareLeftElement((current) =>
+			current !== null && compareOptionElements.has(current)
+				? current
+				: (defaultElement ?? null),
+		);
+	}, [
+		compareOpen,
+		compareOptionElements,
+		comparePlayerOptions,
+		ownedElementList,
+		shortlist,
+		setCompareLeftElement,
+	]);
+
+	useEffect(() => {
+		if (!compareOpen || comparePlayerOptions.length === 0) {
+			return;
+		}
+		setCompareRightElement((current) => {
+			if (
+				current !== null &&
+				current !== compareLeftElement &&
+				compareOptionElements.has(current)
+			) {
+				return current;
+			}
+			const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
+			const defaultElement = defaults.find(
+				(element) =>
+					element !== compareLeftElement && compareOptionElements.has(element),
+			);
+			return defaultElement ?? null;
+		});
+	}, [
+		compareLeftElement,
+		compareOpen,
+		compareOptionElements,
+		comparePlayerOptions,
+		ownedElementList,
+		shortlist,
+		setCompareRightElement,
 	]);
 
 	function updateTransferFilter(
@@ -299,21 +354,12 @@ export default function App() {
 				};
 			}
 			if (preset === "value") {
-				return {
-					...current,
-					maxPrice: 7.5,
-				};
+				return { ...current, maxPrice: 7.5 };
 			}
 			if (preset === "differential") {
-				return {
-					...current,
-					maxOwnership: 10,
-				};
+				return { ...current, maxOwnership: 10 };
 			}
-			return {
-				...current,
-				maxFdr: 3,
-			};
+			return { ...current, maxFdr: 3 };
 		});
 		if (preset === "nailed") {
 			setMinMinutes(270);
@@ -335,10 +381,6 @@ export default function App() {
 			setCompareLeftElement((current) => current ?? defaults[0] ?? null);
 			setCompareRightElement((current) => current ?? defaults[1] ?? null);
 		}
-	}
-
-	function closeComparePanel() {
-		setCompareOpen(false);
 	}
 
 	function updateCompareLeft(element: number | null) {
@@ -380,238 +422,10 @@ export default function App() {
 		}));
 	}
 
-	const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta });
-	const analyticsReady = meta.data?.data_status === "ready";
-	const latestGw = meta.data?.latest_gw ?? 0;
-	const gameweeksPlayed = asOfGw ?? latestGw;
-	const windowSize = windowSizeChoice ?? defaultWindowSize(gameweeksPlayed);
-	const minGames = minGamesChoice ?? defaultMinGames(gameweeksPlayed);
 	const hasPlayerSearch = playerSearch.trim() !== "";
-	const isSquadViewActive =
-		isPlayerTab(tab) && showSquadView && fplTeamId !== null;
-	const fplTeamQuery = useQuery({
-		queryKey: ["fplTeam", fplTeamId],
-		queryFn: () => fetchFplTeam(fplTeamId as number, null),
-		enabled: analyticsReady && fplTeamId !== null,
-		staleTime: LIVE_TEAM_STALE_TIME_MS,
-	});
-	const importedTeam =
-		fplTeamQuery.data?.entry_id === fplTeamId ? fplTeamQuery.data : undefined;
-	const teamImportIdentityError =
-		fplTeamQuery.data !== undefined && importedTeam === undefined;
 	const parsedFplTeamInput = Number(fplTeamInput);
 	const canImportFplTeam =
 		Number.isInteger(parsedFplTeamInput) && parsedFplTeamInput > 0;
-	const ownedElements = useMemo(
-		() => new Set(importedTeam?.owned_elements ?? []),
-		[importedTeam],
-	);
-	const ownedElementList = useMemo(
-		() => importedTeam?.owned_elements ?? [],
-		[importedTeam],
-	);
-	const ownedCount = importedTeam?.owned_elements.length ?? 0;
-	const hasImportedTeam = importedTeam !== undefined;
-	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
-
-	// Fetch each table league-wide so heat ranges stay fixed as filters change;
-	// position, hit-rate and games filters then apply client-side.
-	const base = {
-		window: windowSize,
-		position: "" as const,
-		minMinutes,
-		asOfGw,
-	};
-	const squadBase = {
-		window: windowSize,
-		position: "" as const,
-		minMinutes: 0,
-		asOfGw,
-	};
-	const formQuery = useQuery({
-		queryKey: ["form", windowSize, minMinutes, asOfGw],
-		queryFn: () => fetchForm(base),
-		enabled: analyticsReady && tab === "form",
-	});
-	const defconQuery = useQuery({
-		queryKey: ["defcon", windowSize, minMinutes, asOfGw],
-		queryFn: () => fetchDefcon({ ...base, minHitRate: 0 }),
-		enabled: analyticsReady && tab === "defcon",
-	});
-	const defconProbQuery = useQuery({
-		queryKey: ["defconProb", asOfGw],
-		queryFn: () =>
-			fetchDefconProbability({ position: "", minGames: 0, asOfGw }),
-		enabled: analyticsReady && tab === "defconProb",
-	});
-	const clubQuery = useQuery({
-		queryKey: ["clubs", windowSize, asOfGw],
-		queryFn: () => fetchClubForm({ window: windowSize, asOfGw }),
-		enabled: analyticsReady && tab === "clubs",
-	});
-	const liveSeason = meta.data?.season ?? "";
-	const availableEvidenceSeasons = liveSeason
-		? evidenceSeasons(liveSeason)
-		: [];
-	const evidenceSeason =
-		evidenceSeasonChoice !== null &&
-		(availableEvidenceSeasons.length === 0 ||
-			availableEvidenceSeasons.includes(evidenceSeasonChoice))
-			? evidenceSeasonChoice
-			: defaultEvidenceSeason(liveSeason, latestGw);
-	// Keep the previous season on screen while a newly selected one loads, so
-	// the season selector stays put.
-	const defconValidationQuery = useQuery({
-		queryKey: ["defconValidation", evidenceSeason],
-		queryFn: () => fetchDefconProbabilityValidation({ season: evidenceSeason }),
-		enabled: analyticsReady && tab === "evidence",
-		placeholderData: keepPreviousData,
-	});
-	const formValidationQuery = useQuery({
-		queryKey: ["formValidation", evidenceSeason],
-		queryFn: () => fetchFormValidation({ season: evidenceSeason }),
-		enabled: analyticsReady && tab === "evidence",
-		placeholderData: keepPreviousData,
-	});
-	const clubValidationQuery = useQuery({
-		queryKey: ["clubValidation", evidenceSeason],
-		queryFn: () => fetchClubFormValidation({ season: evidenceSeason }),
-		enabled: analyticsReady && tab === "evidence",
-		placeholderData: keepPreviousData,
-	});
-	const squadFormQuery = useQuery({
-		queryKey: ["form", windowSize, 0, asOfGw],
-		queryFn: () => fetchForm(squadBase),
-		enabled: analyticsReady && isSquadViewActive,
-	});
-	const squadCurrentContextQuery = useQuery({
-		queryKey: ["squadCurrentContext"],
-		queryFn: fetchCurrentPlayerContext,
-		enabled: analyticsReady && isSquadViewActive,
-	});
-	const squadDefconProbabilityQuery = useQuery({
-		queryKey: ["defconProb", asOfGw],
-		queryFn: () =>
-			fetchDefconProbability({
-				position: "",
-				minGames: 0,
-				asOfGw,
-			}),
-		enabled: analyticsReady && isSquadViewActive,
-	});
-
-	const compareFormQuery = useQuery({
-		queryKey: ["form", compareWindow, 0, compareAsOfGw],
-		queryFn: () =>
-			fetchForm({
-				window: compareWindow,
-				position: "",
-				minMinutes: 0,
-				asOfGw: compareAsOfGw,
-			}),
-		enabled: analyticsReady && compareOpen,
-	});
-	const compareDefconQuery = useQuery({
-		queryKey: ["defcon", compareWindow, 0, compareAsOfGw],
-		queryFn: () =>
-			fetchDefcon({
-				window: compareWindow,
-				position: "",
-				minMinutes: 0,
-				minHitRate: 0,
-				asOfGw: compareAsOfGw,
-			}),
-		enabled: analyticsReady && compareOpen,
-	});
-	const compareDefconProbabilityQuery = useQuery({
-		queryKey: ["defconProb", compareAsOfGw],
-		queryFn: () =>
-			fetchDefconProbability({
-				position: "",
-				minGames: 0,
-				asOfGw: compareAsOfGw,
-			}),
-		enabled: analyticsReady && compareOpen,
-	});
-	const compareClubQuery = useQuery({
-		queryKey: ["clubs", compareWindow, compareAsOfGw],
-		queryFn: () =>
-			fetchClubForm({ window: compareWindow, asOfGw: compareAsOfGw }),
-		enabled: analyticsReady && compareOpen,
-	});
-
-	const comparePlayerOptions = useMemo(
-		() =>
-			[...(compareFormQuery.data ?? [])]
-				.sort((left, right) => {
-					const name = left.web_name.localeCompare(right.web_name);
-					return name !== 0
-						? name
-						: (left.team_name ?? "").localeCompare(right.team_name ?? "");
-				})
-				.map((player) => ({
-					element: player.element,
-					web_name: player.web_name,
-					position: player.position,
-					team_name: player.team_name,
-				})),
-		[compareFormQuery.data],
-	);
-	const compareOptionElements = useMemo(
-		() => new Set(comparePlayerOptions.map((player) => player.element)),
-		[comparePlayerOptions],
-	);
-
-	useEffect(() => {
-		if (!compareOpen || comparePlayerOptions.length === 0) {
-			return;
-		}
-		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
-		const defaultElement = defaults.find((element) =>
-			compareOptionElements.has(element),
-		);
-		setCompareLeftElement((current) =>
-			current !== null && compareOptionElements.has(current)
-				? current
-				: (defaultElement ?? null),
-		);
-	}, [
-		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
-		ownedElementList,
-		shortlist,
-		setCompareLeftElement,
-	]);
-
-	useEffect(() => {
-		if (!compareOpen || comparePlayerOptions.length === 0) {
-			return;
-		}
-		setCompareRightElement((current) => {
-			if (
-				current !== null &&
-				current !== compareLeftElement &&
-				compareOptionElements.has(current)
-			) {
-				return current;
-			}
-			const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
-			const defaultElement = defaults.find(
-				(element) =>
-					element !== compareLeftElement && compareOptionElements.has(element),
-			);
-			return defaultElement ?? null;
-		});
-	}, [
-		compareLeftElement,
-		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
-		ownedElementList,
-		shortlist,
-		setCompareRightElement,
-	]);
 
 	const formColumns = useMemo(
 		() =>
@@ -643,29 +457,6 @@ export default function App() {
 			),
 		[clubQuery.data, clubColumnVisibility],
 	);
-
-	const active =
-		tab === "form"
-			? formQuery
-			: tab === "defcon"
-				? defconQuery
-				: tab === "defconProb"
-					? defconProbQuery
-					: tab === "clubs"
-						? clubQuery
-						: null;
-	const activeLoading = active?.isPending;
-	const activeError = active?.isError;
-
-	// Team dropdown options derived from the loaded players, independent of the
-	// client-side player/team filters so the list stays stable.
-	const teamOptions = useMemo(() => {
-		const rows = (active?.data ?? []) as Array<{ team_name: string | null }>;
-		const names = rows
-			.map((row) => row.team_name)
-			.filter((name): name is string => name !== null);
-		return Array.from(new Set(names)).sort();
-	}, [active?.data]);
 
 	// Keep table pages stable when shortlist or ownership changes only affect styling.
 	const shortlistFilter = showShortlistedOnly ? shortlist : null;
@@ -771,6 +562,7 @@ export default function App() {
 			),
 		[clubQuery.data, teamFilter],
 	);
+
 	const enabledAttackingMetricCount =
 		Object.values(attackingMetrics).filter(Boolean).length;
 	const showTransferFilters = isPlayerTab(tab);
@@ -796,25 +588,14 @@ export default function App() {
 		setSort(sortingToParam(next));
 	}
 
-	// Presets, threat and transfer filters sit behind a toggle; count the ones in
-	// use so a collapsed panel still shows that it is narrowing the table.
 	const hasMoreFilters = tab === "form" || showTransferFilters;
-	const moreFilterCount =
-		(tab === "form"
-			? ATTACKING_METRICS.filter((metric) => attackingMetrics[metric]).flatMap(
-					(metric) =>
-						ATTACKING_THREAT_PERIODS.filter(
-							(period) => attackingThreatFilters[metric][period] !== null,
-						),
-				).length
-			: 0) +
-		(showTransferFilters
-			? Object.values(transferFilters).filter((value) => value !== null)
-					.length +
-				(tab !== "defconProb" && minMinutes !== DEFAULT_MIN_MINUTES ? 1 : 0)
-			: 0);
-	const hasActiveClubColumnGroups =
-		tab === "clubs" && !clubColumnVisibilityMatchDefault(clubColumnVisibility);
+	const moreFilterCount = countMoreFilters({
+		tab,
+		attackingMetrics,
+		attackingThreatFilters,
+		transferFilters,
+		minMinutes,
+	});
 	const visiblePlayerRowCount =
 		tab === "form"
 			? visibleFormRows.length
@@ -827,6 +608,7 @@ export default function App() {
 		visiblePlayerRowCount === shortlist.length
 			? `Showing ${visiblePlayerRowCount} shortlisted ${visiblePlayerRowCount === 1 ? "player" : "players"}`
 			: `Showing ${visiblePlayerRowCount} of ${formatPlayerCount(shortlist.length)} shortlisted`;
+
 	const playerRowClassName = (row: ShortlistablePlayer) => {
 		const isShortlisted = shortlist.includes(row.element);
 		const isOwned = ownedElements.has(row.element);
@@ -877,169 +659,15 @@ export default function App() {
 			</button>
 		);
 	};
-	const activeFilterChips: ActiveFilterChip[] = [];
 
-	if (isPlayerTab(tab) && playerSearch.trim() !== "") {
-		activeFilterChips.push({
-			id: "player",
-			label: `Player ${playerSearch.trim()}`,
-			onClear: () => setPlayerSearch(DEFAULT_PLAYER_SEARCH),
-		});
-	}
-	if (isPlayerTab(tab) && position !== DEFAULT_POSITION) {
-		activeFilterChips.push({
-			id: "position",
-			label: `Position ${position}`,
-			onClear: () => setPosition(DEFAULT_POSITION),
-		});
-	}
-	if (tab !== "evidence" && teamFilter !== DEFAULT_TEAM_FILTER) {
-		activeFilterChips.push({
-			id: "team",
-			label: `Team ${teamFilter}`,
-			onClear: () => setTeamFilter(DEFAULT_TEAM_FILTER),
-		});
-	}
-	if (tab !== "evidence" && tab !== "defconProb" && windowSizeChoice !== null) {
-		activeFilterChips.push({
-			id: "window",
-			label: `Window ${windowSizeChoice}`,
-			onClear: () => setWindowSize(null),
-		});
-	}
-	if (
-		isPlayerTab(tab) &&
-		tab !== "defconProb" &&
-		minMinutes !== DEFAULT_MIN_MINUTES
-	) {
-		activeFilterChips.push({
-			id: "min-minutes",
-			label: `Minutes >= ${minMinutes}`,
-			onClear: () => setMinMinutes(DEFAULT_MIN_MINUTES),
-		});
-	}
-	if (tab === "defcon" && minHitRate !== DEFAULT_MIN_HIT_RATE) {
-		activeFilterChips.push({
-			id: "min-hit-rate",
-			label: `Hit Rate >= ${Math.round(minHitRate * 100)}%`,
-			onClear: () => setMinHitRate(DEFAULT_MIN_HIT_RATE),
-		});
-	}
-	if (tab === "defconProb" && minGamesChoice !== null) {
-		activeFilterChips.push({
-			id: "min-games",
-			label: `Games >= ${minGamesChoice}`,
-			onClear: () => setMinGames(null),
-		});
-	}
-	if (tab !== "evidence" && asOfGw !== DEFAULT_AS_OF_GW) {
-		activeFilterChips.push({
-			id: "as-of-gw",
-			label: `As Of GW ${asOfGw}`,
-			onClear: () => setAsOfGw(DEFAULT_AS_OF_GW),
-		});
-	}
-	if (tab === "form" && !metricsMatchDefault(attackingMetrics)) {
-		activeFilterChips.push({
-			id: "metrics",
-			label: `Metrics ${ATTACKING_METRIC_COLUMN_ORDER.filter(
-				(metric) => attackingMetrics[metric],
-			)
-				.map((metric) => ATTACKING_METRIC_LABELS[metric])
-				.join(", ")}`,
-			onClear: () => setAttackingMetrics({ ...DEFAULT_ATTACKING_METRICS }),
-		});
-	}
-	if (tab === "form") {
-		for (const metric of ATTACKING_METRIC_COLUMN_ORDER) {
-			if (!attackingMetrics[metric]) {
-				continue;
-			}
-			for (const period of ATTACKING_THREAT_PERIODS) {
-				const value = attackingThreatFilters[metric][period];
-				if (value !== null) {
-					activeFilterChips.push({
-						id: `${metric}-${period}`,
-						label: `Min ${ATTACKING_THREAT_PERIOD_LABELS[period]} ${ATTACKING_METRIC_LABELS[metric]}/90 >= ${fmtNum(value)}`,
-						onClear: () => updateAttackingThreatFilter(metric, period, null),
-					});
-				}
-			}
-		}
-	}
-	if (isPlayerTab(tab)) {
-		if (transferFilters.maxPrice !== null) {
-			activeFilterChips.push({
-				id: "max-price",
-				label: `Price <= ${fmtPrice(transferFilters.maxPrice)}`,
-				onClear: () => updateTransferFilter("maxPrice", null),
-			});
-		}
-		if (transferFilters.maxFdr !== null) {
-			activeFilterChips.push({
-				id: "max-fdr",
-				label: `FDR <= ${fmtNum(transferFilters.maxFdr, 1)}`,
-				onClear: () => updateTransferFilter("maxFdr", null),
-			});
-		}
-		if (transferFilters.minMinsPerAppearance !== null) {
-			activeFilterChips.push({
-				id: "min-mins-app",
-				label: `Mins/App >= ${fmtNum(transferFilters.minMinsPerAppearance, 0)}`,
-				onClear: () => updateTransferFilter("minMinsPerAppearance", null),
-			});
-		}
-		if (transferFilters.minStartPct !== null) {
-			activeFilterChips.push({
-				id: "min-start",
-				label: `Start >= ${fmtPctPoints(transferFilters.minStartPct, 0)}`,
-				onClear: () => updateTransferFilter("minStartPct", null),
-			});
-		}
-		if (transferFilters.minOwnership !== null) {
-			activeFilterChips.push({
-				id: "min-owned",
-				label: `Owned >= ${fmtPctPoints(transferFilters.minOwnership, 0)}`,
-				onClear: () => updateTransferFilter("minOwnership", null),
-			});
-		}
-		if (transferFilters.maxOwnership !== null) {
-			activeFilterChips.push({
-				id: "max-owned",
-				label: `Owned <= ${fmtPctPoints(transferFilters.maxOwnership, 0)}`,
-				onClear: () => updateTransferFilter("maxOwnership", null),
-			});
-		}
-	}
-	if (hasActiveClubColumnGroups) {
-		activeFilterChips.push({
-			id: "club-columns",
-			label: "Custom Columns",
-			onClear: () => setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS }),
-		});
-	}
-	if (isShortlistViewActive) {
-		activeFilterChips.push({
-			id: "shortlisted-only",
-			label: "Shortlisted Only",
-			onClear: () => setShowShortlistedOnly(false),
-		});
-	}
-	if (isSquadViewActive) {
-		activeFilterChips.push({
-			id: "squad-view",
-			label: "Squad View",
-			onClear: () => setShowSquadView(false),
-		});
-	}
-	if (isPlayerTab(tab) && ownershipFilter !== "all") {
-		activeFilterChips.push({
-			id: "owned-filter",
-			label: ownershipFilter === "owned" ? "Owned Only" : "Not Owned",
-			onClear: () => setOwnershipFilter("all"),
-		});
-	}
-
+	const activeFilterChips = buildActiveFilterChips({
+		state: urlState,
+		setters: setUrlState,
+		isShortlistViewActive,
+		isSquadViewActive,
+		updateAttackingThreatFilter,
+		updateTransferFilter,
+	});
 	const hasActiveFilters = activeFilterChips.length > 0;
 	const clearActiveFiltersButton = hasActiveFilters ? (
 		<button
@@ -1174,255 +802,55 @@ export default function App() {
 					))}
 				</div>
 
-				<div
-					className={`mb-4 rounded-lg border border-zinc-200 bg-white p-4 ${
-						tab === "evidence" ? "hidden" : ""
-					}`}
-				>
-					<div className="flex flex-wrap items-start gap-4">
-						{isPlayerTab(tab) && (
-							<>
-								<label className={labelClass}>
-									Player
-									<input
-										type="search"
-										placeholder="e.g. Saka"
-										className={`${inputClass} w-40`}
-										value={playerSearch}
-										onChange={(e) => setPlayerSearch(e.target.value)}
-									/>
-								</label>
-
-								<label className={labelClass}>
-									Position
-									<select
-										className={inputClass}
-										value={position}
-										onChange={(e) =>
-											setPosition(e.target.value as Position | "")
-										}
-									>
-										<option value="">All</option>
-										{POSITIONS.map((p) => (
-											<option key={p} value={p}>
-												{p}
-											</option>
-										))}
-									</select>
-								</label>
-							</>
-						)}
-
-						<label className={labelClass}>
-							Team
-							<select
-								className={inputClass}
-								value={teamFilter}
-								onChange={(e) => setTeamFilter(e.target.value)}
-							>
-								<option value="">All</option>
-								{teamOptions.map((team) => (
-									<option key={team} value={team}>
-										{team}
-									</option>
-								))}
-							</select>
-						</label>
-
-						{tab === "clubs" && (
-							<ClubColumnChooser
-								visibility={clubColumnVisibility}
-								columnCount={clubColumns.length}
-								onToggle={toggleClubColumnGroup}
-								onReset={() => setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })}
-							/>
-						)}
-
-						{tab === "form" && (
-							<div className={labelClass}>
-								<span>Metrics</span>
-								<div className="mt-1 flex h-[34px] items-center gap-4">
-									{ATTACKING_METRICS.map((metric) => (
-										<label
-											key={metric}
-											className="flex items-center gap-1 text-xs text-zinc-900"
-										>
-											<input
-												type="checkbox"
-												className="accent-blue-600"
-												checked={attackingMetrics[metric]}
-												disabled={
-													attackingMetrics[metric] &&
-													enabledAttackingMetricCount === 1
-												}
-												onChange={() => toggleAttackingMetric(metric)}
-											/>
-											{ATTACKING_METRIC_LABELS[metric]}
-										</label>
-									))}
-								</div>
-							</div>
-						)}
-
-						{tab === "defcon" && (
-							<label className={labelClass}>
-								Min Hit Rate
-								<select
-									className={inputClass}
-									value={minHitRate}
-									onChange={(e) => setMinHitRate(Number(e.target.value))}
-								>
-									{HIT_RATES.map((rate) => (
-										<option key={rate} value={rate}>
-											{Math.round(rate * 100)}%
-										</option>
-									))}
-								</select>
-							</label>
-						)}
-
-						{tab === "defconProb" && (
-							<label className={labelClass}>
-								Min Games
-								<input
-									type="number"
-									min={0}
-									className={`${inputClass} w-24`}
-									value={minGames}
-									onChange={(e) => setMinGames(Number(e.target.value))}
-								/>
-							</label>
-						)}
-
-						{tab !== "defconProb" && (
-							<WindowSizeControl value={windowSize} onChange={setWindowSize} />
-						)}
-
-						<div className={labelClass}>
-							<span className="flex items-center gap-1">
-								<label htmlFor="as-of-gw">As Of GW</label>
-								<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
-							</span>
-							<select
-								id="as-of-gw"
-								className={inputClass}
-								value={asOfGw ?? ""}
-								onChange={(e) =>
-									setAsOfGw(
-										e.target.value === "" ? null : Number(e.target.value),
-									)
-								}
-							>
-								<option value="">Latest ({latestGw})</option>
-								{Array.from({ length: latestGw }, (_, i) => latestGw - i).map(
-									(gw) => (
-										<option key={gw} value={gw}>
-											{gw}
-										</option>
-									),
-								)}
-							</select>
-						</div>
-
-						{isPlayerTab(tab) ? (
-							<form
-								// Phones keep team import with the folded filters to save vertical space.
-								className={`items-end gap-2 sm:flex ${showMoreFilters ? "flex" : "hidden"}`}
-								onSubmit={(event) => {
-									event.preventDefault();
-									importFplTeam();
-								}}
-							>
-								<label className={labelClass}>
-									FPL Team ID
-									<input
-										type="number"
-										min={1}
-										inputMode="numeric"
-										placeholder="e.g. 12345"
-										className={`${inputClass} w-32`}
-										value={fplTeamInput}
-										onChange={(event) => setFplTeamInput(event.target.value)}
-									/>
-								</label>
-								<button
-									type="submit"
-									disabled={!canImportFplTeam}
-									className="mb-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
-								>
-									Import
-								</button>
-								{fplTeamId !== null ? (
-									<button
-										type="button"
-										className="mb-0 rounded-md px-2 py-1.5 font-medium text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-										onClick={clearFplTeam}
-									>
-										Clear
-									</button>
-								) : null}
-							</form>
-						) : null}
-
-						{hasMoreFilters ? (
-							<button
-								type="button"
-								aria-expanded={showMoreFilters}
-								aria-controls="more-filters"
-								className="self-end rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
-								onClick={() => setShowMoreFilters((current) => !current)}
-							>
-								{showMoreFilters ? "Fewer Filters" : "More Filters"}
-								{moreFilterCount > 0 ? ` (${moreFilterCount})` : ""}
-							</button>
-						) : null}
-					</div>
-					{hasMoreFilters && showMoreFilters ? (
-						<div id="more-filters">
-							{tab === "form" ? (
-								<div className="mt-4 border-zinc-100 border-t pt-4">
-									<div className="mb-2 font-medium text-xs text-zinc-600">
-										Filter Presets
-									</div>
-									<div className="flex flex-wrap gap-2">
-										{FILTER_PRESETS.map((preset) => (
-											<button
-												key={preset.id}
-												type="button"
-												className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white"
-												onClick={() => applyFilterPreset(preset.id)}
-											>
-												{preset.label}
-											</button>
-										))}
-									</div>
-								</div>
-							) : null}
-							<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
-								{tab === "form" ? (
-									<AttackingThreatFilterFields
-										filters={attackingThreatFilters}
-										visibleMetrics={attackingMetrics}
-										hasActiveFilters={hasActiveAttackingThreatFilters}
-										onChange={updateAttackingThreatFilter}
-										onReset={resetAttackingThreatFilters}
-									/>
-								) : null}
-								{showTransferFilters ? (
-									<TransferFilterFields
-										filters={transferFilters}
-										minMinutes={minMinutes}
-										showMinMinutes={tab !== "defconProb"}
-										hasActiveFilters={hasActiveTransferFilters}
-										onFilterChange={updateTransferFilter}
-										onMinMinutesChange={setMinMinutes}
-										onReset={resetTransferFilters}
-									/>
-								) : null}
-							</div>
-						</div>
-					) : null}
-				</div>
+				<DashboardFilterBar
+					tab={tab}
+					playerSearch={playerSearch}
+					position={position}
+					teamFilter={teamFilter}
+					teamOptions={teamOptions}
+					clubColumnVisibility={clubColumnVisibility}
+					clubColumnCount={clubColumns.length}
+					attackingMetrics={attackingMetrics}
+					enabledAttackingMetricCount={enabledAttackingMetricCount}
+					minHitRate={minHitRate}
+					minGames={minGames}
+					windowSize={windowSize}
+					asOfGw={asOfGw}
+					latestGw={latestGw}
+					fplTeamId={fplTeamId}
+					fplTeamInput={fplTeamInput}
+					canImportFplTeam={canImportFplTeam}
+					showMoreFilters={showMoreFilters}
+					hasMoreFilters={hasMoreFilters}
+					moreFilterCount={moreFilterCount}
+					attackingThreatFilters={attackingThreatFilters}
+					hasActiveAttackingThreatFilters={hasActiveAttackingThreatFilters}
+					transferFilters={transferFilters}
+					minMinutes={minMinutes}
+					hasActiveTransferFilters={hasActiveTransferFilters}
+					onPlayerSearchChange={setPlayerSearch}
+					onPositionChange={setPosition}
+					onTeamFilterChange={setTeamFilter}
+					onToggleClubColumnGroup={toggleClubColumnGroup}
+					onResetClubColumns={() =>
+						setClubColumnGroups({ ...DEFAULT_CLUB_COLUMNS })
+					}
+					onToggleAttackingMetric={toggleAttackingMetric}
+					onMinHitRateChange={setMinHitRate}
+					onMinGamesChange={setMinGames}
+					onWindowSizeChange={setWindowSize}
+					onAsOfGwChange={setAsOfGw}
+					onFplTeamInputChange={setFplTeamInput}
+					onImportFplTeam={importFplTeam}
+					onClearFplTeam={clearFplTeam}
+					onToggleMoreFilters={() => setShowMoreFilters((current) => !current)}
+					onApplyFilterPreset={applyFilterPreset}
+					onAttackingThreatFilterChange={updateAttackingThreatFilter}
+					onResetAttackingThreatFilters={resetAttackingThreatFilters}
+					onTransferFilterChange={updateTransferFilter}
+					onMinMinutesChange={setMinMinutes}
+					onResetTransferFilters={resetTransferFilters}
+				/>
 
 				{hasActiveFilters ? (
 					<ActiveFilterChips
@@ -1443,144 +871,43 @@ export default function App() {
 				) : null}
 
 				{isPlayerTab(tab) ? (
-					<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-						<p className="hidden text-sm text-zinc-500 sm:block">
-							Click a player row to open the detailed stats view.
-						</p>
-						<div className="flex flex-wrap items-center gap-2">
-							{fplTeamId !== null ? (
-								<span
-									className={`rounded-md border px-2.5 py-1.5 font-medium text-xs ${
-										fplTeamQuery.isError
-											? "border-red-200 bg-red-50 text-red-700"
-											: "border-sky-200 bg-sky-50 text-sky-800"
-									}`}
-								>
-									{fplTeamQuery.isError || teamImportIdentityError
-										? "Team Import Failed"
-										: fplTeamQuery.isPending
-											? "Loading Team..."
-											: `Currently Owned (${ownedCount})`}
-								</span>
-							) : null}
-							{fplTeamId !== null ? (
-								<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
-									<legend className="sr-only">Imported Team Filter</legend>
-									{(
-										[
-											["all", "All"] as const,
-											["owned", `Owned (${ownedCount})`] as const,
-											["not-owned", "Not Owned"] as const,
-										] satisfies Array<readonly [OwnershipFilter, string]>
-									).map(([value, label]) => (
-										<button
-											key={value}
-											type="button"
-											aria-pressed={ownershipFilter === value}
-											disabled={!hasImportedTeam && value !== "all"}
-											className={`rounded px-3 py-1.5 font-medium text-sm ${
-												ownershipFilter === value
-													? "bg-zinc-900 text-white"
-													: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
-											}`}
-											onClick={() => {
-												setOwnershipFilter(value);
-												setShowSquadView(false);
-												setShowShortlistedOnly(false);
-											}}
-										>
-											{label}
-										</button>
-									))}
-								</fieldset>
-							) : null}
-							<button
-								type="button"
-								className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
-								onClick={openComparePanel}
-							>
-								Compare Players
-							</button>
-							<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
-								<legend className="sr-only">Player View</legend>
-								<button
-									type="button"
-									aria-pressed={isAllPlayersViewActive}
-									className={`rounded px-3 py-1.5 font-medium text-sm ${
-										isAllPlayersViewActive
-											? "bg-zinc-900 text-white"
-											: "text-zinc-600 hover:bg-zinc-50"
-									}`}
-									onClick={() => {
-										setShowSquadView(false);
-										setShowShortlistedOnly(false);
-									}}
-								>
-									All Players
-								</button>
-								<button
-									type="button"
-									aria-pressed={isSquadViewActive}
-									disabled={!hasImportedTeam}
-									className={`rounded px-3 py-1.5 font-medium text-sm ${
-										isSquadViewActive
-											? "bg-zinc-900 text-white"
-											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
-									}`}
-									onClick={() => {
-										setShowSquadView(true);
-										setShowShortlistedOnly(false);
-										setOwnershipFilter("all");
-									}}
-								>
-									Squad View ({ownedCount})
-								</button>
-								<button
-									type="button"
-									aria-pressed={isShortlistViewActive}
-									disabled={shortlist.length === 0}
-									className={`rounded px-3 py-1.5 font-medium text-sm ${
-										isShortlistViewActive
-											? "bg-zinc-900 text-white"
-											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
-									}`}
-									onClick={() => {
-										setShowSquadView(false);
-										setShowShortlistedOnly(true);
-									}}
-								>
-									Shortlisted ({shortlist.length})
-								</button>
-							</fieldset>
-						</div>
-					</div>
-				) : null}
-
-				{isShortlistViewActive ? (
-					<div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-						<p className="font-medium text-amber-900 text-sm">
-							{shortlistSummary}
-						</p>
-						<div className="flex gap-2">
-							<button
-								type="button"
-								className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
-								onClick={() => setShowShortlistedOnly(false)}
-							>
-								Show All
-							</button>
-							<button
-								type="button"
-								className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
-								onClick={() => {
-									setShortlist([]);
-									setShowShortlistedOnly(false);
-								}}
-							>
-								Clear Shortlist
-							</button>
-						</div>
-					</div>
+					<PlayerToolbar
+						fplTeamId={fplTeamId}
+						teamImportPending={fplTeamQuery.isPending}
+						teamImportError={fplTeamQuery.isError || teamImportIdentityError}
+						ownedCount={ownedCount}
+						hasImportedTeam={hasImportedTeam}
+						ownershipFilter={ownershipFilter}
+						shortlistCount={shortlist.length}
+						isAllPlayersViewActive={isAllPlayersViewActive}
+						isSquadViewActive={isSquadViewActive}
+						isShortlistViewActive={isShortlistViewActive}
+						shortlistSummary={shortlistSummary}
+						onSelectOwnershipFilter={(value) => {
+							setOwnershipFilter(value);
+							setShowSquadView(false);
+							setShowShortlistedOnly(false);
+						}}
+						onOpenCompare={openComparePanel}
+						onSelectAllPlayers={() => {
+							setShowSquadView(false);
+							setShowShortlistedOnly(false);
+						}}
+						onSelectSquadView={() => {
+							setShowSquadView(true);
+							setShowShortlistedOnly(false);
+							setOwnershipFilter("all");
+						}}
+						onSelectShortlistView={() => {
+							setShowSquadView(false);
+							setShowShortlistedOnly(true);
+						}}
+						onExitShortlistView={() => setShowShortlistedOnly(false)}
+						onClearShortlist={() => {
+							setShortlist([]);
+							setShowShortlistedOnly(false);
+						}}
+					/>
 				) : null}
 
 				{tab === "evidence" ? (
@@ -1671,9 +998,9 @@ export default function App() {
 						}}
 						onPlayerClick={openPlayerDetail}
 					/>
-				) : activeLoading ? (
+				) : active?.isPending ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
-				) : activeError ? (
+				) : active?.isError ? (
 					<div className="flex items-center gap-3">
 						<p className="text-red-600 text-sm">
 							Failed to load data. Try again in a moment.
@@ -1682,7 +1009,7 @@ export default function App() {
 							type="button"
 							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
 							onClick={() => {
-								void active?.refetch();
+								void active.refetch();
 							}}
 						>
 							Retry
@@ -1789,7 +1116,7 @@ export default function App() {
 								void compareClubQuery.refetch();
 							}
 						}}
-						onClose={closeComparePanel}
+						onClose={() => setCompareOpen(false)}
 					/>
 				</Suspense>
 			) : null}

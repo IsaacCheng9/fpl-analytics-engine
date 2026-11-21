@@ -28,6 +28,8 @@ import {
 } from "react";
 import { InfoTooltip } from "./InfoTooltip";
 
+const EMPTY_SORTING: SortingState = [];
+
 declare module "@tanstack/react-table" {
 	// A tooltip explaining what a column means.
 	interface ColumnMeta<TData extends RowData, TValue> {
@@ -193,11 +195,19 @@ export function DataTable<T>({
 	sorting?: SortingState;
 	onSortingChange?: (sorting: SortingState) => void;
 }) {
-	const [localSorting, setLocalSorting] = useState<SortingState>([]);
+	const [localSorting, setLocalSorting] = useState<SortingState>(EMPTY_SORTING);
+	const [pagination, setPagination] = useState({
+		pageIndex: 0,
+		pageSize: initialPageSize,
+	});
 	// A caller can own the sort (e.g. to keep it in the URL); ignore sorts on
 	// columns this table does not have, such as a sort carried from another tab.
-	// Memoise it: a new array each render would reset the table to page one.
+	// Preserve array identity when unchanged so column toggles do not reset pagination.
 	const sorting = useMemo(() => {
+		const activeSorting = controlledSorting ?? localSorting;
+		if (activeSorting.length === 0) {
+			return EMPTY_SORTING;
+		}
 		const columnIds = new Set(
 			columns.map((column) =>
 				String(
@@ -205,10 +215,37 @@ export function DataTable<T>({
 				),
 			),
 		);
-		return (controlledSorting ?? localSorting).filter((sort) =>
-			columnIds.has(sort.id),
-		);
+		const filtered = activeSorting.filter((sort) => columnIds.has(sort.id));
+		if (filtered.length === 0) {
+			return EMPTY_SORTING;
+		}
+		return filtered.length === activeSorting.length ? activeSorting : filtered;
 	}, [columns, controlledSorting, localSorting]);
+	const sortKey = sorting.map((sort) => `${sort.id}:${sort.desc}`).join(",");
+	const [prevReset, setPrevReset] = useState({
+		data,
+		sortKey,
+		initialPageSize,
+	});
+	if (
+		prevReset.data !== data ||
+		prevReset.sortKey !== sortKey ||
+		prevReset.initialPageSize !== initialPageSize
+	) {
+		const resetPage = prevReset.data !== data || prevReset.sortKey !== sortKey;
+		const nextPageSize =
+			prevReset.initialPageSize !== initialPageSize
+				? initialPageSize
+				: pagination.pageSize;
+		const nextPageIndex = resetPage ? 0 : pagination.pageIndex;
+		setPrevReset({ data, sortKey, initialPageSize });
+		if (
+			nextPageSize !== pagination.pageSize ||
+			nextPageIndex !== pagination.pageIndex
+		) {
+			setPagination({ pageIndex: nextPageIndex, pageSize: nextPageSize });
+		}
+	}
 	const setSorting = (updater: Updater<SortingState>) => {
 		const next = typeof updater === "function" ? updater(sorting) : updater;
 		if (onSortingChange) {
@@ -221,9 +258,10 @@ export function DataTable<T>({
 	const table = useReactTable({
 		data,
 		columns,
-		state: { sorting },
-		initialState: { pagination: { pageSize: initialPageSize } },
+		state: { sorting, pagination },
 		onSortingChange: setSorting,
+		onPaginationChange: setPagination,
+		autoResetPageIndex: false,
 		getCoreRowModel: getCoreRowModel(),
 		getSortedRowModel: getSortedRowModel(),
 		getPaginationRowModel: getPaginationRowModel(),
