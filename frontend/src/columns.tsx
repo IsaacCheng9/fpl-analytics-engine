@@ -5,6 +5,7 @@ import type {
 	DefconProbabilityPlayer,
 	FormPlayer,
 } from "./api";
+import { FixtureStrip } from "./components/FixtureStrip";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 import {
 	divergingScale,
@@ -924,6 +925,22 @@ export function buildClubColumns(
 					"Average fixture difficulty over the next 5 gameweeks; lower is easier",
 			}),
 		},
+		{
+			id: "next_fixtures",
+			accessorKey: "next_fixtures",
+			enableSorting: false,
+			header: "Next 5",
+			cell: ({ row }) => (
+				<FixtureStrip
+					fixtures={row.original.next_fixtures ?? []}
+					startGw={row.original.as_of_gw + 1}
+				/>
+			),
+			meta: {
+				tooltip:
+					"Upcoming 5-gameweek fixture run, colour-coded by fixture difficulty",
+			},
+		},
 	];
 	const groups: Record<string, ClubColumnGroup> = {
 		window_matches: "matches",
@@ -938,6 +955,7 @@ export function buildClubColumns(
 		window_xgd_per_match: "xgd",
 		season_xgd_per_match: "xgd",
 		avg_fdr: "fdr",
+		next_fixtures: "fdr",
 		window_finishing_delta_total: "finishing_total",
 		season_finishing_delta_total: "finishing_total",
 		window_finishing_delta: "finishing_rate",

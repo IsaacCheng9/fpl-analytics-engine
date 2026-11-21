@@ -19,6 +19,7 @@ import {
 	COMPARE_RIGHT_COLOR,
 	CompareTrendCharts,
 } from "./CompareTrendCharts";
+import { FixtureStrip } from "./FixtureStrip";
 import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
 
 function valueCellClass(row: CompareRow, side: "left" | "right"): string {
@@ -360,12 +361,26 @@ export function PlayerComparePanel({
 													<td
 														className={`px-3 py-2 ${valueCellClass(row, "left")}`}
 													>
-														{row.left}
+														{row.leftFixtures !== undefined ? (
+															<FixtureStrip
+																fixtures={row.leftFixtures}
+																startGw={row.fixtureStartGw}
+															/>
+														) : (
+															row.left
+														)}
 													</td>
 													<td
 														className={`px-3 py-2 ${valueCellClass(row, "right")}`}
 													>
-														{row.right}
+														{row.rightFixtures !== undefined ? (
+															<FixtureStrip
+																fixtures={row.rightFixtures}
+																startGw={row.fixtureStartGw}
+															/>
+														) : (
+															row.right
+														)}
 													</td>
 												</tr>
 											</Fragment>

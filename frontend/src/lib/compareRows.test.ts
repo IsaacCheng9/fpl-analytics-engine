@@ -13,12 +13,19 @@ function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 		rolling_window: 5,
 		selected_season: "2026-27",
 		available_seasons: ["2026-27"],
+		next_fixtures: [],
 		gameweeks: [
 			{
 				round: 8,
 				kickoff_time: null,
+				opponent_name: null,
+				opponent_short_name: null,
+				was_home: null,
 				minutes: 0,
 				total_points: 0,
+				goals_scored: null,
+				assists: null,
+				bonus: null,
 				price: 10.0,
 				expected_goals: 0,
 				expected_assists: 0,
@@ -33,8 +40,14 @@ function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 			{
 				round: 9,
 				kickoff_time: null,
+				opponent_name: null,
+				opponent_short_name: null,
+				was_home: null,
 				minutes: 90,
 				total_points: 8,
+				goals_scored: null,
+				assists: null,
+				bonus: null,
 				price: 10.0,
 				expected_goals: 0.4,
 				expected_assists: 0.2,
@@ -49,8 +62,14 @@ function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 			{
 				round: 10,
 				kickoff_time: null,
+				opponent_name: null,
+				opponent_short_name: null,
+				was_home: null,
 				minutes: 90,
 				total_points: 10,
+				goals_scored: null,
+				assists: null,
+				bonus: null,
 				price: 10.0,
 				expected_goals: 0.5,
 				expected_assists: 0.3,
@@ -128,6 +147,7 @@ function makeForm(overrides: Partial<FormPlayer> = {}): FormPlayer {
 		next_opponent_name: "Chelsea",
 		next_was_home: true,
 		next_fdr: 3,
+		next_fixtures: [],
 		current_ownership: 35,
 		as_of_gw: 10,
 		...overrides,
@@ -153,6 +173,7 @@ function makeDefcon(overrides: Partial<DefconPlayer> = {}): DefconPlayer {
 		next_opponent_name: "Chelsea",
 		next_was_home: true,
 		next_fdr: 3,
+		next_fixtures: [],
 		current_ownership: 35,
 		window_xgi90_per_million: 0.082,
 		season_points_per_million: 6.5,
@@ -206,5 +227,66 @@ describe("buildCompareRows", () => {
 		expect(byLabel("Window DefCon Hits")).toBe("-");
 		expect(byLabel("Window DefCon Hit Rate")).toBe("n/a");
 		expect(byLabel("Season xGI Per 90")).toBe("-");
+	});
+
+	test("places Next 5 Fixtures strip data in the Fixtures section", () => {
+		const leftFixtures = [
+			{
+				gw: 11,
+				opponent_name: "Bournemouth",
+				opponent_short_name: "BOU",
+				was_home: true,
+				fdr: 2,
+			},
+		];
+		const rightFixtures = [
+			{
+				gw: 11,
+				opponent_name: "Man City",
+				opponent_short_name: "MCI",
+				was_home: false,
+				fdr: 5,
+			},
+		];
+		const left = makeSide({
+			form: makeForm({ next_fixtures: leftFixtures, avg_fdr: 2.0 }),
+		});
+		const right = makeSide({
+			form: makeForm({ next_fixtures: rightFixtures, avg_fdr: 5.0 }),
+		});
+
+		const rows = buildCompareRows(left, right, 5, 10, 10);
+		const stripRow = rows.find((row) => row.label === "Next 5 Fixtures");
+
+		expect(stripRow?.section).toBe("Fixtures");
+		expect(stripRow?.fixtureStartGw).toBe(11);
+		expect(stripRow?.leftFixtures).toEqual(leftFixtures);
+		expect(stripRow?.rightFixtures).toEqual(rightFixtures);
+		expect(rows.find((row) => row.label === "FDR (Next 5)")?.section).toBe(
+			"Fixtures",
+		);
+	});
+
+	test("drops stale fixtures when no compare source matches comparisonGw", () => {
+		const staleFixtures = [
+			{
+				gw: 11,
+				opponent_name: "Bournemouth",
+				opponent_short_name: "BOU",
+				was_home: true,
+				fdr: 2,
+			},
+		];
+		const left = makeSide({
+			form: makeForm({ as_of_gw: 10, next_fixtures: staleFixtures }),
+		});
+		const right = makeSide();
+
+		const rows = buildCompareRows(left, right, 5, 5, 10);
+		const stripRow = rows.find((row) => row.label === "Next 5 Fixtures");
+
+		expect(stripRow?.fixtureStartGw).toBe(6);
+		expect(stripRow?.leftFixtures).toEqual([]);
+		expect(stripRow?.left).toBe("-");
 	});
 });

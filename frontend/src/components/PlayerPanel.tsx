@@ -16,12 +16,34 @@ import {
 	meanDefensiveContribution,
 	rollingChartRows,
 } from "../lib/playerTrends";
+import { FixtureStrip } from "./FixtureStrip";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 
 // Expected stats only cover GW16-38 in the 2022-23 archive, so its attacking
 // rates are scoped to that window rather than the full season.
 const PARTIAL_SEASON = "2022-23";
+
+function formatMatchOpponent(gameweek: PlayerGameweek): {
+	text: string;
+	title?: string;
+} | null {
+	const label = gameweek.opponent_short_name || gameweek.opponent_name;
+	if (!label) {
+		return null;
+	}
+	const venue =
+		gameweek.was_home === true
+			? " (H)"
+			: gameweek.was_home === false
+				? " (A)"
+				: "";
+	const fullName = gameweek.opponent_name || label;
+	return {
+		text: `${label}${venue}`,
+		title: `${fullName}${venue}`,
+	};
+}
 
 function Chart({
 	data,
@@ -280,6 +302,19 @@ export function PlayerPanel({
 					<p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
 				) : (
 					<>
+						{(!meta.data || detail.selected_season === meta.data.season) &&
+						(detail.next_fixtures?.length ?? 0) > 0 ? (
+							<div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-800/50">
+								<span className="font-medium text-xs text-zinc-600 dark:text-zinc-300">
+									Upcoming Fixtures (Next 5)
+								</span>
+								<FixtureStrip
+									fixtures={detail.next_fixtures}
+									startGw={detail.as_of_gw + 1}
+								/>
+							</div>
+						) : null}
+
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<Chart
 								data={chartRows}
@@ -371,12 +406,16 @@ export function PlayerPanel({
 							{detail.selected_season} by Gameweek
 						</h3>
 						<div className="max-h-64 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-							<table className="w-full text-sm">
+							<table className="w-full min-w-max text-sm">
 								<thead className="sticky top-0 bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 									<tr>
 										<th className="px-3 py-2 font-medium">GW</th>
+										<th className="px-3 py-2 font-medium">Opp</th>
 										<th className="px-3 py-2 font-medium">Mins</th>
 										<th className="px-3 py-2 font-medium">Pts</th>
+										<th className="px-3 py-2 font-medium">G</th>
+										<th className="px-3 py-2 font-medium">A</th>
+										<th className="px-3 py-2 font-medium">Bonus</th>
 										<th className="px-3 py-2 font-medium">xG</th>
 										<th className="px-3 py-2 font-medium">xA</th>
 										<th className="px-3 py-2 font-medium">xGI</th>
@@ -385,29 +424,48 @@ export function PlayerPanel({
 									</tr>
 								</thead>
 								<tbody>
-									{detail.gameweeks.map((g, index) => (
-										<tr
-											key={`${g.round}-${g.kickoff_time ?? index}`}
-											className="border-zinc-100 border-t dark:border-zinc-800"
-										>
-											<td className="px-3 py-2">{g.round}</td>
-											<td className="px-3 py-2">{g.minutes}</td>
-											<td className="px-3 py-2">{g.total_points}</td>
-											<td className="px-3 py-2">{fmtNum(g.expected_goals)}</td>
-											<td className="px-3 py-2">
-												{fmtNum(g.expected_assists)}
-											</td>
-											<td className="px-3 py-2">
-												{fmtNum(g.expected_goal_involvements)}
-											</td>
-											<td className="px-3 py-2">{fmtPrice(g.price)}</td>
-											<td className="px-3 py-2">
-												{g.defensive_contribution === null
-													? fmtPctPoints(null)
-													: fmtNum(g.defensive_contribution, 0)}
-											</td>
-										</tr>
-									))}
+									{detail.gameweeks.map((g, index) => {
+										const opponent = formatMatchOpponent(g);
+										return (
+											<tr
+												key={`${g.round}-${g.kickoff_time ?? index}`}
+												className="border-zinc-100 border-t dark:border-zinc-800"
+											>
+												<td className="px-3 py-2">{g.round}</td>
+												<td className="px-3 py-2 whitespace-nowrap">
+													{opponent ? (
+														<span title={opponent.title}>{opponent.text}</span>
+													) : (
+														<span className="text-zinc-400 dark:text-zinc-500">
+															-
+														</span>
+													)}
+												</td>
+												<td className="px-3 py-2">{g.minutes}</td>
+												<td className="px-3 py-2">{g.total_points}</td>
+												<td className="px-3 py-2">
+													{fmtNum(g.goals_scored, 0)}
+												</td>
+												<td className="px-3 py-2">{fmtNum(g.assists, 0)}</td>
+												<td className="px-3 py-2">{fmtNum(g.bonus, 0)}</td>
+												<td className="px-3 py-2">
+													{fmtNum(g.expected_goals)}
+												</td>
+												<td className="px-3 py-2">
+													{fmtNum(g.expected_assists)}
+												</td>
+												<td className="px-3 py-2">
+													{fmtNum(g.expected_goal_involvements)}
+												</td>
+												<td className="px-3 py-2">{fmtPrice(g.price)}</td>
+												<td className="px-3 py-2">
+													{g.defensive_contribution === null
+														? fmtPctPoints(null)
+														: fmtNum(g.defensive_contribution, 0)}
+												</td>
+											</tr>
+										);
+									})}
 								</tbody>
 							</table>
 						</div>

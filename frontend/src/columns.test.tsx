@@ -48,6 +48,7 @@ function makeFormPlayer(
 		next_opponent_name: "Chelsea",
 		next_was_home: true,
 		next_fdr: 3,
+		next_fixtures: [],
 		current_ownership: 15,
 		as_of_gw: 10,
 		...overrides,
@@ -90,6 +91,7 @@ function makeClubForm(
 		defence_form: 0,
 		upcoming_fixtures: 5,
 		avg_fdr: 3.0,
+		next_fixtures: [],
 		as_of_gw: 10,
 		...overrides,
 	};
@@ -167,6 +169,7 @@ describe("nullable numeric column sorting", () => {
 				next_opponent_name: "Chelsea",
 				next_was_home: true,
 				next_fdr: 3,
+				next_fixtures: [],
 				current_ownership: 10,
 				window_xgi90_per_million: 0.02,
 				season_points_per_million: 10,
@@ -192,6 +195,7 @@ describe("nullable numeric column sorting", () => {
 				next_opponent_name: "Chelsea",
 				next_was_home: true,
 				next_fdr: 3,
+				next_fixtures: [],
 				current_ownership: 10,
 				window_xgi90_per_million: 0.02,
 				season_points_per_million: 10,
@@ -217,6 +221,7 @@ describe("nullable numeric column sorting", () => {
 				next_opponent_name: "Chelsea",
 				next_was_home: true,
 				next_fdr: 3,
+				next_fixtures: [],
 				current_ownership: 10,
 				window_xgi90_per_million: 0.02,
 				season_points_per_million: 10,
@@ -281,5 +286,63 @@ describe("nullable numeric column sorting", () => {
 		expect(firstColumnTexts()).toEqual(["Positive", "Negative", "Missing"]);
 		fireEvent.click(overperfButton);
 		expect(firstColumnTexts()).toEqual(["Negative", "Positive", "Missing"]);
+	});
+
+	test("renders the Next 5 club fixture strip alongside FDR and toggles with the FDR group", () => {
+		const clubs = [
+			makeClubForm({
+				team: 1,
+				team_name: "Arsenal",
+				as_of_gw: 10,
+				next_fixtures: [
+					{
+						gw: 11,
+						opponent_name: "Bournemouth",
+						opponent_short_name: "BOU",
+						was_home: true,
+						fdr: 2,
+					},
+					{
+						gw: 12,
+						opponent_name: "Man City",
+						opponent_short_name: "MCI",
+						was_home: false,
+						fdr: 5,
+					},
+				],
+			}),
+		];
+		const columns = buildClubColumns(
+			computeRanges(clubs, CLUB_HEAT_KEYS),
+			DEFAULT_CLUB_COLUMNS,
+		);
+		const { rerender } = render(<DataTable data={clubs} columns={columns} />);
+
+		expect(
+			screen.getByRole("columnheader", { name: /^Next 5/ }),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Next 5/ }),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("BOU (H)")).toHaveAttribute(
+			"title",
+			"GW11: Bournemouth (H) - FDR 2",
+		);
+		expect(screen.getByText("MCI (A)")).toHaveAttribute(
+			"title",
+			"GW12: Man City (A) - FDR 5",
+		);
+
+		const hiddenColumns = buildClubColumns(
+			computeRanges(clubs, CLUB_HEAT_KEYS),
+			{ ...DEFAULT_CLUB_COLUMNS, fdr: false },
+		);
+		rerender(<DataTable data={clubs} columns={hiddenColumns} />);
+		expect(
+			screen.queryByRole("columnheader", { name: /^Next 5/ }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("columnheader", { name: /FDR \(Next 5\)/ }),
+		).not.toBeInTheDocument();
 	});
 });

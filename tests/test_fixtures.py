@@ -342,3 +342,179 @@ def test_historical_fdr_keeps_finished_matches_after_analytical_cutoff() -> None
     table = fixtures.team_fixture_difficulty(feed, as_of_gw=2)
 
     assert table["next_fixture_gw"].to_list() == [3, 3]
+
+
+def test_team_upcoming_fixtures_handles_blanks_doubles_and_short_name_fallback() -> (
+    None
+):
+    teams = pl.DataFrame(
+        {
+            "id": [10, 20, 30, 40],
+            "name": ["Arsenal", "Bournemouth", "Man City", "Chelsea"],
+            "short_name": ["ARS", None, "MCI", ""],
+        }
+    )
+    feed = pl.DataFrame(
+        [
+            # Past fixture excluded.
+            {
+                **_fixture(10, home=10, away=20, h_diff=2, a_diff=4),
+                "id": 1,
+                "kickoff_time": "2026-10-01T14:00:00Z",
+            },
+            # GW11 single fixture.
+            {
+                **_fixture(11, home=10, away=20, h_diff=2, a_diff=5),
+                "id": 2,
+                "kickoff_time": "2026-10-10T14:00:00Z",
+            },
+            # GW12 blank for team 10 (only 30 vs 40).
+            {
+                **_fixture(12, home=30, away=40, h_diff=3, a_diff=4),
+                "id": 3,
+                "kickoff_time": "2026-10-17T14:00:00Z",
+            },
+            # GW13 double for team 10 (later kickoff first to verify sorting).
+            {
+                **_fixture(13, home=10, away=40, h_diff=3, a_diff=4),
+                "id": 5,
+                "kickoff_time": "2026-10-28T19:45:00Z",
+            },
+            {
+                **_fixture(13, home=30, away=10, h_diff=4, a_diff=5),
+                "id": 4,
+                "kickoff_time": "2026-10-24T12:30:00Z",
+            },
+            # GW16 outside horizon (10, 15] excluded.
+            {
+                **_fixture(16, home=10, away=20, h_diff=1, a_diff=5),
+                "id": 6,
+                "kickoff_time": "2026-11-14T15:00:00Z",
+            },
+        ]
+    )
+
+    by_team = fixtures.team_upcoming_fixtures(feed, teams, as_of_gw=10, horizon=5)
+
+    assert by_team[10] == [
+        {
+            "gw": 11,
+            "opponent_name": "Bournemouth",
+            "opponent_short_name": "BOU",
+            "was_home": True,
+            "fdr": 2,
+        },
+        {
+            "gw": 13,
+            "opponent_name": "Man City",
+            "opponent_short_name": "MCI",
+            "was_home": False,
+            "fdr": 5,
+        },
+        {
+            "gw": 13,
+            "opponent_name": "Chelsea",
+            "opponent_short_name": "CHE",
+            "was_home": True,
+            "fdr": 3,
+        },
+    ]
+
+
+def test_current_team_upcoming_fixtures_uses_unstarted_window() -> None:
+    teams = pl.DataFrame(
+        {"id": [10, 20, 30, 40], "name": ["Arsenal", "Spurs", "Chelsea", "Fulham"]}
+    )
+    feed = pl.DataFrame(
+        [
+            _scheduled_fixture(11, id=1, finished=True, started=True),
+            _scheduled_fixture(
+                11,
+                id=2,
+                team_h=10,
+                team_a=30,
+                team_h_difficulty=3,
+                team_a_difficulty=4,
+                kickoff_time="2026-11-21T15:00:00Z",
+            ),
+            _scheduled_fixture(
+                15,
+                id=3,
+                team_h=40,
+                team_a=10,
+                team_h_difficulty=4,
+                team_a_difficulty=2,
+                kickoff_time="2026-12-19T15:00:00Z",
+            ),
+            # GW16 falls outside [11, 16) and must be excluded.
+            _scheduled_fixture(
+                16,
+                id=4,
+                team_h=10,
+                team_a=20,
+                team_h_difficulty=3,
+                team_a_difficulty=4,
+                kickoff_time="2026-12-26T15:00:00Z",
+            ),
+        ]
+    )
+
+    by_team = fixtures.current_team_upcoming_fixtures(feed, teams, horizon=5)
+
+    assert by_team[10] == [
+        {
+            "gw": 11,
+            "opponent_name": "Chelsea",
+            "opponent_short_name": "CHE",
+            "was_home": True,
+            "fdr": 3,
+        },
+        {
+            "gw": 15,
+            "opponent_name": "Fulham",
+            "opponent_short_name": "FUL",
+            "was_home": False,
+            "fdr": 2,
+        },
+    ]
+
+
+def test_attach_team_fdr_includes_next_fixtures_and_empty_default() -> None:
+    form_table = pl.DataFrame([_form_row(1, "Arsenal"), _form_row(2, "Everton")])
+    teams = pl.DataFrame(
+        {
+            "id": [10, 20, 30],
+            "name": ["Arsenal", "Spurs", "Everton"],
+            "short_name": ["ARS", "TOT", "EVE"],
+        }
+    )
+    feed = pl.DataFrame([_fixture(2, home=10, away=20, h_diff=2, a_diff=5)])
+
+    out = fixtures.attach_team_fdr(form_table, feed, teams, as_of_gw=1, horizon=5)
+    by_element = {row["element"]: row for row in out.to_dicts()}
+
+    assert by_element[1]["next_fixtures"] == [
+        {
+            "gw": 2,
+            "opponent_name": "Spurs",
+            "opponent_short_name": "TOT",
+            "was_home": True,
+            "fdr": 2,
+        }
+    ]
+    assert by_element[2]["next_fixtures"] == []
+
+
+def test_current_fixtures_ignore_frames_missing_team_or_fdr_columns() -> None:
+    partial = pl.DataFrame(
+        {
+            "event": [11],
+            "kickoff_time": ["2026-11-21T15:00:00Z"],
+            "finished": [False],
+            "started": [None],
+        }
+    )
+    teams = pl.DataFrame({"id": [10], "name": ["Arsenal"], "short_name": ["ARS"]})
+
+    assert fixtures.current_team_fixture_difficulty(partial).is_empty()
+    assert fixtures.current_team_upcoming_fixtures(partial, teams) == {}

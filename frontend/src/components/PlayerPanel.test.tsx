@@ -31,6 +31,18 @@ function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 		rolling_window: Number(url.searchParams.get("window") ?? 5),
 		selected_season: season,
 		available_seasons: [olderSeason, previousSeason, currentSeason],
+		next_fixtures:
+			season === currentSeason
+				? [
+						{
+							gw: Number(url.searchParams.get("as_of_gw") ?? 2) + 1,
+							opponent_name: "Bournemouth",
+							opponent_short_name: "BOU",
+							was_home: true,
+							fdr: 2,
+						},
+					]
+				: [],
 		gameweeks: [],
 		seasons: [],
 	};
@@ -360,8 +372,14 @@ test("labels each chart's season average beside its title", async () => {
 		const gameweek = {
 			round: 1,
 			kickoff_time: null,
+			opponent_name: "Bournemouth",
+			opponent_short_name: "BOU",
+			was_home: true,
 			minutes: 90,
 			total_points: 2,
+			goals_scored: 0,
+			assists: 0,
+			bonus: 0,
 			price: 10,
 			expected_goals: 0.3,
 			expected_assists: 0.2,
@@ -429,4 +447,88 @@ test("exposes dialog semantics and closes on Escape", async () => {
 	expect(dialog).toHaveAttribute("aria-modal", "true");
 	fireEvent.keyDown(document, { key: "Escape" });
 	expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("shows upcoming fixture strip on live season and match context or dashes by season", async () => {
+	vi.mocked(fetch).mockImplementation(async (input) => {
+		const response = await mockApiFetch(input);
+		const url = new URL(String(input), "http://test");
+		if (url.pathname === "/api/") {
+			return response;
+		}
+		const detail = (await response.json()) as PlayerDetail;
+		const isOlder = detail.selected_season === olderSeason;
+		return new Response(
+			JSON.stringify({
+				...detail,
+				gameweeks: [
+					{
+						round: 1,
+						kickoff_time: "2026-08-15T15:00:00Z",
+						opponent_name: isOlder ? null : "Bournemouth",
+						opponent_short_name: isOlder ? null : "BOU",
+						was_home: isOlder ? null : true,
+						minutes: 90,
+						total_points: 11,
+						goals_scored: isOlder ? null : 1,
+						assists: isOlder ? null : 1,
+						bonus: isOlder ? null : 3,
+						price: 10,
+						expected_goals: 0.5,
+						expected_assists: 0.3,
+						expected_goal_involvements: 0.8,
+						defensive_contribution: isOlder ? null : 6,
+						defcon_hit: isOlder ? null : false,
+						rolling_xg90: 0.5,
+						rolling_xa90: 0.3,
+						rolling_xgi90: 0.8,
+						rolling_defcon: isOlder ? null : 6,
+					},
+				],
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	});
+
+	renderPanel();
+
+	expect(
+		await screen.findByText("Upcoming Fixtures (Next 5)"),
+	).toBeInTheDocument();
+	expect(screen.getAllByText("BOU (H)").length).toBeGreaterThanOrEqual(2);
+	expect(screen.getByTitle("Bournemouth (H)")).toBeInTheDocument();
+	expect(screen.getByRole("columnheader", { name: "Opp" })).toBeInTheDocument();
+	expect(screen.getByRole("columnheader", { name: "G" })).toBeInTheDocument();
+	expect(screen.getByRole("columnheader", { name: "A" })).toBeInTheDocument();
+	expect(
+		screen.getByRole("columnheader", { name: "Bonus" }),
+	).toBeInTheDocument();
+
+	const liveTables = screen.getAllByRole("table");
+	const gwRows = liveTables[1].querySelectorAll("tbody tr");
+	const liveCells = Array.from(gwRows[0].querySelectorAll("td")).map(
+		(cell) => cell.textContent,
+	);
+	expect(liveCells.slice(0, 7)).toEqual([
+		"1",
+		"BOU (H)",
+		"90",
+		"11",
+		"1",
+		"1",
+		"3",
+	]);
+
+	fireEvent.change(screen.getByLabelText("Season"), {
+		target: { value: olderSeason },
+	});
+	await screen.findByRole("heading", { name: `${olderSeason} by Gameweek` });
+	expect(
+		screen.queryByText("Upcoming Fixtures (Next 5)"),
+	).not.toBeInTheDocument();
+	const olderTables = screen.getAllByRole("table");
+	const olderCells = Array.from(
+		olderTables[1].querySelectorAll("tbody tr")[0].querySelectorAll("td"),
+	).map((cell) => cell.textContent);
+	expect(olderCells.slice(0, 7)).toEqual(["1", "-", "90", "11", "-", "-", "-"]);
 });

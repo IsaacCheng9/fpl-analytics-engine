@@ -13,6 +13,16 @@ class ApiMeta(BaseModel):
     next_deadline: str | None
 
 
+class UpcomingFixture(BaseModel):
+    """Describe one upcoming fixture for a club or player."""
+
+    gw: int
+    opponent_name: str
+    opponent_short_name: str
+    was_home: bool
+    fdr: int
+
+
 class FixtureContext(BaseModel):
     """Fixture and live-snapshot context shared by every player view."""
 
@@ -22,6 +32,7 @@ class FixtureContext(BaseModel):
     next_opponent_name: str | None = None
     next_was_home: bool | None = None
     next_fdr: int | None = None
+    next_fixtures: list[UpcomingFixture] = Field(default_factory=list)
     current_ownership: float | None = Field(
         description=(
             "Live ownership percentage. Always the present-day snapshot - it is "
@@ -116,6 +127,7 @@ class ClubForm(BaseModel):
     defence_form: float | None
     upcoming_fixtures: int | None
     avg_fdr: float | None
+    next_fixtures: list[UpcomingFixture] = Field(default_factory=list)
     as_of_gw: int
 
 
@@ -218,8 +230,14 @@ class PlayerGameweek(BaseModel):
 
     round: int
     kickoff_time: str | None
+    opponent_name: str | None = None
+    opponent_short_name: str | None = None
+    was_home: bool | None = None
     minutes: int
     total_points: int
+    goals_scored: int | None = None
+    assists: int | None = None
+    bonus: int | None = None
     price: float | None
     expected_goals: float | None
     expected_assists: float | None
@@ -263,6 +281,7 @@ class PlayerDetail(BaseModel):
     rolling_window: int
     selected_season: str
     available_seasons: list[str]
+    next_fixtures: list[UpcomingFixture] = Field(default_factory=list)
     gameweeks: list[PlayerGameweek]
     seasons: list[PlayerSeasonSummary]
 

@@ -32,6 +32,220 @@ _SUMMARY_SCHEMA = {
     "next_was_home": pl.Boolean,
     "next_fdr": pl.Int64,
 }
+_TEAM_LABEL_SCHEMA = {
+    "id": pl.Int64,
+    "name": pl.String,
+    "short_name": pl.String,
+}
+UPCOMING_FIXTURE_DTYPE = pl.List(
+    pl.Struct(
+        {
+            "gw": pl.Int64,
+            "opponent_name": pl.String,
+            "opponent_short_name": pl.String,
+            "was_home": pl.Boolean,
+            "fdr": pl.Int64,
+        }
+    )
+)
+_UPCOMING_FRAME_SCHEMA = {
+    "team": pl.Int64,
+    "next_fixtures": UPCOMING_FIXTURE_DTYPE,
+}
+
+
+def team_labels(teams: pl.DataFrame) -> pl.DataFrame:
+    """Normalise team ids, names, and three-letter short names.
+
+    Fall back to the first three uppercased letters of ``name`` when
+    ``short_name`` is absent, null, or blank (e.g. in synthetic test frames).
+
+    Args:
+        teams: Team metadata containing at least ``id`` and ``name`` columns.
+
+    Returns:
+        A frame with ``id``, ``name``, and ``short_name`` columns for every
+        team with a valid id and non-empty name.
+    """
+    if teams.is_empty() or not {"id", "name"}.issubset(teams.columns):
+        return pl.DataFrame(schema=_TEAM_LABEL_SCHEMA)
+
+    short_col = (
+        pl.col("short_name").cast(pl.String).str.strip_chars()
+        if "short_name" in teams.columns
+        else pl.lit(None, dtype=pl.String)
+    )
+    name_clean = pl.col("name").cast(pl.String).str.strip_chars()
+    fallback_short = name_clean.str.slice(0, 3).str.to_uppercase()
+    return (
+        teams.select(
+            pl.col("id").cast(pl.Int64).alias("id"),
+            name_clean.alias("name"),
+            pl.when(short_col.is_not_null() & (short_col != ""))
+            .then(short_col)
+            .otherwise(fallback_short)
+            .alias("short_name"),
+        )
+        .filter(
+            pl.col("id").is_not_null(),
+            pl.col("name").is_not_null(),
+            pl.col("name") != "",
+        )
+        .unique(subset=["id"], keep="first")
+    )
+
+
+def _upcoming_fixtures_map(
+    upcoming: pl.DataFrame, teams: pl.DataFrame
+) -> dict[int, list[dict]]:
+    """Group exploded upcoming rows into ordered per-team fixture lists."""
+    labels = team_labels(teams)
+    if upcoming.is_empty() or labels.is_empty():
+        return {}
+
+    opponents = labels.select(
+        pl.col("id").alias("opponent"),
+        pl.col("name").alias("opponent_name"),
+        pl.col("short_name").alias("opponent_short_name"),
+    )
+    resolved = (
+        upcoming.with_columns(
+            pl.col("team").cast(pl.Int64),
+            pl.col("opponent").cast(pl.Int64),
+            pl.col("event").cast(pl.Int64),
+            pl.col("difficulty").cast(pl.Int64),
+        )
+        .join(opponents, on="opponent", how="inner")
+        .filter(
+            pl.col("team").is_not_null(),
+            pl.col("event").is_not_null(),
+            pl.col("was_home").is_not_null(),
+            pl.col("difficulty").is_not_null(),
+        )
+        .sort(
+            "team",
+            "event",
+            "kickoff_time",
+            "fixture_order",
+            "opponent",
+            nulls_last=True,
+        )
+    )
+    by_team: dict[int, list[dict]] = {}
+    for row in resolved.select(
+        "team",
+        "event",
+        "opponent_name",
+        "opponent_short_name",
+        "was_home",
+        "difficulty",
+    ).to_dicts():
+        by_team.setdefault(row["team"], []).append(
+            {
+                "gw": row["event"],
+                "opponent_name": row["opponent_name"],
+                "opponent_short_name": row["opponent_short_name"],
+                "was_home": row["was_home"],
+                "fdr": row["difficulty"],
+            }
+        )
+    return by_team
+
+
+def upcoming_fixtures_frame(fixtures_by_team: dict[int, list[dict]]) -> pl.DataFrame:
+    """Convert a per-team upcoming-fixtures mapping into a Polars frame."""
+    if not fixtures_by_team:
+        return pl.DataFrame(schema=_UPCOMING_FRAME_SCHEMA)
+    rows = [
+        {"team": team_id, "next_fixtures": items}
+        for team_id, items in fixtures_by_team.items()
+    ]
+    return pl.DataFrame(rows, schema=_UPCOMING_FRAME_SCHEMA)
+
+
+def _filter_current_unstarted(fixtures: pl.DataFrame) -> pl.DataFrame:
+    """Return scheduled, unstarted fixture rows from the current snapshot."""
+    required = {
+        "event",
+        "kickoff_time",
+        "finished",
+        "started",
+        "team_h",
+        "team_a",
+        "team_h_difficulty",
+        "team_a_difficulty",
+    }
+    if fixtures.is_empty() or not required.issubset(fixtures.columns):
+        return pl.DataFrame()
+    return fixtures.filter(
+        pl.col("event").is_not_null(),
+        pl.col("kickoff_time").is_not_null(),
+        ~pl.col("finished").fill_null(True),
+        ~pl.col("started").fill_null(False),
+    )
+
+
+def team_upcoming_fixtures(
+    fixtures: pl.DataFrame,
+    teams: pl.DataFrame,
+    as_of_gw: int,
+    horizon: int = DEFAULT_HORIZON,
+) -> dict[int, list[dict]]:
+    """Build point-in-time upcoming fixtures for the next ``horizon`` GWs.
+
+    Only fixtures in ``(as_of_gw, as_of_gw + horizon]`` are included.
+
+    Args:
+        fixtures: Archived fixture records.
+        teams: Team metadata with ``id``, ``name``, and optional
+            ``short_name``.
+        as_of_gw: Point-in-time cutoff gameweek.
+        horizon: Number of upcoming gameweeks to include.
+
+    Returns:
+        Mapping from team id to ordered upcoming fixture dictionaries.
+    """
+    required = {"event", "team_h", "team_a", "team_h_difficulty", "team_a_difficulty"}
+    if fixtures.is_empty() or not required.issubset(fixtures.columns):
+        return {}
+
+    scheduled = fixtures.filter(
+        pl.col("event").is_not_null(),
+        pl.col("event") > as_of_gw,
+        pl.col("event") <= as_of_gw + horizon,
+    )
+    if scheduled.is_empty():
+        return {}
+    return _upcoming_fixtures_map(_explode_to_team_rows(scheduled), teams)
+
+
+def current_team_upcoming_fixtures(
+    fixtures: pl.DataFrame,
+    teams: pl.DataFrame,
+    horizon: int = DEFAULT_HORIZON,
+) -> dict[int, list[dict]]:
+    """Build current unstarted fixtures for the next ``horizon`` GWs.
+
+    Only fixtures in ``[first_gw, first_gw + horizon)`` are included.
+
+    Args:
+        fixtures: Current archived fixture records, including status flags.
+        teams: Team metadata with ``id``, ``name``, and optional
+            ``short_name``.
+        horizon: Number of upcoming gameweeks to include.
+
+    Returns:
+        Mapping from team id to ordered upcoming fixture dictionaries.
+    """
+    scheduled = _filter_current_unstarted(fixtures)
+    if scheduled.is_empty():
+        return {}
+    upcoming = _explode_to_team_rows(scheduled)
+    first_gw = upcoming.sort("kickoff_time", "fixture_order", "team")["event"][0]
+    in_window = upcoming.filter(
+        pl.col("event").is_between(first_gw, first_gw + horizon, closed="left")
+    )
+    return _upcoming_fixtures_map(in_window, teams)
 
 
 def _explode_to_team_rows(fixtures: pl.DataFrame) -> pl.DataFrame:
@@ -154,16 +368,7 @@ def current_team_fixture_difficulty(
         One row per team with a scheduled, unstarted fixture. The next fixture
         can lie outside the aggregate window. Empty if none are known.
     """
-    required = {"event", "kickoff_time", "finished", "started"}
-    if fixtures.is_empty() or not required.issubset(fixtures.columns):
-        return pl.DataFrame(schema=_SUMMARY_SCHEMA)
-
-    scheduled = fixtures.filter(
-        pl.col("event").is_not_null(),
-        pl.col("kickoff_time").is_not_null(),
-        ~pl.col("finished").fill_null(True),
-        ~pl.col("started").fill_null(False),
-    )
+    scheduled = _filter_current_unstarted(fixtures)
     if scheduled.is_empty():
         return pl.DataFrame(schema=_SUMMARY_SCHEMA)
 
@@ -222,6 +427,9 @@ def attach_team_fdr(
         The form table with ``upcoming_fixtures`` and ``avg_fdr`` columns.
     """
     fdr = team_fixture_difficulty(fixtures.to_dicts(), as_of_gw, horizon)
+    upcoming = upcoming_fixtures_frame(
+        team_upcoming_fixtures(fixtures, teams, as_of_gw, horizon)
+    )
     team_names = teams.select(
         pl.col("id").alias("team"), pl.col("name").alias("team_name")
     )
@@ -232,6 +440,7 @@ def attach_team_fdr(
     named = (
         fdr.join(team_names, on="team", how="left")
         .join(opponent_names, on="next_opponent", how="left")
+        .join(upcoming, on="team", how="left")
         .select(
             "team_name",
             pl.col("n_fixtures").alias("upcoming_fixtures"),
@@ -240,6 +449,9 @@ def attach_team_fdr(
             "next_opponent_name",
             "next_was_home",
             "next_fdr",
+            "next_fixtures",
         )
     )
-    return form_table.join(named, on="team_name", how="left")
+    return form_table.join(named, on="team_name", how="left").with_columns(
+        pl.col("next_fixtures").fill_null(pl.lit([], dtype=UPCOMING_FIXTURE_DTYPE))
+    )
