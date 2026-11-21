@@ -310,4 +310,46 @@ describe("buildCompareRows", () => {
 		expect(stripRow?.leftFixtures).toEqual([]);
 		expect(stripRow?.left).toBe("-");
 	});
+
+	test("adds Live Snapshot Availability and Set Pieces rows", () => {
+		const left = makeSide();
+		const right = makeSide();
+		left.detail = {
+			...(left.detail as PlayerDetail),
+			status: "i",
+			chance_of_playing_next_round: 0,
+			news: "Hamstring injury",
+			yellow_cards: 4,
+			penalties_order: 1,
+			corners_order: 1,
+			direct_freekicks_order: 2,
+		};
+		right.detail = {
+			...(right.detail as PlayerDetail),
+			status: "a",
+			chance_of_playing_next_round: null,
+			news: null,
+			yellow_cards: 1,
+			penalties_order: null,
+			corners_order: null,
+			direct_freekicks_order: null,
+		};
+
+		const rows = buildCompareRows(left, right, 5, 10, 10);
+		const availability = rows.find(
+			(row) => row.section === "Live Snapshot" && row.label === "Availability",
+		);
+		const setPieces = rows.find(
+			(row) => row.section === "Live Snapshot" && row.label === "Set Pieces",
+		);
+
+		expect(availability).toMatchObject({
+			left: "Injured (0%, 4 YC - suspension watch) - Hamstring injury",
+			right: "Available",
+		});
+		expect(setPieces).toMatchObject({
+			left: "Penalties, Corners",
+			right: "None",
+		});
+	});
 });

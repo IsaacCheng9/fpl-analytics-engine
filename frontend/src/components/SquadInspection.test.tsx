@@ -812,4 +812,122 @@ describe("SquadInspection", () => {
 		);
 		expect(palmerRow.getAllByRole("cell")[5]).toHaveTextContent("4");
 	});
+
+	test("renders injured, doubtful, and card-risk squad flags with news tooltips", () => {
+		const currentPlayers: CurrentPlayerContext[] = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				team_name: "Arsenal",
+				price: 10.0,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.8,
+				next_fixture_gw: 11,
+				next_opponent_name: "Chelsea",
+				next_was_home: true,
+				next_fdr: 3,
+				current_ownership: 35,
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Hamstring injury - Expected back next month",
+				yellow_cards: 1,
+				penalties_order: 1,
+				corners_order: 2,
+				direct_freekicks_order: null,
+			}),
+			makeCurrent({
+				element: 2,
+				web_name: "Palmer",
+				position: "MID",
+				team_name: "Chelsea",
+				price: 10.5,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.6,
+				next_fixture_gw: 11,
+				next_opponent_name: "Arsenal",
+				next_was_home: false,
+				next_fdr: 3,
+				current_ownership: 45,
+				status: "d",
+				chance_of_playing_next_round: 75,
+				news: "Late fitness test",
+				yellow_cards: 4,
+				penalties_order: 1,
+				corners_order: null,
+				direct_freekicks_order: null,
+			}),
+			makeCurrent({
+				element: 3,
+				web_name: "Gusto",
+				position: "DEF",
+				team_name: "Chelsea",
+				price: 5.0,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.6,
+				next_fixture_gw: 11,
+				next_opponent_name: "Arsenal",
+				next_was_home: false,
+				next_fdr: 3,
+				current_ownership: 10,
+				status: "s",
+				chance_of_playing_next_round: 0,
+				news: "Red card suspension",
+				yellow_cards: 9,
+				penalties_order: null,
+				corners_order: null,
+				direct_freekicks_order: null,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={picks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const sakaRow = screen
+			.getByRole("button", { name: "Saka" })
+			.closest("tr") as HTMLElement;
+		expect(within(sakaRow).getByText("Injured")).toHaveAttribute(
+			"title",
+			"Injured - 0% chance: Hamstring injury - Expected back next month",
+		);
+		expect(within(sakaRow).getByText("Inj")).toBeInTheDocument();
+		expect(within(sakaRow).getByText("P")).toBeInTheDocument();
+
+		const palmerRow = screen
+			.getByRole("button", { name: "Palmer" })
+			.closest("tr") as HTMLElement;
+		expect(within(palmerRow).getByText("Doubtful")).toHaveAttribute(
+			"title",
+			"Doubtful - 75% chance: Late fitness test",
+		);
+		expect(within(palmerRow).getByText("Card Risk")).toHaveAttribute(
+			"title",
+			"4 yellow cards - suspension watch",
+		);
+
+		const gustoRow = screen
+			.getByRole("button", { name: "Gusto" })
+			.closest("tr") as HTMLElement;
+		expect(within(gustoRow).getByText("Suspended")).toHaveAttribute(
+			"title",
+			"Suspended - 0% chance: Red card suspension",
+		);
+		expect(within(gustoRow).getByText("Card Risk")).toHaveAttribute(
+			"title",
+			"9 yellow cards - suspension watch",
+		);
+	});
 });

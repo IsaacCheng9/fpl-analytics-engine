@@ -45,6 +45,13 @@ export type TransferFilterRow = {
 	window_start_rate?: number | null;
 	window_mins_per_appearance?: number | null;
 	current_ownership?: number | null;
+	status?: string | null;
+	chance_of_playing_next_round?: number | null;
+	news?: string | null;
+	yellow_cards?: number | null;
+	penalties_order?: number | null;
+	corners_order?: number | null;
+	direct_freekicks_order?: number | null;
 };
 export type ShortlistablePlayer = {
 	element: number;

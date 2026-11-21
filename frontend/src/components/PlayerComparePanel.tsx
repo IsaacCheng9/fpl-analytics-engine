@@ -21,6 +21,7 @@ import {
 } from "./CompareTrendCharts";
 import { FixtureStrip } from "./FixtureStrip";
 import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
+import { PlayerStatusBadges } from "./PlayerStatusBadges";
 
 function valueCellClass(row: CompareRow, side: "left" | "right"): string {
 	return winningSide(row) === side
@@ -307,34 +308,46 @@ export function PlayerComparePanel({
 									<tr>
 										<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
 										<th className="w-1/3 px-3 py-2 font-medium">
-											<button
-												type="button"
-												title="Open player detail"
-												onClick={() => onOpenPlayer(leftElement)}
-												className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-500 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-blue-400 dark:hover:decoration-blue-400"
-											>
-												<span
-													aria-hidden="true"
-													className="inline-block size-2 shrink-0 rounded-full"
-													style={{ backgroundColor: COMPARE_LEFT_COLOR }}
+											<span className="inline-flex flex-wrap items-center gap-1.5">
+												<button
+													type="button"
+													title="Open player detail"
+													onClick={() => onOpenPlayer(leftElement)}
+													className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-500 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-blue-400 dark:hover:decoration-blue-400"
+												>
+													<span
+														aria-hidden="true"
+														className="inline-block size-2 shrink-0 rounded-full"
+														style={{ backgroundColor: COMPARE_LEFT_COLOR }}
+													/>
+													<span>{leftName}</span>
+												</button>
+												<PlayerStatusBadges
+													player={left.detail ?? left.form}
+													mode="full"
 												/>
-												<span>{leftName}</span>
-											</button>
+											</span>
 										</th>
 										<th className="w-1/3 px-3 py-2 font-medium">
-											<button
-												type="button"
-												title="Open player detail"
-												onClick={() => onOpenPlayer(rightElement)}
-												className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-orange-400 dark:hover:decoration-orange-400"
-											>
-												<span
-													aria-hidden="true"
-													className="inline-block size-2 shrink-0 rounded-full"
-													style={{ backgroundColor: COMPARE_RIGHT_COLOR }}
+											<span className="inline-flex flex-wrap items-center gap-1.5">
+												<button
+													type="button"
+													title="Open player detail"
+													onClick={() => onOpenPlayer(rightElement)}
+													className="inline-flex items-center gap-1.5 rounded text-left font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-orange-400 dark:hover:decoration-orange-400"
+												>
+													<span
+														aria-hidden="true"
+														className="inline-block size-2 shrink-0 rounded-full"
+														style={{ backgroundColor: COMPARE_RIGHT_COLOR }}
+													/>
+													<span>{rightName}</span>
+												</button>
+												<PlayerStatusBadges
+													player={right.detail ?? right.form}
+													mode="full"
 												/>
-												<span>{rightName}</span>
-											</button>
+											</span>
 										</th>
 									</tr>
 								</thead>

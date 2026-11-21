@@ -6,6 +6,7 @@ import type {
 	FormPlayer,
 } from "./api";
 import { FixtureStrip } from "./components/FixtureStrip";
+import { PlayerStatusBadges } from "./components/PlayerStatusBadges";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./lib/format";
 import {
 	divergingScale,
@@ -257,7 +258,16 @@ function buildPlayerIdentityColumns<
 	T extends TransferFilterRow,
 >(): ColumnDef<T>[] {
 	return [
-		{ accessorKey: "web_name", header: "Player" },
+		{
+			accessorKey: "web_name",
+			header: "Player",
+			cell: (info) => (
+				<span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+					<span>{info.getValue<string>()}</span>
+					<PlayerStatusBadges player={info.row.original} mode="compact" />
+				</span>
+			),
+		},
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },
 		{

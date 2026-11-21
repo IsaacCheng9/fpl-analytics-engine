@@ -373,4 +373,51 @@ describe("nullable numeric column sorting", () => {
 			screen.queryByRole("columnheader", { name: /FDR \(Next 5\)/ }),
 		).not.toBeInTheDocument();
 	});
+
+	test("renders availability, card-risk, and primary penalty badges in player cells", () => {
+		const players = [
+			makeFormPlayer({
+				element: 1,
+				web_name: "Saka",
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Hamstring injury",
+				penalties_order: 1,
+				corners_order: 1,
+				direct_freekicks_order: 1,
+			}),
+			makeFormPlayer({
+				element: 2,
+				web_name: "Palmer",
+				status: "d",
+				chance_of_playing_next_round: 75,
+				news: "Knock",
+				yellow_cards: 4,
+			}),
+		];
+		const columns = buildFormColumns(
+			computeRanges(players, FORM_HEAT_KEYS),
+			DEFAULT_ATTACKING_METRICS,
+		);
+		render(<DataTable data={players} columns={columns} />);
+
+		expect(screen.getByText("Inj")).toHaveAttribute(
+			"title",
+			"Injured - 0% chance: Hamstring injury",
+		);
+		expect(screen.getByText("P")).toHaveAttribute(
+			"title",
+			"Primary penalty taker",
+		);
+		expect(screen.queryByText("C")).not.toBeInTheDocument();
+		expect(screen.queryByText("FK")).not.toBeInTheDocument();
+		expect(screen.getByText("75%")).toHaveAttribute(
+			"title",
+			"Doubtful - 75% chance: Knock",
+		);
+		expect(screen.getByText("4 YC")).toHaveAttribute(
+			"title",
+			"4 yellow cards - suspension watch",
+		);
+	});
 });
