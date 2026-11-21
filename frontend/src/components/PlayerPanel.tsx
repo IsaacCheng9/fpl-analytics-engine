@@ -263,8 +263,8 @@ export function PlayerPanel({
 							</p>
 						) : null}
 						{showLiveMeta && liveDetail ? (
-							<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
-								<span className="font-medium text-zinc-500">
+							<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+								<span className="font-medium text-zinc-500 dark:text-zinc-400">
 									Live snapshot:
 								</span>
 								{duties.length > 0 ? (
@@ -276,7 +276,7 @@ export function PlayerPanel({
 									<span
 										className={
 											isCardRisk(liveDetail.yellow_cards)
-												? "font-medium text-amber-800"
+												? "font-medium text-amber-800 dark:text-amber-300"
 												: undefined
 										}
 									>
@@ -303,8 +303,8 @@ export function PlayerPanel({
 						role="status"
 						className={`mb-4 rounded-md border px-3 py-2 text-sm ${
 							isUnavailableStatus(liveDetail.status)
-								? "border-red-200 bg-red-50 text-red-900"
-								: "border-amber-200 bg-amber-50 text-amber-900"
+								? "border-red-200 bg-red-50 text-red-900 dark:border-red-800/70 dark:bg-red-950/60 dark:text-red-200"
+								: "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/70 dark:bg-amber-950/60 dark:text-amber-200"
 						}`}
 					>
 						<div className="flex flex-wrap items-baseline justify-between gap-2">

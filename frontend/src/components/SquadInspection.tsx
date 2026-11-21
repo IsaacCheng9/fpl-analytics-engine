@@ -497,10 +497,7 @@ function SquadSectionBody({
 								>
 									{name}
 								</button>
-								<PlayerStatusBadges
-									player={current ?? form}
-									mode="compact"
-								/>
+								<PlayerStatusBadges player={current ?? form} mode="compact" />
 								{row.pick.is_captain ? (
 									<span
 										title="Captain"

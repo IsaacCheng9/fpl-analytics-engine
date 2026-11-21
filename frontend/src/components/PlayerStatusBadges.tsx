@@ -7,8 +7,9 @@ import {
 } from "../lib/playerStatus";
 
 const statusBadgeClass: Record<StatusTone, string> = {
-	risk: "border-red-200 bg-red-50 text-red-700",
-	watch: "border-amber-200 bg-amber-50 text-amber-800",
+	risk: "border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/60 dark:text-red-300",
+	watch:
+		"border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/60 dark:text-amber-300",
 };
 
 const basePillClass =
@@ -58,7 +59,7 @@ export function PlayerStatusBadges({
 				<span
 					key={duty.code}
 					title={duty.tooltip}
-					className={`${basePillClass} border-indigo-200 bg-indigo-50 text-indigo-700`}
+					className={`${basePillClass} border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/60 dark:text-indigo-300`}
 				>
 					<span aria-hidden="true">{duty.code}</span>
 					<span className="sr-only">{duty.tooltip}</span>

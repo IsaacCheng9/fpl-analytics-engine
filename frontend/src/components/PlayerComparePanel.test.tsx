@@ -112,6 +112,13 @@ function makeDetail(
 		selected_season: "2026-27",
 		available_seasons: ["2026-27"],
 		next_fixtures: nextFixtures,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		gameweeks,
 		seasons: [],
 	};
@@ -160,6 +167,13 @@ function makeFormPlayer(
 		next_fdr: nextFixtures[0]?.fdr ?? null,
 		next_fixtures: nextFixtures,
 		current_ownership: 25,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		as_of_gw: 10,
 	};
 }

@@ -102,10 +102,10 @@ export function TransferFilterFields({
 			</div>
 			<div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
 				<span className="inline-flex items-center gap-1">
-					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700">
+					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700 dark:text-zinc-200">
 						<input
 							type="checkbox"
-							className="accent-blue-600"
+							className="accent-blue-600 dark:accent-blue-500"
 							checked={filters.excludeUnavailable}
 							onChange={(e) =>
 								onFilterChange("excludeUnavailable", e.target.checked)
@@ -116,10 +116,10 @@ export function TransferFilterFields({
 					<InfoTooltip text="Hides injured, suspended, and unavailable players (keeps doubtful players). Uses the present-day live availability snapshot, not point-in-time." />
 				</span>
 				<span className="inline-flex items-center gap-1">
-					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700">
+					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700 dark:text-zinc-200">
 						<input
 							type="checkbox"
-							className="accent-blue-600"
+							className="accent-blue-600 dark:accent-blue-500"
 							checked={filters.penaltiesOnly}
 							onChange={(e) =>
 								onFilterChange("penaltiesOnly", e.target.checked)
