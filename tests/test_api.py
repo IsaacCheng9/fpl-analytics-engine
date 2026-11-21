@@ -260,6 +260,13 @@ def test_current_context_uses_snapshot_club_and_includes_new_signings(
                 "fdr": 4,
             }
         ],
+        "status": None,
+        "chance_of_playing_next_round": None,
+        "news": None,
+        "yellow_cards": None,
+        "penalties_order": None,
+        "corners_order": None,
+        "direct_freekicks_order": None,
     }
     assert rows[1]["next_opponent_name"] == "Opponent"
 
@@ -1647,3 +1654,152 @@ def test_default_snapshot_player_detail_season_context() -> None:
         assert older["next_fixtures"] == []
         assert older["gameweeks"][0]["opponent_name"] is None
         assert older["gameweeks"][0]["goals_scored"] is None
+
+
+def test_live_player_context_overlay_attaches_across_all_player_endpoints(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "web_name": ["P1", "P2", "P3"],
+            "element_type": [3, 3, 2],
+            "team": [10, 10, 20],
+            "now_cost": [80, 65, 50],
+            "selected_by_percent": ["24.5", "8.0", "11.2"],
+            "status": ["i", "d", "a"],
+            "chance_of_playing_next_round": [0, 75, None],
+            "news": ["  Hamstring injury  ", "   ", ""],
+            "yellow_cards": [4, 9, 1],
+            "penalties_order": [1, None, 2],
+            "corners_and_indirect_freekicks_order": [2, 1, None],
+            "direct_freekicks_order": [1, None, 3],
+        }
+    )
+    api.app.dependency_overrides[api.get_teams] = lambda: pl.DataFrame(
+        {"id": [10, 20], "name": ["Arsenal", "Chelsea"]}
+    )
+    all_seasons = _history().with_columns(
+        pl.lit("2025-26").alias("season"),
+        pl.col("element").alias("code"),
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: all_seasons
+
+    expected_p1 = {
+        "status": "i",
+        "chance_of_playing_next_round": 0,
+        "news": "Hamstring injury",
+        "yellow_cards": 4,
+        "penalties_order": 1,
+        "corners_order": 2,
+        "direct_freekicks_order": 1,
+    }
+    expected_p2 = {
+        "status": "d",
+        "chance_of_playing_next_round": 75,
+        "news": None,
+        "yellow_cards": 9,
+        "penalties_order": None,
+        "corners_order": 1,
+        "direct_freekicks_order": None,
+    }
+    expected_p3 = {
+        "status": "a",
+        "chance_of_playing_next_round": None,
+        "news": None,
+        "yellow_cards": 1,
+        "penalties_order": 2,
+        "corners_order": None,
+        "direct_freekicks_order": 3,
+    }
+
+    for path, params in [
+        ("/players/current-context", {}),
+        ("/players/form", {"window": 2}),
+        ("/players/defcon", {"window": 2}),
+        ("/players/defcon-probability", {}),
+    ]:
+        response = client.get(path, params=params)
+        assert response.status_code == 200
+        by_element = {row["element"]: row for row in response.json()}
+        for element, expected in [(1, expected_p1), (2, expected_p2), (3, expected_p3)]:
+            if element not in by_element:
+                continue
+            for key, value in expected.items():
+                assert by_element[element][key] == value, (path, element, key)
+        assert 1 in by_element and 2 in by_element and 3 in by_element
+
+    detail_p1 = client.get("/players/1").json()
+    for key, value in expected_p1.items():
+        assert detail_p1[key] == value
+
+    detail_p2 = client.get("/players/2").json()
+    for key, value in expected_p2.items():
+        assert detail_p2[key] == value
+
+    # Players missing from the live snapshot cleanly fall back to nulls.
+    detail_p4 = client.get("/players/4").json()
+    for key in api.LIVE_STATUS_COLUMNS:
+        assert detail_p4[key] is None
+
+
+def test_live_player_context_handles_minimal_snapshot_missing_columns(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {"id": [1, 2], "selected_by_percent": [15.0, 5.0]}
+    )
+    all_seasons = _history().with_columns(
+        pl.lit("2025-26").alias("season"),
+        pl.col("element").alias("code"),
+    )
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: all_seasons
+
+    for path in [
+        "/players/current-context",
+        "/players/form",
+        "/players/defcon",
+        "/players/defcon-probability",
+    ]:
+        response = client.get(path)
+        assert response.status_code == 200
+        rows = response.json()
+        assert len(rows) > 0
+        for row in rows:
+            for key in api.LIVE_STATUS_COLUMNS:
+                assert row[key] is None
+
+    detail = client.get("/players/1")
+    assert detail.status_code == 200
+    for key in api.LIVE_STATUS_COLUMNS:
+        assert detail.json()[key] is None
+
+
+def test_live_player_context_stays_present_day_when_as_of_gw_changes(
+    client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [1],
+            "selected_by_percent": [30.0],
+            "status": ["s"],
+            "chance_of_playing_next_round": [0],
+            "news": ["Suspended until GW6"],
+            "yellow_cards": [5],
+            "penalties_order": [1],
+            "corners_and_indirect_freekicks_order": [1],
+            "direct_freekicks_order": [2],
+        }
+    )
+
+    early = client.get("/players/form", params={"as_of_gw": 2, "window": 2}).json()
+    latest = client.get("/players/form", params={"window": 2}).json()
+    early_p1 = next(row for row in early if row["element"] == 1)
+    latest_p1 = next(row for row in latest if row["element"] == 1)
+
+    for key in api.LIVE_STATUS_COLUMNS:
+        assert early_p1[key] == latest_p1[key]
+    assert early_p1["status"] == "s"
+    assert early_p1["news"] == "Suspended until GW6"
+    assert early_p1["penalties_order"] == 1
+    assert early_p1["corners_order"] == 1

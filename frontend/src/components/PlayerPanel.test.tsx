@@ -45,6 +45,13 @@ function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 				: [],
 		gameweeks: [],
 		seasons: [],
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 	};
 	return Promise.resolve(
 		new Response(

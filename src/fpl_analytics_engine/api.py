@@ -38,14 +38,25 @@ DATA_ROOT = Path("data")
 DEFAULT_FDR_HORIZON = 5
 AS_OF_GW_DESCRIPTION = (
     "Evaluate the point-in-time view as of this gameweek (defaults to the "
-    "latest). Current ownership is excluded from this - it is always the "
-    "present-day snapshot and does not change with as_of_gw."
+    "latest). Live snapshot fields (current ownership, availability, cards, "
+    "and set-piece duties) are excluded from this - they always use the "
+    "present-day snapshot and do not change with as_of_gw."
 )
 VALIDATION_SEASON_DESCRIPTION = (
     "Archived season to backtest, e.g. 2025-26 (defaults to the live season)."
 )
 SEASON_PATTERN = r"^\d{4}-\d{2}$"
 
+# Live availability, card, and set-piece fields from the bootstrap snapshot.
+LIVE_STATUS_COLUMNS = [
+    "status",
+    "chance_of_playing_next_round",
+    "news",
+    "yellow_cards",
+    "penalties_order",
+    "corners_order",
+    "direct_freekicks_order",
+]
 # Fixture difficulty and live-snapshot overlay, attached to every player view.
 FIXTURE_CONTEXT_COLUMNS = [
     "upcoming_fixtures",
@@ -56,6 +67,7 @@ FIXTURE_CONTEXT_COLUMNS = [
     "next_fdr",
     "next_fixtures",
     "current_ownership",
+    *LIVE_STATUS_COLUMNS,
 ]
 # Adds point-in-time value efficiency and playing time, for the form-derived
 # tables.
@@ -426,19 +438,94 @@ def _validation_history(
     return selected
 
 
-def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
-    """Attach current ownership, always the present-day snapshot.
+def _optional_col(
+    frame: pl.DataFrame,
+    name: str,
+    dtype: pl.DataType,
+    alias: str | None = None,
+) -> pl.Expr:
+    """Select and cast an optional column, falling back to typed nulls."""
+    expr = (
+        pl.col(name).cast(dtype) if name in frame.columns else pl.lit(None, dtype=dtype)
+    )
+    return expr.alias(alias or name)
 
-    Ownership has no per-gameweek history, so it is deliberately not made
-    point-in-time: the same current value is attached regardless of ``as_of_gw``.
+
+def _normalised_text_col(frame: pl.DataFrame, name: str) -> pl.Expr:
+    """Select an optional text column and normalise blank strings to nulls."""
+    if name not in frame.columns:
+        return pl.lit(None, dtype=pl.String).alias(name)
+    stripped = pl.col(name).cast(pl.String).str.strip_chars()
+    return (
+        pl.when(stripped.is_not_null() & (stripped != ""))
+        .then(stripped)
+        .otherwise(None)
+        .alias(name)
+    )
+
+
+def _live_status_exprs(players: pl.DataFrame) -> list[pl.Expr]:
+    """Build live availability, card, and set-piece snapshot expressions."""
+    return [
+        _normalised_text_col(players, "status"),
+        _optional_col(players, "chance_of_playing_next_round", pl.Int64),
+        _normalised_text_col(players, "news"),
+        _optional_col(players, "yellow_cards", pl.Int64),
+        _optional_col(players, "penalties_order", pl.Int64),
+        _optional_col(
+            players,
+            "corners_and_indirect_freekicks_order",
+            pl.Int64,
+            alias="corners_order",
+        ),
+        _optional_col(players, "direct_freekicks_order", pl.Int64),
+    ]
+
+
+def _empty_live_status() -> dict[str, str | int | None]:
+    """Return an all-null live-status payload when a snapshot row is absent."""
+    return {column: None for column in LIVE_STATUS_COLUMNS}
+
+
+def _live_player_status(
+    players: pl.DataFrame, element: int
+) -> dict[str, str | int | None]:
+    """Extract live availability, card, and set-piece fields for one player."""
+    if players.is_empty() or "id" not in players.columns:
+        return _empty_live_status()
+    matched = players.filter(pl.col("id").cast(pl.Int64) == element)
+    if matched.is_empty():
+        return _empty_live_status()
+    return matched.head(1).select(_live_status_exprs(matched)).row(0, named=True)
+
+
+def _attach_overlay(table: pl.DataFrame, players: pl.DataFrame) -> pl.DataFrame:
+    """Attach present-day ownership, availability, card, and set-piece fields.
+
+    These bootstrap fields have no per-gameweek history, so they are
+    deliberately not point-in-time: the same current snapshot is attached
+    regardless of ``as_of_gw``.
     """
-    if players.height == 0:
+    if players.is_empty() or "id" not in players.columns:
         return table.with_columns(
             pl.lit(None, dtype=pl.Float64).alias("current_ownership"),
+            pl.lit(None, dtype=pl.String).alias("status"),
+            pl.lit(None, dtype=pl.Int64).alias("chance_of_playing_next_round"),
+            pl.lit(None, dtype=pl.String).alias("news"),
+            pl.lit(None, dtype=pl.Int64).alias("yellow_cards"),
+            pl.lit(None, dtype=pl.Int64).alias("penalties_order"),
+            pl.lit(None, dtype=pl.Int64).alias("corners_order"),
+            pl.lit(None, dtype=pl.Int64).alias("direct_freekicks_order"),
         )
     overlay = players.select(
-        pl.col("id").alias("element"),
-        pl.col("selected_by_percent").cast(pl.Float64).alias("current_ownership"),
+        pl.col("id").cast(pl.Int64).alias("element"),
+        _optional_col(
+            players,
+            "selected_by_percent",
+            pl.Float64,
+            alias="current_ownership",
+        ),
+        *_live_status_exprs(players),
     )
     return table.join(overlay, on="element", how="left")
 
@@ -658,6 +745,7 @@ def players_current_context(
         return []
 
     # Preserve known players when optional metadata is absent or all-null.
+    raw_players = players
     player_schema = {
         "id": pl.Int64,
         "web_name": pl.String,
@@ -666,8 +754,8 @@ def players_current_context(
         "now_cost": pl.Float64,
         "selected_by_percent": pl.Float64,
     }
-    players = players.select(
-        (pl.col(name) if name in players.columns else pl.lit(None))
+    players = raw_players.select(
+        (pl.col(name) if name in raw_players.columns else pl.lit(None))
         .cast(dtype)
         .alias(name)
         for name, dtype in player_schema.items()
@@ -683,11 +771,17 @@ def players_current_context(
         }.items()
     )
     metadata = _player_snapshot_metadata(players, teams)
-    snapshot = players.select(
-        pl.col("id").alias("element"),
-        "team",
-        (pl.col("now_cost") / 10).alias("price"),
-        pl.col("selected_by_percent").alias("current_ownership"),
+    snapshot = raw_players.select(
+        pl.col("id").cast(pl.Int64).alias("element"),
+        _optional_col(raw_players, "team", pl.Int64),
+        (_optional_col(raw_players, "now_cost", pl.Float64) / 10).alias("price"),
+        _optional_col(
+            raw_players,
+            "selected_by_percent",
+            pl.Float64,
+            alias="current_ownership",
+        ),
+        *_live_status_exprs(raw_players),
     )
     fdr = fixtures.current_team_fixture_difficulty(fixtures_data)
     upcoming = fixtures.upcoming_fixtures_frame(
@@ -1213,6 +1307,7 @@ def player_detail(
             ]
     gw_cols = list(PlayerGameweek.model_fields)
     season_cols = list(PlayerSeasonSummary.model_fields)
+    live_status = _live_player_status(players, element)
     return PlayerDetail(
         element=element,
         code=code,
@@ -1230,4 +1325,13 @@ def player_detail(
         seasons=[
             PlayerSeasonSummary(**row) for row in seasons.select(season_cols).to_dicts()
         ],
+        status=cast(str | None, live_status["status"]),
+        chance_of_playing_next_round=cast(
+            int | None, live_status["chance_of_playing_next_round"]
+        ),
+        news=cast(str | None, live_status["news"]),
+        yellow_cards=cast(int | None, live_status["yellow_cards"]),
+        penalties_order=cast(int | None, live_status["penalties_order"]),
+        corners_order=cast(int | None, live_status["corners_order"]),
+        direct_freekicks_order=cast(int | None, live_status["direct_freekicks_order"]),
     )

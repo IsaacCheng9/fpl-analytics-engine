@@ -40,6 +40,56 @@ class FixtureContext(BaseModel):
             "API exposes no historical per-gameweek ownership."
         ),
     )
+    status: str | None = Field(
+        default=None,
+        description=(
+            "Live availability status code ('a' available, 'd' doubtful, 'i' "
+            "injured, 's' suspended, 'u' unavailable). Present-day live snapshot, "
+            "not point-in-time."
+        ),
+    )
+    chance_of_playing_next_round: int | None = Field(
+        default=None,
+        description=(
+            "Live percentage chance of playing next round (0, 25, 50, 75, 100, "
+            "or null). Present-day live snapshot, not point-in-time."
+        ),
+    )
+    news: str | None = Field(
+        default=None,
+        description=(
+            "Live injury or suspension news text, normalised to null when blank. "
+            "Present-day live snapshot, not point-in-time."
+        ),
+    )
+    yellow_cards: int | None = Field(
+        default=None,
+        description=(
+            "Live season yellow-card count. Present-day live snapshot, not "
+            "point-in-time."
+        ),
+    )
+    penalties_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club penalty-taking order (1 = primary taker). Present-day "
+            "live snapshot, not point-in-time."
+        ),
+    )
+    corners_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club corners and indirect free-kicks order (1 = primary "
+            "taker). Present-day live snapshot, not point-in-time."
+        ),
+    )
+    direct_freekicks_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club direct free-kicks order (1 = primary taker). Present-day "
+            "live snapshot, not point-in-time."
+        ),
+    )
 
 
 class CurrentPlayerContext(FixtureContext):
@@ -284,6 +334,55 @@ class PlayerDetail(BaseModel):
     next_fixtures: list[UpcomingFixture] = Field(default_factory=list)
     gameweeks: list[PlayerGameweek]
     seasons: list[PlayerSeasonSummary]
+    status: str | None = Field(
+        default=None,
+        description=(
+            "Live availability status code ('a', 'd', 'i', 's', 'u'). "
+            "Present-day live snapshot, not point-in-time."
+        ),
+    )
+    chance_of_playing_next_round: int | None = Field(
+        default=None,
+        description=(
+            "Live percentage chance of playing next round. Present-day live "
+            "snapshot, not point-in-time."
+        ),
+    )
+    news: str | None = Field(
+        default=None,
+        description=(
+            "Live injury or suspension news text, normalised to null when blank. "
+            "Present-day live snapshot, not point-in-time."
+        ),
+    )
+    yellow_cards: int | None = Field(
+        default=None,
+        description=(
+            "Live season yellow-card count. Present-day live snapshot, not "
+            "point-in-time."
+        ),
+    )
+    penalties_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club penalty-taking order (1 = primary taker). Present-day "
+            "live snapshot, not point-in-time."
+        ),
+    )
+    corners_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club corners and indirect free-kicks order (1 = primary "
+            "taker). Present-day live snapshot, not point-in-time."
+        ),
+    )
+    direct_freekicks_order: int | None = Field(
+        default=None,
+        description=(
+            "Live club direct free-kicks order (1 = primary taker). Present-day "
+            "live snapshot, not point-in-time."
+        ),
+    )
 
 
 class FplTeamPick(BaseModel):

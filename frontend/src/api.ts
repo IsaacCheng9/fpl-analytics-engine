@@ -18,8 +18,9 @@ export interface UpcomingFixture {
 	fdr: number;
 }
 
-// Fixture difficulty and the live ownership overlay shared by every player
-// view. current_ownership is always the present-day snapshot, not point-in-time.
+// Fixture difficulty and the live-snapshot overlay shared by every player view.
+// Ownership, availability, cards, and set-piece duties are always present-day
+// snapshots, not point-in-time.
 export interface FixtureContext {
 	upcoming_fixtures: number | null;
 	avg_fdr: number | null;
@@ -29,6 +30,13 @@ export interface FixtureContext {
 	next_fdr: number | null;
 	next_fixtures: UpcomingFixture[];
 	current_ownership: number | null;
+	status: string | null;
+	chance_of_playing_next_round: number | null;
+	news: string | null;
+	yellow_cards: number | null;
+	penalties_order: number | null;
+	corners_order: number | null;
+	direct_freekicks_order: number | null;
 }
 
 export interface CurrentPlayerContext extends FixtureContext {
@@ -256,6 +264,13 @@ export interface PlayerDetail {
 	next_fixtures: UpcomingFixture[];
 	gameweeks: PlayerGameweek[];
 	seasons: PlayerSeasonSummary[];
+	status: string | null;
+	chance_of_playing_next_round: number | null;
+	news: string | null;
+	yellow_cards: number | null;
+	penalties_order: number | null;
+	corners_order: number | null;
+	direct_freekicks_order: number | null;
 }
 
 export interface FplTeamPick {
