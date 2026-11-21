@@ -1237,3 +1237,37 @@ def test_player_detail_uses_live_season_as_current(client: TestClient) -> None:
     assert body["selected_season"] == "2026-27"
     assert body["element"] == 11
     assert client.get("/players/7").status_code == 404
+
+
+def test_default_snapshot_caches_validation_and_prior_rates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api._cached_prior_rates.cache_clear()
+    api._cached_form_validation.cache_clear()
+    api._cached_defcon_probability_validation.cache_clear()
+    api._cached_club_form_validation.cache_clear()
+
+    prior_calls = 0
+    original_prior = api._prior_rates
+
+    def count_prior(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
+        nonlocal prior_calls
+        prior_calls += 1
+        return original_prior(all_seasons, season)
+
+    monkeypatch.setattr(api, "_prior_rates", count_prior)
+
+    with TestClient(api.app) as default_client:
+        assert default_client.get("/players/form").status_code == 200
+        assert default_client.get("/players/form").status_code == 200
+        assert prior_calls == 1
+
+        first = default_client.get(
+            "/clubs/form-validation", params={"season": "2025-26"}
+        )
+        second = default_client.get(
+            "/clubs/form-validation", params={"season": "2025-26"}
+        )
+        assert first.status_code == 200
+        assert second.json() == first.json()
+        assert api._cached_club_form_validation.cache_info().hits == 1

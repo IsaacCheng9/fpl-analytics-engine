@@ -289,12 +289,37 @@ def _prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
     return form.prior_season_rates(all_seasons.filter(pl.col("season") == previous))
 
 
+@lru_cache
+def _cached_prior_rates(season: str) -> pl.DataFrame | None:
+    """Cache prior-season rates computed from the default archived snapshots."""
+    return _prior_rates(_load_all_seasons(), season)
+
+
+def _resolve_prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
+    """Return cached prior rates for default snapshots, or compute for overrides."""
+    if not app.dependency_overrides and all_seasons is _load_all_seasons():
+        return _cached_prior_rates(season)
+    return _prior_rates(all_seasons, season)
+
+
 def get_prior_rates(
     all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
     season: Annotated[str, Depends(get_current_season)],
 ) -> pl.DataFrame | None:
     """Return last season's rates for the live season's estimated rates."""
-    return _prior_rates(all_seasons, season)
+    return _resolve_prior_rates(all_seasons, season)
+
+
+def _using_default_validation_snapshots(
+    history: pl.DataFrame, all_seasons: pl.DataFrame, current_season: str
+) -> bool:
+    """Return whether validation inputs match the cached on-disk snapshots."""
+    return (
+        not app.dependency_overrides
+        and history is _load_history()
+        and all_seasons is _load_all_seasons()
+        and current_season == _current_season()
+    )
 
 
 def get_entry_picks_fetcher() -> EntryPicksFetcher:
@@ -677,6 +702,38 @@ def players_form(
     return [FormPlayer(**row) for row in flagged.select(FORM_COLUMNS).to_dicts()]
 
 
+def _compute_form_validation(
+    history: pl.DataFrame,
+    all_seasons: pl.DataFrame,
+    current_season: str,
+    window: int,
+    horizon: int,
+    season: str | None,
+) -> FormValidation:
+    """Run the player form-signal backtest for one season."""
+    selected = _validation_history(
+        season, history, all_seasons, current_season, FORM_VALIDATION_START_SEASON
+    )
+    prior = _resolve_prior_rates(all_seasons, season or current_season)
+    scored = form.backtest_form_signals(selected, prior, window, horizon)
+    return FormValidation(
+        window=window,
+        horizon=horizon,
+        top_k=form.VALIDATION_TOP_K,
+        **form.summarise_form_validation(scored),
+    )
+
+
+@lru_cache(maxsize=32)
+def _cached_form_validation(
+    window: int, horizon: int, season: str | None
+) -> FormValidation:
+    """Cache deterministic form-validation results for default snapshots."""
+    return _compute_form_validation(
+        _load_history(), _load_all_seasons(), _current_season(), window, horizon, season
+    )
+
+
 @app.get("/players/form-validation")
 def players_form_validation(
     history: Annotated[pl.DataFrame, Depends(get_history)],
@@ -695,16 +752,10 @@ def players_form_validation(
     gameweeks. The summary also reports how much of a recent xGI90 or minutes
     swing persisted.
     """
-    history = _validation_history(
-        season, history, all_seasons, current_season, FORM_VALIDATION_START_SEASON
-    )
-    prior = _prior_rates(all_seasons, season or current_season)
-    scored = form.backtest_form_signals(history, prior, window, horizon)
-    return FormValidation(
-        window=window,
-        horizon=horizon,
-        top_k=form.VALIDATION_TOP_K,
-        **form.summarise_form_validation(scored),
+    if _using_default_validation_snapshots(history, all_seasons, current_season):
+        return _cached_form_validation(window, horizon, season)
+    return _compute_form_validation(
+        history, all_seasons, current_season, window, horizon, season
     )
 
 
@@ -791,26 +842,18 @@ def players_defcon_probability(
     ]
 
 
-@app.get("/players/defcon-probability-validation")
-def players_defcon_probability_validation(
-    history: Annotated[pl.DataFrame, Depends(get_history)],
-    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
-    current_season: Annotated[str, Depends(get_current_season)],
-    bins: int = Query(DEFAULT_CALIBRATION_BINS, ge=2, le=20),
-    min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
-    season: str | None = Query(
-        None, pattern=SEASON_PATTERN, description=VALIDATION_SEASON_DESCRIPTION
-    ),
+def _compute_defcon_probability_validation(
+    history: pl.DataFrame,
+    all_seasons: pl.DataFrame,
+    current_season: str,
+    bins: int,
+    min_minutes: int,
+    season: str | None,
 ) -> DefconProbabilityValidation:
-    """Backtest the DefCon probability models against next-GW outcomes.
-
-    The replay is point-in-time: each as-of gameweek predicts the following
-    gameweek, then Brier score and calibration are computed from the realised
-    DefCon threshold hit.
-    """
-    history = _validation_history(season, history, all_seasons, current_season)
+    """Run the DefCon probability model backtest for one season."""
+    selected = _validation_history(season, history, all_seasons, current_season)
     scored = defcon.backtest_defcon_count_probabilities(
-        history,
+        selected,
         min_minutes=min_minutes,
         calibration_bins=bins,
     )
@@ -870,6 +913,45 @@ def players_defcon_probability_validation(
     )
 
 
+@lru_cache(maxsize=32)
+def _cached_defcon_probability_validation(
+    bins: int, min_minutes: int, season: str | None
+) -> DefconProbabilityValidation:
+    """Cache deterministic DefCon validation results for default snapshots."""
+    return _compute_defcon_probability_validation(
+        _load_history(),
+        _load_all_seasons(),
+        _current_season(),
+        bins,
+        min_minutes,
+        season,
+    )
+
+
+@app.get("/players/defcon-probability-validation")
+def players_defcon_probability_validation(
+    history: Annotated[pl.DataFrame, Depends(get_history)],
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    current_season: Annotated[str, Depends(get_current_season)],
+    bins: int = Query(DEFAULT_CALIBRATION_BINS, ge=2, le=20),
+    min_minutes: int = Query(DEFAULT_DEFCON_PROBABILITY_MIN_MINUTES, ge=0),
+    season: str | None = Query(
+        None, pattern=SEASON_PATTERN, description=VALIDATION_SEASON_DESCRIPTION
+    ),
+) -> DefconProbabilityValidation:
+    """Backtest the DefCon probability models against next-GW outcomes.
+
+    The replay is point-in-time: each as-of gameweek predicts the following
+    gameweek, then Brier score and calibration are computed from the realised
+    DefCon threshold hit.
+    """
+    if _using_default_validation_snapshots(history, all_seasons, current_season):
+        return _cached_defcon_probability_validation(bins, min_minutes, season)
+    return _compute_defcon_probability_validation(
+        history, all_seasons, current_season, bins, min_minutes, season
+    )
+
+
 @app.get("/clubs/form")
 def clubs_form(
     history: Annotated[pl.DataFrame, Depends(get_history)],
@@ -891,6 +973,48 @@ def clubs_form(
         table = table.head(top_k)
     table = _attach_club_fdr(table, fixtures_data, gw, fdr_horizon)
     return [ClubForm(**row) for row in table.select(CLUB_FORM_COLUMNS).to_dicts()]
+
+
+def _compute_club_form_validation(
+    history: pl.DataFrame,
+    all_seasons: pl.DataFrame,
+    current_season: str,
+    window: int,
+    horizon: int,
+    min_train_rows: int,
+    season: str | None,
+) -> list[ClubFormValidation]:
+    """Run the club-form validation backtest for one season."""
+    selected = _validation_history(season, history, all_seasons, current_season)
+    scored = club.backtest_club_form_signals(
+        selected,
+        window=window,
+        horizon=horizon,
+        min_train_rows=min_train_rows,
+    )
+    summary = club.summarise_club_form_validation(scored)
+    return [
+        ClubFormValidation(**row)
+        for row in summary.select(CLUB_FORM_VALIDATION_COLUMNS).to_dicts()
+    ]
+
+
+@lru_cache(maxsize=32)
+def _cached_club_form_validation(
+    window: int, horizon: int, min_train_rows: int, season: str | None
+) -> tuple[ClubFormValidation, ...]:
+    """Cache deterministic club-form validation results for default snapshots."""
+    return tuple(
+        _compute_club_form_validation(
+            _load_history(),
+            _load_all_seasons(),
+            _current_season(),
+            window,
+            horizon,
+            min_train_rows,
+            season,
+        )
+    )
 
 
 @app.get("/clubs/form-validation")
@@ -916,18 +1040,13 @@ def clubs_form_validation(
     by the scored as-of gameweek. Historical FDR is excluded because the
     archive does not contain point-in-time FDR revisions.
     """
-    history = _validation_history(season, history, all_seasons, current_season)
-    scored = club.backtest_club_form_signals(
-        history,
-        window=window,
-        horizon=horizon,
-        min_train_rows=min_train_rows,
+    if _using_default_validation_snapshots(history, all_seasons, current_season):
+        return list(
+            _cached_club_form_validation(window, horizon, min_train_rows, season)
+        )
+    return _compute_club_form_validation(
+        history, all_seasons, current_season, window, horizon, min_train_rows, season
     )
-    summary = club.summarise_club_form_validation(scored)
-    return [
-        ClubFormValidation(**row)
-        for row in summary.select(CLUB_FORM_VALIDATION_COLUMNS).to_dicts()
-    ]
 
 
 @app.get("/players/{element}")
