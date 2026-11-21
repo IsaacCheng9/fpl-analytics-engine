@@ -21,7 +21,9 @@ import {
 	type ReplacementRequest,
 	SquadInspection,
 } from "./components/SquadInspection";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { useDashboardQueries } from "./hooks/useDashboardQueries";
+import { useTheme } from "./hooks/useTheme";
 import {
 	buildActiveFilterChips,
 	countMoreFilters,
@@ -86,15 +88,16 @@ const PlayerComparePanel = lazy(() =>
 function PanelFallback() {
 	return (
 		<div className="fixed inset-0 z-40 overflow-y-auto p-4">
-			<div className="fixed inset-0 bg-black/40" />
-			<div className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl">
-				<p className="text-sm text-zinc-500">Loading...</p>
+			<div className="fixed inset-0 bg-black/40 dark:bg-black/70" />
+			<div className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl dark:border dark:border-zinc-800 dark:bg-zinc-900">
+				<p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
 			</div>
 		</div>
 	);
 }
 
 export default function App() {
+	const { theme, setTheme } = useTheme();
 	const [tablePageSize, setTablePageSize] = useState(25);
 	const [showMoreFilters, setShowMoreFilters] = useState(false);
 	const [urlState, setUrlState] = useUrlState((restored) =>
@@ -645,25 +648,25 @@ export default function App() {
 		const isShortlisted = shortlist.includes(row.element);
 		const isOwned = ownedElements.has(row.element);
 		if (isShortlisted && isOwned) {
-			return "bg-teal-50/60";
+			return "bg-teal-50/60 dark:bg-teal-950/40";
 		}
 		if (isShortlisted) {
-			return "bg-amber-50/50";
+			return "bg-amber-50/50 dark:bg-amber-950/35";
 		}
-		return isOwned ? "bg-sky-50/50" : "";
+		return isOwned ? "bg-sky-50/50 dark:bg-sky-950/35" : "";
 	};
 	const playerStickyClassName = (row: ShortlistablePlayer) => {
 		const isShortlisted = shortlist.includes(row.element);
 		const isOwned = ownedElements.has(row.element);
 		if (isShortlisted && isOwned) {
-			return "bg-teal-50 group-hover:bg-teal-100/70";
+			return "bg-teal-50 group-hover:bg-teal-100/70 dark:bg-teal-950 dark:group-hover:bg-teal-900";
 		}
 		if (isShortlisted) {
-			return "bg-amber-50 group-hover:bg-amber-100/70";
+			return "bg-amber-50 group-hover:bg-amber-100/70 dark:bg-amber-950 dark:group-hover:bg-amber-900";
 		}
 		return isOwned
-			? "bg-sky-100 group-hover:bg-sky-100"
-			: "bg-white group-hover:bg-zinc-50";
+			? "bg-sky-100 group-hover:bg-sky-100 dark:bg-sky-950 dark:group-hover:bg-sky-900"
+			: "bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800";
 	};
 	const renderShortlistAction = (row: ShortlistablePlayer) => {
 		const isShortlisted = shortlist.includes(row.element);
@@ -679,8 +682,8 @@ export default function App() {
 				title={isShortlisted ? "Remove from shortlist" : "Add to shortlist"}
 				className={`flex h-7 w-7 items-center justify-center rounded-md border text-base leading-none ${
 					isShortlisted
-						? "border-amber-300 bg-amber-100 text-amber-700"
-						: "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+						? "border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+						: "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
 				}`}
 				onClick={(event) => {
 					event.stopPropagation();
@@ -704,7 +707,7 @@ export default function App() {
 	const clearActiveFiltersButton = hasActiveFilters ? (
 		<button
 			type="button"
-			className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:bg-zinc-50"
+			className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
 			onClick={clearActiveFilters}
 		>
 			Clear Active Filters
@@ -759,13 +762,16 @@ export default function App() {
 		);
 	}
 
+	const themeToggle = <ThemeToggle theme={theme} onChange={setTheme} />;
+
 	if (meta.isPending) {
-		return <SeasonStatus state="loading" />;
+		return <SeasonStatus state="loading" headerAction={themeToggle} />;
 	}
 	if (meta.isError || meta.data === undefined) {
 		return (
 			<SeasonStatus
 				state="error"
+				headerAction={themeToggle}
 				onRetry={() => {
 					void meta.refetch();
 				}}
@@ -773,21 +779,30 @@ export default function App() {
 		);
 	}
 	if (!analyticsReady) {
-		return <SeasonStatus meta={meta.data} state="preseason" />;
+		return (
+			<SeasonStatus
+				meta={meta.data}
+				state="preseason"
+				headerAction={themeToggle}
+			/>
+		);
 	}
 
 	return (
-		<div className="min-h-screen bg-zinc-50 text-zinc-900">
+		<div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
 			<div className="app-shell mx-auto px-6 py-8">
 				<header className="mb-6">
-					<h1 className="font-semibold text-2xl">FPL Analytics Engine</h1>
+					<div className="flex items-start justify-between gap-4">
+						<h1 className="font-semibold text-2xl">FPL Analytics Engine</h1>
+						{themeToggle}
+					</div>
 					{/* Phones get a one-line summary so the table starts nearer the top. */}
-					<p className="mt-1 text-sm text-zinc-500 sm:hidden">
+					<p className="mt-1 text-sm text-zinc-500 sm:hidden dark:text-zinc-400">
 						{tab === "evidence"
 							? "Backtested evidence, replayed with no look-ahead."
 							: `Point-in-time form as of GW ${asOfGw ?? latestGw}, with no look-ahead.`}
 					</p>
-					<p className="mt-1 hidden max-w-3xl text-sm text-zinc-500 sm:block">
+					<p className="mt-1 hidden max-w-3xl text-sm text-zinc-500 sm:block dark:text-zinc-400">
 						{tab === "evidence" ? (
 							<>
 								Surfaces backtested evidence for the scouting signals by
@@ -825,8 +840,8 @@ export default function App() {
 							}}
 							className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm ${
 								tab === value
-									? "bg-zinc-900 text-white"
-									: "bg-white text-zinc-700 ring-1 ring-zinc-200"
+									? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+									: "bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-zinc-800 dark:hover:bg-zinc-800"
 							}`}
 						>
 							{TAB_LABELS[value]}
@@ -892,7 +907,7 @@ export default function App() {
 				) : null}
 
 				{windowCoversSeason ? (
-					<p className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-sm">
+					<p className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-sm dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200">
 						The {windowSize}-gameweek window covers every gameweek up to GW
 						{gameweeksPlayed}, so recent and season figures match and deltas are
 						zero.{" "}
@@ -946,17 +961,19 @@ export default function App() {
 					defconValidationQuery.isPending ||
 					clubValidationQuery.isPending ||
 					formValidationQuery.isPending ? (
-						<p className="text-sm text-zinc-500">Loading...</p>
+						<p className="text-sm text-zinc-500 dark:text-zinc-400">
+							Loading...
+						</p>
 					) : defconValidationQuery.isError ||
 						clubValidationQuery.isError ||
 						formValidationQuery.isError ? (
 						<div className="flex items-center gap-3">
-							<p className="text-red-600 text-sm">
+							<p className="text-red-600 text-sm dark:text-red-400">
 								Failed to load research data. Try again in a moment.
 							</p>
 							<button
 								type="button"
-								className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+								className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
 								onClick={() => {
 									if (defconValidationQuery.isError) {
 										void defconValidationQuery.refetch();
@@ -974,7 +991,11 @@ export default function App() {
 						</div>
 					) : (
 						<Suspense
-							fallback={<p className="text-sm text-zinc-500">Loading...</p>}
+							fallback={
+								<p className="text-sm text-zinc-500 dark:text-zinc-400">
+									Loading...
+								</p>
+							}
 						>
 							<ModelEvidence
 								formValidation={formValidationQuery.data}
@@ -1032,15 +1053,15 @@ export default function App() {
 						onFindReplacement={findReplacement}
 					/>
 				) : active?.isPending ? (
-					<p className="text-sm text-zinc-500">Loading...</p>
+					<p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
 				) : active?.isError ? (
 					<div className="flex items-center gap-3">
-						<p className="text-red-600 text-sm">
+						<p className="text-red-600 text-sm dark:text-red-400">
 							Failed to load data. Try again in a moment.
 						</p>
 						<button
 							type="button"
-							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
 							onClick={() => {
 								void active.refetch();
 							}}
@@ -1062,7 +1083,7 @@ export default function App() {
 					renderPlayerTable(visibleDefconProbRows, defconProbColumns)
 				) : (
 					<>
-						<p className="mb-2 text-sm text-zinc-500">
+						<p className="mb-2 text-sm text-zinc-500 dark:text-zinc-400">
 							Club form compares recent per-match output with the season
 							baseline, then shows the next fixture run alongside it.
 						</p>

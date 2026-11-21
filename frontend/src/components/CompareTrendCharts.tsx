@@ -42,10 +42,12 @@ function OverlayTrendChart({
 	const hasRightData = chartData.some((point) => point[rightKey] !== null);
 
 	return (
-		<div className="rounded-md border border-zinc-200 bg-white p-3">
-			<h3 className="mb-2 font-medium text-sm text-zinc-700">{title}</h3>
+		<div className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950/60">
+			<h3 className="mb-2 font-medium text-sm text-zinc-700 dark:text-zinc-200">
+				{title}
+			</h3>
 			{!hasLeftData && !hasRightData ? (
-				<p className="flex h-[180px] items-center justify-center rounded bg-zinc-50 px-3 text-center text-xs text-zinc-500">
+				<p className="flex h-[180px] items-center justify-center rounded bg-zinc-50 px-3 text-center text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
 					No rolling data available for either player.
 				</p>
 			) : (
@@ -54,7 +56,7 @@ function OverlayTrendChart({
 						data={chartData}
 						margin={{ top: 6, right: 12, bottom: 16, left: -8 }}
 					>
-						<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+						<CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
 						{/* A numeric axis keeps blank gameweeks as visible gaps. */}
 						<XAxis
 							dataKey="round"
@@ -62,20 +64,37 @@ function OverlayTrendChart({
 							domain={["dataMin", "dataMax"]}
 							padding={{ left: 6, right: 6 }}
 							allowDecimals={false}
-							tick={{ fontSize: 11 }}
+							stroke="var(--chart-axis)"
+							tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
 							label={{
 								value: "Gameweek",
 								position: "insideBottom",
 								offset: -10,
 								fontSize: 11,
+								fill: "var(--chart-axis)",
 							}}
 						/>
-						<YAxis tick={{ fontSize: 11 }} />
+						<YAxis
+							stroke="var(--chart-axis)"
+							tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
+						/>
 						<Tooltip
 							labelFormatter={(round) => `GW ${round}`}
 							formatter={(value) =>
 								typeof value === "number" ? value.toFixed(2) : value
 							}
+							cursor={{ stroke: "var(--chart-ref)", strokeDasharray: "3 3" }}
+							contentStyle={{
+								backgroundColor: "var(--chart-tooltip-bg)",
+								borderColor: "var(--chart-tooltip-border)",
+								borderRadius: "0.375rem",
+								color: "var(--chart-tooltip-text)",
+								fontSize: "0.75rem",
+							}}
+							labelStyle={{
+								color: "var(--chart-tooltip-text)",
+								fontWeight: 500,
+							}}
 						/>
 						{hasLeftData ? (
 							<Line
@@ -85,7 +104,11 @@ function OverlayTrendChart({
 								stroke={COMPARE_LEFT_COLOR}
 								strokeWidth={2}
 								dot={{ r: 2.5, fill: COMPARE_LEFT_COLOR }}
-								activeDot={{ r: 4 }}
+								activeDot={{
+									r: 4,
+									fill: COMPARE_LEFT_COLOR,
+									stroke: "var(--chart-tooltip-bg)",
+								}}
 								connectNulls
 								isAnimationActive={false}
 							/>
@@ -98,7 +121,11 @@ function OverlayTrendChart({
 								stroke={COMPARE_RIGHT_COLOR}
 								strokeWidth={2}
 								dot={{ r: 2.5, fill: COMPARE_RIGHT_COLOR }}
-								activeDot={{ r: 4 }}
+								activeDot={{
+									r: 4,
+									fill: COMPARE_RIGHT_COLOR,
+									stroke: "var(--chart-tooltip-bg)",
+								}}
 								connectNulls
 								isAnimationActive={false}
 							/>
@@ -129,12 +156,12 @@ export function CompareTrendCharts({
 	return (
 		<section aria-label="Rolling Trend Comparison" className="mb-4">
 			<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-				<span className="font-medium text-xs text-zinc-500 uppercase tracking-wide">
+				<span className="font-medium text-xs text-zinc-500 uppercase tracking-wide dark:text-zinc-400">
 					Rolling Trends
 				</span>
 				<ul
 					aria-label="Chart Legend"
-					className="flex flex-wrap items-center gap-4 text-xs text-zinc-700"
+					className="flex flex-wrap items-center gap-4 text-xs text-zinc-700 dark:text-zinc-200"
 				>
 					<li className="inline-flex items-center gap-1.5 font-medium">
 						<span

@@ -127,7 +127,7 @@ export function DashboardFilterBar({
 
 	return (
 		<div
-			className={`mb-4 rounded-lg border border-zinc-200 bg-white p-4 ${
+			className={`mb-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 ${
 				tab === "evidence" ? "hidden" : ""
 			}`}
 		>
@@ -197,11 +197,11 @@ export function DashboardFilterBar({
 							{ATTACKING_METRICS.map((metric) => (
 								<label
 									key={metric}
-									className="flex items-center gap-1 text-xs text-zinc-900"
+									className="flex items-center gap-1 text-xs text-zinc-900 dark:text-zinc-100"
 								>
 									<input
 										type="checkbox"
-										className="accent-blue-600"
+										className="accent-blue-600 dark:accent-blue-400"
 										checked={attackingMetrics[metric]}
 										disabled={
 											attackingMetrics[metric] &&
@@ -300,14 +300,14 @@ export function DashboardFilterBar({
 						<button
 							type="submit"
 							disabled={!canImportFplTeam}
-							className="mb-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
+							className="mb-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600 dark:disabled:hover:bg-zinc-900"
 						>
 							Import
 						</button>
 						{fplTeamId !== null ? (
 							<button
 								type="button"
-								className="mb-0 rounded-md px-2 py-1.5 font-medium text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+								className="mb-0 rounded-md px-2 py-1.5 font-medium text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
 								onClick={onClearFplTeam}
 							>
 								Clear
@@ -321,7 +321,7 @@ export function DashboardFilterBar({
 						type="button"
 						aria-expanded={showMoreFilters}
 						aria-controls="more-filters"
-						className="self-end rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
+						className="self-end rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
 						onClick={onToggleMoreFilters}
 					>
 						{showMoreFilters ? "Fewer Filters" : "More Filters"}
@@ -332,8 +332,8 @@ export function DashboardFilterBar({
 			{hasMoreFilters && showMoreFilters ? (
 				<div id="more-filters">
 					{tab === "form" ? (
-						<div className="mt-4 border-zinc-100 border-t pt-4">
-							<div className="mb-2 font-medium text-xs text-zinc-600">
+						<div className="mt-4 border-zinc-100 border-t pt-4 dark:border-zinc-800">
+							<div className="mb-2 font-medium text-xs text-zinc-600 dark:text-zinc-300">
 								Filter Presets
 							</div>
 							<div className="flex flex-wrap gap-2">
@@ -341,7 +341,7 @@ export function DashboardFilterBar({
 									<button
 										key={preset.id}
 										type="button"
-										className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white"
+										className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-medium text-sm text-zinc-700 hover:border-zinc-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
 										onClick={() => onApplyFilterPreset(preset.id)}
 									>
 										{preset.label}
@@ -350,7 +350,7 @@ export function DashboardFilterBar({
 							</div>
 						</div>
 					) : null}
-					<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr]">
+					<div className="mt-4 grid gap-6 border-zinc-100 border-t pt-4 xl:grid-cols-[auto_1fr] dark:border-zinc-800">
 						{tab === "form" ? (
 							<AttackingThreatFilterFields
 								filters={attackingThreatFilters}

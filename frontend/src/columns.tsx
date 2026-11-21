@@ -140,7 +140,7 @@ function HeatCell({
 	text: string;
 }) {
 	if (value == null) {
-		return <span className="text-zinc-400">-</span>;
+		return <span className="text-zinc-400 dark:text-zinc-500">-</span>;
 	}
 	return <span>{text}</span>;
 }

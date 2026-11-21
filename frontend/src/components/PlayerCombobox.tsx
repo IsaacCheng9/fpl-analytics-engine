@@ -126,7 +126,7 @@ export function PlayerCombobox({
 		open && safeActiveIndex >= 0 ? filtered[safeActiveIndex] : undefined;
 
 	return (
-		<div className="relative flex min-w-0 flex-1 flex-col text-xs font-medium text-zinc-600">
+		<div className="relative flex min-w-0 flex-1 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">
 			<label htmlFor={id}>{label}</label>
 			<input
 				id={id}
@@ -141,7 +141,7 @@ export function PlayerCombobox({
 						: undefined
 				}
 				placeholder="Search player, club, or position..."
-				className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
+				className="mt-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
 				value={input}
 				onFocus={() => {
 					setActiveIndex(0);
@@ -160,10 +160,10 @@ export function PlayerCombobox({
 					id={listboxId}
 					role="listbox"
 					aria-label={`${label} options`}
-					className="absolute top-full right-0 left-0 z-30 mt-1 max-h-56 overflow-auto rounded-md border border-zinc-200 bg-white py-1 text-sm shadow-lg"
+					className="absolute top-full right-0 left-0 z-30 mt-1 max-h-56 overflow-auto rounded-md border border-zinc-200 bg-white py-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
 				>
 					{filtered.length === 0 ? (
-						<div className="px-2.5 py-1.5 text-zinc-500">
+						<div className="px-2.5 py-1.5 text-zinc-500 dark:text-zinc-400">
 							No matching players
 						</div>
 					) : (
@@ -180,10 +180,10 @@ export function PlayerCombobox({
 										aria-selected={isSelected}
 										className={`cursor-pointer px-2.5 py-1.5 ${
 											isActive
-												? "bg-sky-50 text-sky-900"
+												? "bg-sky-50 text-sky-900 dark:bg-sky-950/80 dark:text-sky-200"
 												: isSelected
-													? "bg-zinc-50 font-medium text-zinc-900"
-													: "text-zinc-800 hover:bg-zinc-50"
+													? "bg-zinc-50 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+													: "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/70"
 										}`}
 										onMouseEnter={() => setActiveIndex(index)}
 										onMouseDown={(event) => {
@@ -196,7 +196,7 @@ export function PlayerCombobox({
 								);
 							})}
 							{totalMatches > MAX_VISIBLE_OPTIONS ? (
-								<div className="border-zinc-100 border-t px-2.5 py-1.5 text-xs text-zinc-500">
+								<div className="border-zinc-100 border-t px-2.5 py-1.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
 									Showing {MAX_VISIBLE_OPTIONS} of {totalMatches} players - type
 									to filter
 								</div>

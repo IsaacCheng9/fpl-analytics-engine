@@ -93,14 +93,14 @@ function PaginationControls<T>({
 			ref={ref}
 			tabIndex={-1}
 			aria-label={`Table Pagination (${position === "top" ? "Top" : "Bottom"})`}
-			className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-3 py-3 text-sm text-zinc-600 focus:outline-none"
+			className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-3 py-3 text-sm text-zinc-600 focus:outline-none dark:text-zinc-400"
 		>
 			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
 				<div className="flex items-center gap-2">
 					<label htmlFor={id}>Rows Per Page</label>
 					<select
 						id={id}
-						className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-zinc-900 focus-visible:outline-2 focus-visible:outline-zinc-600"
+						className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-zinc-900 focus-visible:outline-2 focus-visible:outline-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus-visible:outline-zinc-400"
 						value={pageSize === ALL_ROWS ? "all" : pageSize}
 						onChange={(event) => {
 							const size =
@@ -145,7 +145,7 @@ function PaginationControls<T>({
 								onClick();
 								onNavigate?.();
 							}}
-							className="flex size-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-zinc-600 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white"
+							className="flex size-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-zinc-600 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:outline-zinc-400 dark:disabled:text-zinc-600 dark:disabled:hover:bg-zinc-900"
 						>
 							<Icon size={16} aria-hidden="true" />
 						</button>
@@ -299,13 +299,13 @@ export function DataTable<T>({
 
 	function stickyHeaderClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-40 bg-zinc-100 md:shadow-[1px_0_0_#e4e4e7]"
+			? "md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-40 bg-zinc-100 dark:bg-zinc-800 md:shadow-[1px_0_0_var(--sticky-shadow)]"
 			: "";
 	}
 
 	function stickyBodyClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "md:sticky md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-20 md:shadow-[1px_0_0_#e4e4e7]"
+			? "md:sticky md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-20 md:shadow-[1px_0_0_var(--sticky-shadow)]"
 			: "";
 	}
 
@@ -315,7 +315,7 @@ export function DataTable<T>({
 	}
 
 	return (
-		<div className="min-w-0 rounded-lg border border-zinc-200 bg-white">
+		<div className="min-w-0 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
 			{paginate ? (
 				<PaginationControls
 					table={table}
@@ -326,12 +326,12 @@ export function DataTable<T>({
 			) : null}
 			<div className="overflow-x-auto rounded-lg">
 				<table className="w-full min-w-max border-collapse border-spacing-0 text-sm">
-					<thead className="sticky top-0 z-30 bg-zinc-100 text-left text-zinc-600">
+					<thead className="sticky top-0 z-30 bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 						{table.getHeaderGroups().map((group) => (
 							<tr key={group.id}>
 								{renderRowActions ? (
 									<th
-										className={`sticky top-0 z-30 w-12 bg-zinc-100 md:left-0 md:z-40 ${cellPadding} text-center align-bottom font-medium md:shadow-[1px_0_0_#e4e4e7]`}
+										className={`sticky top-0 z-30 w-12 bg-zinc-100 md:left-0 md:z-40 dark:bg-zinc-800 ${cellPadding} text-center align-bottom font-medium md:shadow-[1px_0_0_var(--sticky-shadow)]`}
 									>
 										<span className="inline-flex items-center justify-center gap-1">
 											<span aria-hidden="true">{rowActionsHeader}</span>
@@ -367,7 +367,7 @@ export function DataTable<T>({
 															header.getContext(),
 														)}
 													</span>
-													<span className="text-zinc-400">
+													<span className="text-zinc-400 dark:text-zinc-500">
 														{sorted === "asc"
 															? "^"
 															: sorted === "desc"
@@ -387,13 +387,15 @@ export function DataTable<T>({
 						{rows.length === 0 ? (
 							<tr>
 								<td
-									className="px-3 py-8 text-center text-zinc-500"
+									className="px-3 py-8 text-center text-zinc-500 dark:text-zinc-400"
 									colSpan={columns.length + (renderRowActions ? 1 : 0)}
 								>
 									<div className="flex flex-col items-center gap-2">
-										<p className="font-medium text-zinc-700">{emptyTitle}</p>
+										<p className="font-medium text-zinc-700 dark:text-zinc-200">
+											{emptyTitle}
+										</p>
 										{emptyDescription ? (
-											<p className="max-w-md text-sm text-zinc-500">
+											<p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
 												{emptyDescription}
 											</p>
 										) : null}
@@ -405,9 +407,9 @@ export function DataTable<T>({
 							rows.map((row) => (
 								<tr
 									key={row.id}
-									className={`group border-zinc-100 border-t ${rowClassName?.(row.original) ?? ""} hover:bg-zinc-50${
+									className={`group border-zinc-100 border-t dark:border-zinc-800 ${rowClassName?.(row.original) ?? ""} hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${
 										onRowClick
-											? " cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:-outline-offset-2"
+											? "cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:-outline-offset-2 dark:focus-visible:outline-blue-400"
 											: ""
 									}`}
 									tabIndex={onRowClick ? 0 : undefined}
@@ -434,8 +436,8 @@ export function DataTable<T>({
 										<td
 											className={`w-12 md:sticky md:left-0 md:z-30 ${cellPadding} whitespace-nowrap ${
 												rowStickyClassName?.(row.original) ??
-												"bg-white group-hover:bg-zinc-50"
-											} md:shadow-[1px_0_0_#f4f4f5]`}
+												"bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800"
+											} md:shadow-[1px_0_0_var(--sticky-action-shadow)]`}
 										>
 											{renderRowActions(row.original)}
 										</td>
@@ -448,7 +450,7 @@ export function DataTable<T>({
 												className={`${cellPadding} whitespace-nowrap ${meta?.numeric ? "text-right tabular-nums " : ""}${stickyBodyClass(columnIndex)} ${
 													columnIndex < stickyDataColumns
 														? (rowStickyClassName?.(row.original) ??
-															"bg-white group-hover:bg-zinc-50")
+															"bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800")
 														: ""
 												}`}
 												style={{

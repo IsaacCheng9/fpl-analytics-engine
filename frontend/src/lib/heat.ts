@@ -16,7 +16,7 @@ type Rgb = [number, number, number];
 // Green and red match the fixture difficulty colours FPL players already read.
 const FAVOURABLE: Rgb = [34, 197, 94];
 const UNFAVOURABLE: Rgb = [239, 68, 68];
-// Cap the tint so dark cell text stays readable on the strongest fills.
+// Cap translucent alpha so cell text stays readable on both light and dark surfaces.
 const MAX_TINT = 0.45;
 
 // FDR is a fixed 1-5 rating, so shade it on that scale rather than the
@@ -50,10 +50,12 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
 }
 
-function tint([red, green, blue]: Rgb, strength: number): string {
-	const mix = (channel: number) =>
-		Math.round(255 - (255 - channel) * strength * MAX_TINT);
-	return `rgb(${mix(red)}, ${mix(green)}, ${mix(blue)})`;
+function tint([red, green, blue]: Rgb, strength: number): string | undefined {
+	if (strength <= 0) {
+		return undefined;
+	}
+	const alpha = Number((strength * MAX_TINT).toFixed(3));
+	return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 export function heatColour(

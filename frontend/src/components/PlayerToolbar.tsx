@@ -42,7 +42,7 @@ export function PlayerToolbar({
 	return (
 		<>
 			<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<p className="hidden text-sm text-zinc-500 sm:block">
+				<p className="hidden text-sm text-zinc-500 sm:block dark:text-zinc-400">
 					Click a player row to open the detailed stats view.
 				</p>
 				<div className="flex flex-wrap items-center gap-2">
@@ -50,8 +50,8 @@ export function PlayerToolbar({
 						<span
 							className={`rounded-md border px-2.5 py-1.5 font-medium text-xs ${
 								teamImportError
-									? "border-red-200 bg-red-50 text-red-700"
-									: "border-sky-200 bg-sky-50 text-sky-800"
+									? "border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/60 dark:text-red-300"
+									: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200"
 							}`}
 						>
 							{teamImportError
@@ -62,7 +62,7 @@ export function PlayerToolbar({
 						</span>
 					) : null}
 					{fplTeamId !== null ? (
-						<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
+						<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
 							<legend className="sr-only">Imported Team Filter</legend>
 							{(
 								[
@@ -78,8 +78,8 @@ export function PlayerToolbar({
 									disabled={!hasImportedTeam && value !== "all"}
 									className={`rounded px-3 py-1.5 font-medium text-sm ${
 										ownershipFilter === value
-											? "bg-zinc-900 text-white"
-											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+											? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+											: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
 									}`}
 									onClick={() => onSelectOwnershipFilter(value)}
 								>
@@ -90,20 +90,20 @@ export function PlayerToolbar({
 					) : null}
 					<button
 						type="button"
-						className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50"
+						className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
 						onClick={onOpenCompare}
 					>
 						Compare Players
 					</button>
-					<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5">
+					<fieldset className="inline-flex min-w-0 rounded-md border border-zinc-200 bg-white p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
 						<legend className="sr-only">Player View</legend>
 						<button
 							type="button"
 							aria-pressed={isAllPlayersViewActive}
 							className={`rounded px-3 py-1.5 font-medium text-sm ${
 								isAllPlayersViewActive
-									? "bg-zinc-900 text-white"
-									: "text-zinc-600 hover:bg-zinc-50"
+									? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+									: "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
 							}`}
 							onClick={onSelectAllPlayers}
 						>
@@ -115,8 +115,8 @@ export function PlayerToolbar({
 							disabled={!hasImportedTeam}
 							className={`rounded px-3 py-1.5 font-medium text-sm ${
 								isSquadViewActive
-									? "bg-zinc-900 text-white"
-									: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+									? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+									: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
 							}`}
 							onClick={onSelectSquadView}
 						>
@@ -128,8 +128,8 @@ export function PlayerToolbar({
 							disabled={shortlistCount === 0}
 							className={`rounded px-3 py-1.5 font-medium text-sm ${
 								isShortlistViewActive
-									? "bg-zinc-900 text-white"
-									: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+									? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+									: "text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
 							}`}
 							onClick={onSelectShortlistView}
 						>
@@ -140,21 +140,21 @@ export function PlayerToolbar({
 			</div>
 
 			{isShortlistViewActive ? (
-				<div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-					<p className="font-medium text-amber-900 text-sm">
+				<div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800/70 dark:bg-amber-950/50">
+					<p className="font-medium text-amber-900 text-sm dark:text-amber-200">
 						{shortlistSummary}
 					</p>
 					<div className="flex gap-2">
 						<button
 							type="button"
-							className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
+							className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
 							onClick={onExitShortlistView}
 						>
 							Show All
 						</button>
 						<button
 							type="button"
-							className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100"
+							className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 text-xs hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
 							onClick={onClearShortlist}
 						>
 							Clear Shortlist

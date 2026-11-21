@@ -46,10 +46,12 @@ const BANK_MIN = 0;
 const BANK_MAX = 100;
 
 const flagClass: Record<SquadFlag["tone"], string> = {
-	good: "border-emerald-200 bg-emerald-50 text-emerald-800",
-	neutral: "border-zinc-200 bg-zinc-50 text-zinc-700",
-	risk: "border-red-200 bg-red-50 text-red-700",
-	watch: "border-amber-200 bg-amber-50 text-amber-800",
+	good: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/60 dark:text-emerald-300",
+	neutral:
+		"border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300",
+	risk: "border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/60 dark:text-red-300",
+	watch:
+		"border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/60 dark:text-amber-300",
 };
 
 const positionOrder = new Map([
@@ -177,15 +179,15 @@ function formatNextFixture(current: CurrentPlayerContext | undefined): string {
 
 function fixtureClass(fdr: number | null | undefined): string {
 	if (fdr == null) {
-		return "text-zinc-400";
+		return "text-zinc-400 dark:text-zinc-500";
 	}
 	if (fdr >= 4) {
-		return "font-medium text-red-700";
+		return "font-medium text-red-700 dark:text-red-400";
 	}
 	if (fdr >= 3) {
-		return "font-medium text-amber-700";
+		return "font-medium text-amber-700 dark:text-amber-400";
 	}
-	return "font-medium text-emerald-700";
+	return "font-medium text-emerald-700 dark:text-emerald-400";
 }
 
 function squadFlags(
@@ -257,19 +259,19 @@ function SquadSummaryBar({
 	onBankInputBlur: () => void;
 }) {
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+		<div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
 			<div className="flex flex-wrap items-center gap-x-6 gap-y-2">
 				<div>
-					<div className="font-medium text-xs text-zinc-500">
+					<div className="font-medium text-xs text-zinc-500 dark:text-zinc-400">
 						Starting XI Projected xGI
 					</div>
 					<div className="mt-0.5 flex items-baseline gap-1.5">
-						<span className="font-semibold text-base text-zinc-900">
+						<span className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
 							{fmtNum(summary.projectedXgiTotal)}
 						</span>
 						{summary.startingCount > 0 &&
 						summary.projectedXgiCount < summary.startingCount ? (
-							<span className="text-xs text-zinc-500">
+							<span className="text-xs text-zinc-500 dark:text-zinc-400">
 								({summary.projectedXgiCount}/{summary.startingCount} with data)
 							</span>
 						) : null}
@@ -277,23 +279,25 @@ function SquadSummaryBar({
 				</div>
 
 				<div>
-					<div className="font-medium text-xs text-zinc-500">Squad Flags</div>
+					<div className="font-medium text-xs text-zinc-500 dark:text-zinc-400">
+						Squad Flags
+					</div>
 					<div className="mt-0.5 text-sm">
 						<span
 							className={
 								summary.riskPlayers > 0
-									? "font-semibold text-red-700"
-									: "font-medium text-zinc-500"
+									? "font-semibold text-red-700 dark:text-red-400"
+									: "font-medium text-zinc-500 dark:text-zinc-400"
 							}
 						>
 							{summary.riskPlayers} Risk
 						</span>
-						<span className="text-zinc-400">, </span>
+						<span className="text-zinc-400 dark:text-zinc-500">, </span>
 						<span
 							className={
 								summary.watchPlayers > 0
-									? "font-semibold text-amber-700"
-									: "font-medium text-zinc-500"
+									? "font-semibold text-amber-700 dark:text-amber-400"
+									: "font-medium text-zinc-500 dark:text-zinc-400"
 							}
 						>
 							{summary.watchPlayers} Watch
@@ -302,7 +306,7 @@ function SquadSummaryBar({
 				</div>
 
 				<div>
-					<div className="font-medium text-xs text-zinc-500">
+					<div className="font-medium text-xs text-zinc-500 dark:text-zinc-400">
 						Avg Next FDR (XI)
 					</div>
 					<div className="mt-0.5 flex items-baseline gap-1.5">
@@ -313,7 +317,7 @@ function SquadSummaryBar({
 						</span>
 						{summary.startingCount > 0 &&
 						summary.fdrCount < summary.startingCount ? (
-							<span className="text-xs text-zinc-500">
+							<span className="text-xs text-zinc-500 dark:text-zinc-400">
 								({summary.fdrCount}/{summary.startingCount} with data)
 							</span>
 						) : null}
@@ -325,10 +329,12 @@ function SquadSummaryBar({
 				<label
 					htmlFor="squad-bank-itb"
 					title="Money in the bank, added to each player's current market price"
-					className="font-medium text-xs text-zinc-600"
+					className="font-medium text-xs text-zinc-600 dark:text-zinc-300"
 				>
 					Bank ({"\u00a3"}m){" "}
-					<span className="font-normal text-zinc-400">ITB</span>
+					<span className="font-normal text-zinc-400 dark:text-zinc-500">
+						ITB
+					</span>
 				</label>
 				<input
 					id="squad-bank-itb"
@@ -338,7 +344,7 @@ function SquadSummaryBar({
 					min={BANK_MIN}
 					max={BANK_MAX}
 					placeholder="0.0"
-					className={`${fieldClass} w-20 bg-white`}
+					className={`${fieldClass} w-20`}
 					value={bankInput}
 					onChange={(event) => onBankInputChange(event.target.value)}
 					onBlur={onBankInputBlur}
@@ -372,18 +378,18 @@ function SquadSectionBody({
 			<tr
 				className={
 					isBench
-						? "border-zinc-200 border-t-2 bg-zinc-100/80"
-						: "border-zinc-200 border-t bg-zinc-50"
+						? "border-zinc-200 border-t-2 bg-zinc-100/80 dark:border-zinc-700 dark:bg-zinc-800/80"
+						: "border-zinc-200 border-t bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50"
 				}
 			>
 				<th
 					colSpan={TABLE_COLUMN_COUNT}
 					scope="rowgroup"
-					className="px-3 py-1.5 text-left font-semibold text-xs text-zinc-600 uppercase tracking-wide"
+					className="px-3 py-1.5 text-left font-semibold text-xs text-zinc-600 uppercase tracking-wide dark:text-zinc-300"
 				>
 					<span className="inline-flex items-center gap-2">
 						<span>{title}</span>
-						<span className="rounded-full bg-zinc-200/80 px-1.5 py-0.5 font-medium text-[11px] text-zinc-700 normal-case tracking-normal">
+						<span className="rounded-full bg-zinc-200/80 px-1.5 py-0.5 font-medium text-[11px] text-zinc-700 normal-case tracking-normal dark:bg-zinc-700 dark:text-zinc-200">
 							{rows.length}
 						</span>
 					</span>
@@ -402,8 +408,10 @@ function SquadSectionBody({
 					<tr
 						key={row.pick.element}
 						tabIndex={0}
-						className={`cursor-pointer border-zinc-100 border-t hover:bg-sky-50 focus-visible:bg-sky-50 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:-outline-offset-2 ${
-							isBench ? "bg-zinc-50/50" : "bg-white"
+						className={`cursor-pointer border-zinc-100 border-t hover:bg-sky-50 focus-visible:bg-sky-50 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:-outline-offset-2 dark:border-zinc-800 dark:hover:bg-sky-950/50 dark:focus-visible:bg-sky-950/50 ${
+							isBench
+								? "bg-zinc-50/50 dark:bg-zinc-950/40"
+								: "bg-white dark:bg-zinc-900"
 						}`}
 						onClick={() => onPlayerClick(row.pick.element)}
 						onKeyDown={(event) => {
@@ -416,12 +424,12 @@ function SquadSectionBody({
 							}
 						}}
 					>
-						<td className="px-3 py-2 font-medium text-zinc-900">
+						<td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">
 							<span className="inline-flex items-center gap-1.5">
 								{isBench ? (
 									<span
 										title={`Bench order ${benchSlot}`}
-										className="rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-semibold text-[10px] text-zinc-600"
+										className="rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-semibold text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
 									>
 										B{benchSlot}
 									</span>
@@ -439,7 +447,7 @@ function SquadSectionBody({
 								{row.pick.is_captain ? (
 									<span
 										title="Captain"
-										className="rounded bg-zinc-900 px-1.5 py-0.5 font-semibold text-[10px] text-white"
+										className="rounded bg-zinc-900 px-1.5 py-0.5 font-semibold text-[10px] text-white dark:bg-zinc-100 dark:text-zinc-900"
 									>
 										<span aria-hidden="true">C</span>
 										<span className="sr-only">Captain</span>
@@ -447,7 +455,7 @@ function SquadSectionBody({
 								) : row.pick.is_vice_captain ? (
 									<span
 										title="Vice-captain"
-										className="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 font-semibold text-[10px] text-zinc-700"
+										className="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 font-semibold text-[10px] text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
 									>
 										<span aria-hidden="true">VC</span>
 										<span className="sr-only">Vice-captain</span>
@@ -494,7 +502,7 @@ function SquadSectionBody({
 							<button
 								type="button"
 								aria-label={`Find replacement for ${name}`}
-								className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 focus-visible:outline-2 focus-visible:outline-sky-500"
+								className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-200"
 								onClick={(event) => {
 									event.stopPropagation();
 									onFindReplacement(buildReplacementRequest(row, bank));
@@ -528,9 +536,9 @@ function SquadTable({
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-md border border-zinc-200">
+		<div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 			<table className="w-full min-w-max border-collapse text-sm">
-				<thead className="bg-zinc-100 text-left text-zinc-600">
+				<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 					<tr>
 						<th className="px-3 py-2 font-medium">Player</th>
 						<th className="px-3 py-2 font-medium">Pos</th>
@@ -641,39 +649,43 @@ export function SquadInspection({
 	}
 
 	return (
-		<section className="mb-4 space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
+		<section className="mb-4 space-y-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
-					<h2 className="font-semibold text-lg text-zinc-900">
+					<h2 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100">
 						Next-GW Squad Inspection
 					</h2>
-					<p className="mt-1 text-sm text-zinc-500">
+					<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
 						Current squad, scored with the same point-in-time metrics as the
 						main tables.
 					</p>
 				</div>
 				<div className="flex flex-wrap gap-2 text-xs">
-					<span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-zinc-700">
+					<span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300">
 						As Of GW {asOfGw ?? latestGw}
 					</span>
-					<span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-zinc-700">
+					<span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300">
 						Window {window}
 					</span>
-					<span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-800">
+					<span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200">
 						Current Squad {picks.length}
 					</span>
 				</div>
 			</div>
 
 			{loading ? (
-				<p className="text-sm text-zinc-500">Loading squad context...</p>
+				<p className="text-sm text-zinc-500 dark:text-zinc-400">
+					Loading squad context...
+				</p>
 			) : error ? (
 				<div className="flex items-center gap-3">
-					<p className="text-red-600 text-sm">Failed to load squad context.</p>
+					<p className="text-red-600 text-sm dark:text-red-400">
+						Failed to load squad context.
+					</p>
 					{onRetry ? (
 						<button
 							type="button"
-							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
 							onClick={onRetry}
 						>
 							Retry
@@ -681,7 +693,7 @@ export function SquadInspection({
 					) : null}
 				</div>
 			) : allRows.length === 0 ? (
-				<p className="text-sm text-zinc-500">
+				<p className="text-sm text-zinc-500 dark:text-zinc-400">
 					No imported squad players found.
 				</p>
 			) : (
