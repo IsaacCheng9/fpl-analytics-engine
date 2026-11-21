@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { cloneElement, isValidElement, type ReactNode, useState } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { PlayerDetail, PlayerGameweek } from "../api";
@@ -70,9 +70,13 @@ function makeDetail(
 function renderCompare({
 	leftElement = 1,
 	rightElement = 2,
+	onSwap,
+	onOpenPlayer = vi.fn(),
 }: {
 	leftElement?: number | null;
 	rightElement?: number | null;
+	onSwap?: () => void;
+	onOpenPlayer?: (element: number) => void;
 } = {}) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
@@ -99,6 +103,12 @@ function renderCompare({
 				onAsOfGwChange={() => {}}
 				onLeftChange={setLeft}
 				onRightChange={setRight}
+				onSwap={() => {
+					onSwap?.();
+					setLeft(right);
+					setRight(left);
+				}}
+				onOpenPlayer={onOpenPlayer}
 				onClose={() => {}}
 			/>
 		);
@@ -109,6 +119,8 @@ function renderCompare({
 			<Wrapper />
 		</QueryClientProvider>,
 	);
+
+	return { onOpenPlayer };
 }
 
 beforeEach(() => {
@@ -218,4 +230,61 @@ test("shows an empty note when neither player has rolling data and plots only th
 	expect(
 		defconHeading.parentElement?.querySelectorAll("path.recharts-line-curve"),
 	).toHaveLength(0);
+});
+
+test("swaps left and right players", async () => {
+	const onSwap = vi.fn();
+	renderCompare({ onSwap });
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	await within(dialog).findByRole("region", {
+		name: "Rolling Trend Comparison",
+	});
+
+	expect(within(dialog).getByLabelText("First Player")).toHaveValue(
+		"Mbeumo - Man Utd - MID",
+	);
+	expect(within(dialog).getByLabelText("Second Player")).toHaveValue(
+		"Saka - Arsenal - MID",
+	);
+
+	const swapButton = within(dialog).getByRole("button", { name: "Swap" });
+	expect(swapButton).toBeEnabled();
+	fireEvent.click(swapButton);
+
+	expect(onSwap).toHaveBeenCalledTimes(1);
+	expect(within(dialog).getByLabelText("First Player")).toHaveValue(
+		"Saka - Arsenal - MID",
+	);
+	expect(within(dialog).getByLabelText("Second Player")).toHaveValue(
+		"Mbeumo - Man Utd - MID",
+	);
+
+	const headers = within(dialog).getAllByRole("columnheader");
+	expect(headers[1]).toHaveTextContent("Saka");
+	expect(headers[2]).toHaveTextContent("Mbeumo");
+});
+
+test("disables Swap when only one player is selected", () => {
+	renderCompare({ leftElement: 1, rightElement: null });
+	expect(screen.getByRole("button", { name: "Swap" })).toBeDisabled();
+});
+
+test("opens player detail when clicking either player column header", async () => {
+	const onOpenPlayer = vi.fn();
+	renderCompare({ onOpenPlayer });
+
+	const dialog = await screen.findByRole("dialog", { name: "Compare Players" });
+	const leftButton = await within(dialog).findByRole("button", {
+		name: "Mbeumo",
+	});
+	const rightButton = within(dialog).getByRole("button", { name: "Saka" });
+	expect(leftButton).toHaveAttribute("title", "Open player detail");
+	expect(rightButton).toHaveAttribute("title", "Open player detail");
+
+	fireEvent.click(leftButton);
+	fireEvent.click(rightButton);
+
+	expect(onOpenPlayer).toHaveBeenNthCalledWith(1, 1);
+	expect(onOpenPlayer).toHaveBeenNthCalledWith(2, 2);
 });

@@ -1782,6 +1782,44 @@ test("compares two shortlisted players in a side-by-side panel", async () => {
 	});
 });
 
+test("swaps compared players and opens player detail from a compare column header", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?compare=1&compare_a=1&compare_b=2&compare_window=2&compare_as_of_gw=2",
+	);
+
+	render(withProviders(<App />));
+
+	const compareDialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	await within(compareDialog).findByRole("button", { name: "Mbeumo" });
+
+	fireEvent.click(within(compareDialog).getByRole("button", { name: "Swap" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("compare_a")).toBe("2");
+		expect(params.get("compare_b")).toBe("1");
+	});
+	const headers = within(compareDialog).getAllByRole("columnheader");
+	expect(headers[1]).toHaveTextContent("Saka");
+	expect(headers[2]).toHaveTextContent("Mbeumo");
+
+	fireEvent.click(within(compareDialog).getByRole("button", { name: "Saka" }));
+
+	await waitFor(() => {
+		expect(
+			screen.queryByRole("dialog", { name: "Compare Players" }),
+		).not.toBeInTheDocument();
+	});
+	const playerDialog = await screen.findByRole("dialog", { name: "Saka" });
+	expect(playerDialog).toBeInTheDocument();
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("compare")).toBeNull();
+	expect(params.get("player")).toBe("2");
+});
+
 test("hides stale comparison rows while a new as-of context is loading", async () => {
 	render(withProviders(<App />));
 	await waitFor(() => {
