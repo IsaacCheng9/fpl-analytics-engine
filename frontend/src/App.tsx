@@ -274,9 +274,9 @@ export default function App() {
 		setCompareRightElement,
 	]);
 
-	function updateTransferFilter(
-		filter: keyof TransferFilters,
-		value: number | null,
+	function updateTransferFilter<K extends keyof TransferFilters>(
+		filter: K,
+		value: TransferFilters[K],
 	) {
 		setTransferFilters((current) => ({ ...current, [filter]: value }));
 	}

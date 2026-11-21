@@ -3064,3 +3064,127 @@ test("renders the theme toggle while showing season status", async () => {
 	expect(document.documentElement).toHaveClass("dark");
 	expect(window.localStorage.getItem("fpl-theme")).toBe("dark");
 });
+
+test("filters by live availability and primary penalty takers with URL and chip sync", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/form")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify([
+						{
+							...broadFormRows[0],
+							status: "a",
+							chance_of_playing_next_round: null,
+							news: null,
+							yellow_cards: 4,
+							penalties_order: 1,
+							corners_order: 1,
+							direct_freekicks_order: null,
+						},
+						{
+							...broadFormRows[1],
+							status: "i",
+							chance_of_playing_next_round: 0,
+							news: "Hamstring injury",
+							yellow_cards: 0,
+							penalties_order: 1,
+							corners_order: 2,
+							direct_freekicks_order: 2,
+						},
+						{
+							...broadFormRows[2],
+							status: "d",
+							chance_of_playing_next_round: 75,
+							news: "Knock",
+							yellow_cards: 1,
+							penalties_order: 2,
+							corners_order: null,
+							direct_freekicks_order: null,
+						},
+					]),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Saka"),
+		).toBeInTheDocument();
+	});
+
+	const table = within(screen.getByRole("table"));
+	expect(table.getByText("Inj")).toBeInTheDocument();
+	expect(table.getByText("75%")).toBeInTheDocument();
+	expect(table.getByText("4 YC")).toBeInTheDocument();
+
+	openMoreFilters();
+	fireEvent.click(screen.getByLabelText("Exclude Unavailable"));
+	await waitFor(() => {
+		expect(table.queryByText("Saka")).not.toBeInTheDocument();
+	});
+	expect(table.getByText("Mbeumo")).toBeInTheDocument();
+	expect(table.getByText("Haaland")).toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: "Fewer Filters (1)" }),
+	).toBeInTheDocument();
+	expect(
+		new URLSearchParams(window.location.search).get("exclude_unavailable"),
+	).toBe("1");
+
+	fireEvent.click(screen.getByLabelText("Penalties Only"));
+	await waitFor(() => {
+		expect(table.queryByText("Haaland")).not.toBeInTheDocument();
+	});
+	expect(table.getByText("Mbeumo")).toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: "Fewer Filters (2)" }),
+	).toBeInTheDocument();
+	expect(
+		new URLSearchParams(window.location.search).get("penalties_only"),
+	).toBe("1");
+
+	fireEvent.click(
+		screen.getByRole("button", { name: /Clear Exclude Unavailable/ }),
+	);
+	await waitFor(() => {
+		expect(table.getByText("Saka")).toBeInTheDocument();
+	});
+	expect(table.queryByText("Haaland")).not.toBeInTheDocument();
+	expect(
+		new URLSearchParams(window.location.search).get("exclude_unavailable"),
+	).toBeNull();
+
+	fireEvent.click(
+		screen.getByRole("button", { name: "Reset Transfer Filters" }),
+	);
+	await waitFor(() => {
+		expect(table.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(
+		new URLSearchParams(window.location.search).get("penalties_only"),
+	).toBeNull();
+
+	// Also verify Clear Active Filters resets both live-snapshot toggles.
+	fireEvent.click(screen.getByLabelText("Exclude Unavailable"));
+	fireEvent.click(screen.getByLabelText("Penalties Only"));
+	await waitFor(() => {
+		expect(table.queryByText("Saka")).not.toBeInTheDocument();
+		expect(table.queryByText("Haaland")).not.toBeInTheDocument();
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Clear Active Filters" }));
+	await waitFor(() => {
+		expect(table.getByText("Saka")).toBeInTheDocument();
+		expect(table.getByText("Haaland")).toBeInTheDocument();
+	});
+	expect(
+		new URLSearchParams(window.location.search).get("exclude_unavailable"),
+	).toBeNull();
+	expect(
+		new URLSearchParams(window.location.search).get("penalties_only"),
+	).toBeNull();
+});

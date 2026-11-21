@@ -1,8 +1,13 @@
-import { parseOptionalInputNumber, type TransferFilters } from "../state";
+import {
+	type NumericTransferFilterKey,
+	parseOptionalInputNumber,
+	type TransferFilters,
+} from "../state";
 import { labelClass, transferInputClass } from "../styles";
+import { InfoTooltip } from "./InfoTooltip";
 
 type OptionalField = {
-	key: keyof TransferFilters;
+	key: NumericTransferFilterKey;
 	label: string;
 	min: number;
 	max?: number;
@@ -34,7 +39,10 @@ export function TransferFilterFields({
 	minMinutes: number;
 	showMinMinutes: boolean;
 	hasActiveFilters: boolean;
-	onFilterChange: (filter: keyof TransferFilters, value: number | null) => void;
+	onFilterChange: <K extends keyof TransferFilters>(
+		filter: K,
+		value: TransferFilters[K],
+	) => void;
 	onMinMinutesChange: (value: number) => void;
 	onReset: () => void;
 }) {
@@ -91,6 +99,36 @@ export function TransferFilterFields({
 					</label>
 				) : null}
 				{TRAILING_FIELDS.map(optionalField)}
+			</div>
+			<div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+				<span className="inline-flex items-center gap-1">
+					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700">
+						<input
+							type="checkbox"
+							className="accent-blue-600"
+							checked={filters.excludeUnavailable}
+							onChange={(e) =>
+								onFilterChange("excludeUnavailable", e.target.checked)
+							}
+						/>
+						Exclude Unavailable
+					</label>
+					<InfoTooltip text="Hides injured, suspended, and unavailable players (keeps doubtful players). Uses the present-day live availability snapshot, not point-in-time." />
+				</span>
+				<span className="inline-flex items-center gap-1">
+					<label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-xs text-zinc-700">
+						<input
+							type="checkbox"
+							className="accent-blue-600"
+							checked={filters.penaltiesOnly}
+							onChange={(e) =>
+								onFilterChange("penaltiesOnly", e.target.checked)
+							}
+						/>
+						Penalties Only
+					</label>
+					<InfoTooltip text="Shows only primary penalty takers from the present-day live snapshot, not point-in-time." />
+				</span>
 			</div>
 		</fieldset>
 	);

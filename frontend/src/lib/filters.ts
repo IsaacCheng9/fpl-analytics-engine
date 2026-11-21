@@ -11,6 +11,7 @@ import {
 	transferFiltersMatchDefault,
 	visibleAttackingThreatFiltersMatchDefault,
 } from "../state";
+import { isUnavailableStatus } from "./playerStatus";
 
 // Apply the client-side player, team and position filters so the chart and
 // table stay in sync from a single league-wide source.
@@ -66,7 +67,9 @@ export function filterTransferCandidates<T extends TransferFilterRow>(
 			) &&
 			passesMin(row.window_mins_per_appearance, filters.minMinsPerAppearance) &&
 			passesMin(row.current_ownership, filters.minOwnership) &&
-			passesMax(row.current_ownership, filters.maxOwnership),
+			passesMax(row.current_ownership, filters.maxOwnership) &&
+			(!filters.excludeUnavailable || !isUnavailableStatus(row.status)) &&
+			(!filters.penaltiesOnly || row.penalties_order === 1),
 	);
 }
 
