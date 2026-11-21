@@ -563,6 +563,43 @@ def test_defcon_hit_rate_by_position() -> None:
     assert keeper["window_defcon_hit_rate"] is None
 
 
+def test_window_defcon_metrics_exclude_zero_minute_rows() -> None:
+    rows = [
+        {
+            **_game(1, 1, minutes=90, defcon_hit=True, position="DEF"),
+            "defensive_contribution": 12,
+        },
+        {
+            **_game(1, 2, minutes=0, defcon_hit=False, position="DEF"),
+            "defensive_contribution": 0,
+        },
+        {
+            **_game(1, 3, minutes=90, defcon_hit=True, position="DEF"),
+            "defensive_contribution": 10,
+        },
+        {
+            **_game(1, 4, minutes=0, defcon_hit=False, position="DEF"),
+            "defensive_contribution": 0,
+        },
+        {
+            **_game(2, 1, minutes=0, defcon_hit=False, position="DEF"),
+            "defensive_contribution": 0,
+        },
+    ]
+    table = form.compute_form_table(_frame(rows), as_of_gw=4, window=4)
+
+    played = table.filter(pl.col("element") == 1).to_dicts()[0]
+    unused = table.filter(pl.col("element") == 2).to_dicts()[0]
+    assert played["window_games"] == 4
+    assert played["window_defcon_games"] == 2
+    assert played["window_defcon_hits"] == 2
+    assert played["window_defcon_hit_rate"] == pytest.approx(1.0)
+    assert played["window_defcon"] == pytest.approx(11.0)
+    assert unused["window_defcon_games"] == 0
+    assert unused["window_defcon_hit_rate"] is None
+    assert unused["window_defcon"] is None
+
+
 def test_backtest_flags_replays_each_gameweek() -> None:
     # A monotonically improving player is flagged from the window onward.
     history = _frame([_game(1, r, xgi=0.1 * r) for r in (1, 2, 3, 4)])

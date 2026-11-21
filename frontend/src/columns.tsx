@@ -374,7 +374,10 @@ export function buildDefconColumns(
 				format: fmtPct,
 			}),
 			meta: heatMeta<DefconPlayer>(
-				{ tooltip: "Share of window games clearing the DefCon threshold" },
+				{
+					tooltip:
+						"Share of window appearances clearing the DefCon threshold (0-minute games excluded)",
+				},
 				ranges.window_defcon_hit_rate,
 			),
 		},
@@ -387,7 +390,7 @@ export function buildDefconColumns(
 			meta: heatMeta<DefconPlayer>(
 				{
 					tooltip:
-						"Average defensive-contribution count per game over the window",
+						"Average defensive-contribution count per appearance over the window (0-minute games excluded)",
 				},
 				ranges.window_defcon,
 			),
@@ -399,7 +402,7 @@ export function buildDefconColumns(
 				format: (v) => fmtNum(v, 0),
 			}),
 			meta: {
-				tooltip: "Window games clearing the DefCon threshold",
+				tooltip: "Window appearances clearing the DefCon threshold",
 				numeric: true,
 			},
 		},
@@ -497,7 +500,7 @@ export function buildDefconProbColumns(
 			meta: heatMeta<DefconProbabilityPlayer>(
 				{
 					tooltip:
-						"Average defensive-contribution count per game over the recent window",
+						"Average defensive-contribution count per appearance over the recent window (0-minute games excluded)",
 				},
 				ranges.window_defcon,
 			),

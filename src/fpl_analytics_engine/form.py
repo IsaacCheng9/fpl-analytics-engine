@@ -215,6 +215,7 @@ def compute_form_table(
             }
         )
 
+    appeared = pl.col("minutes") > 0
     window_agg = recent.group_by("element").agg(
         pl.len().alias("window_games"),
         pl.col("minutes").sum().alias("window_minutes"),
@@ -223,12 +224,14 @@ def compute_form_table(
         pl.col("starts").sum().alias("window_starts"),
         # Appearances exclude 0-minute games, so a cameo counts but an unused
         # substitute does not.
-        (pl.col("minutes") > 0).sum().alias("window_appearances"),
-        pl.col("defcon_hit").sum().alias("window_defcon_hits"),
-        pl.col("defcon_hit").count().alias("window_defcon_games"),
-        # Mean defensive-contribution count per window game - how close the
-        # player runs to the threshold, regardless of whether they clear it.
-        pl.col("defensive_contribution").mean().alias("window_defcon"),
+        appeared.sum().alias("window_appearances"),
+        # Scope DefCon hits, eligible appearances and mean count to matches
+        # the player actually entered so 0-minute rows do not dilute rates.
+        pl.col("defcon_hit").filter(appeared).sum().alias("window_defcon_hits"),
+        pl.col("defcon_hit").filter(appeared).count().alias("window_defcon_games"),
+        # Mean defensive-contribution count per window appearance - how close
+        # the player runs to the threshold, regardless of whether they clear it.
+        pl.col("defensive_contribution").filter(appeared).mean().alias("window_defcon"),
     )
     season_agg = point_in_time.group_by("element").agg(
         pl.col("minutes").sum().alias("season_minutes"),
@@ -238,7 +241,7 @@ def compute_form_table(
     )
     # Static metadata plus point-in-time price (the value at the latest game).
     meta = (
-        point_in_time.sort("kickoff_time")
+        point_in_time.sort("round", "kickoff_time")
         .group_by("element")
         .agg(
             pl.col("web_name").last(),

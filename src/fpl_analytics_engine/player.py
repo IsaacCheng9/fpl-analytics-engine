@@ -62,6 +62,12 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             .then(pl.col("minutes"))
             .otherwise(0)
             .alias("_expected_minutes"),
+            # Exclude 0-minute rows from rolling DefCon averages while keeping
+            # the raw per-gameweek defensive_contribution column intact.
+            pl.when(pl.col("minutes") > 0)
+            .then(pl.col("defensive_contribution").cast(pl.Float64))
+            .otherwise(None)
+            .alias("_appeared_defcon"),
         )
         .with_columns(
             pl.col("expected_goals")
@@ -76,11 +82,10 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
             pl.col("_expected_minutes")
             .rolling_sum_by("round", window_size=f"{window}i", min_samples=1)
             .alias("_rolling_expected_min"),
-            # Mean defensive-contribution count per game - a continuous trend
-            # that stays informative below the points threshold, unlike a
+            # Mean defensive-contribution count per appearance - a continuous
+            # trend that stays informative below the points threshold, unlike a
             # hit-rate that is flat at 0 for most attacking players.
-            pl.col("defensive_contribution")
-            .cast(pl.Float64)
+            pl.col("_appeared_defcon")
             .rolling_mean_by("round", window_size=f"{window}i", min_samples=1)
             .alias("rolling_defcon"),
         )
@@ -100,6 +105,7 @@ def player_gameweeks(season_history: pl.DataFrame, window: int) -> pl.DataFrame:
         )
         .drop(
             "_expected_minutes",
+            "_appeared_defcon",
             "_rolling_xg",
             "_rolling_xa",
             "_rolling_xgi",
@@ -149,8 +155,14 @@ def season_summaries(player_history: pl.DataFrame) -> pl.DataFrame:
             .sum()
             .alias("_xgi"),
             (pl.col("value").sort_by("round").last() / 10).alias("_price"),
-            pl.col("defcon_hit").sum().alias("_defcon_hits"),
-            pl.col("defcon_hit").drop_nulls().len().alias("_defcon_games"),
+            pl.col("defcon_hit")
+            .filter(pl.col("minutes") > 0)
+            .sum()
+            .alias("_defcon_hits"),
+            pl.col("defcon_hit")
+            .filter(pl.col("minutes") > 0)
+            .count()
+            .alias("_defcon_games"),
         )
         .with_columns(
             pl.when(pl.col("_expected_minutes") > 0)
