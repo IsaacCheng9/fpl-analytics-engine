@@ -423,3 +423,29 @@ def test_double_gameweek_calibration_is_per_appearance_and_point_in_time() -> No
         changed_future, as_of_gw=2, calibration_bins=1, calibration_prior_strength=2
     )
     assert_frame_equal(current, changed_current)
+
+
+def test_calibrated_count_probabilities_skip_unused_binary_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = _frame(
+        [
+            _count_game(e, r, count=8 + 4 * ((e + r) % 2))
+            for e in (1, 2)
+            for r in (1, 2, 3, 4)
+        ]
+    )
+    binary_calls: list[int] = []
+    original_binary = defcon.defcon_probabilities
+
+    def record_binary(frame, as_of_gw, *args, **kwargs):
+        binary_calls.append(as_of_gw)
+        return original_binary(frame, as_of_gw, *args, **kwargs)
+
+    monkeypatch.setattr(defcon, "defcon_probabilities", record_binary)
+
+    result = defcon.calibrated_defcon_count_probabilities(history, as_of_gw=4)
+
+    assert not result.is_empty()
+    # Only the target gameweek needs binary_prob; historical calibration rows do not.
+    assert binary_calls == [4]
