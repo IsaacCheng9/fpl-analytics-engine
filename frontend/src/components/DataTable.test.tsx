@@ -247,3 +247,35 @@ test("opens clickable rows from the keyboard without hijacking row buttons", () 
 	});
 	expect(onRowClick).toHaveBeenCalledTimes(2);
 });
+
+test("restricts horizontal sticky columns to medium and wider viewports", () => {
+	render(
+		<DataTable
+			data={players.slice(0, 1)}
+			columns={columns}
+			stickyDataColumns={1}
+			renderRowActions={() => <button type="button">Shortlist</button>}
+		/>,
+	);
+
+	const headerCells = screen.getAllByRole("columnheader");
+	const [actionHeader, playerHeader, pointsHeader] = headerCells;
+	expect(actionHeader).toHaveClass("md:left-0", "md:z-40");
+	expect(actionHeader).not.toHaveClass("left-0");
+	expect(playerHeader).toHaveClass("md:left-(--sticky-left)", "md:z-40");
+	expect(playerHeader.style.getPropertyValue("--sticky-left")).toBe("48px");
+	expect(playerHeader.style.getPropertyValue("--sticky-width")).toBe("144px");
+	expect(playerHeader.style.left).toBe("");
+	expect(pointsHeader).not.toHaveClass("md:left-(--sticky-left)");
+
+	const [actionCell, playerCell, pointsCell] = within(
+		bodyRows()[0],
+	).getAllByRole("cell");
+	expect(actionCell).toHaveClass("md:sticky", "md:left-0");
+	expect(actionCell).not.toHaveClass("sticky");
+	expect(playerCell).toHaveClass("md:sticky", "md:left-(--sticky-left)");
+	expect(playerCell).not.toHaveClass("sticky");
+	expect(playerCell.style.getPropertyValue("--sticky-left")).toBe("48px");
+	expect(playerCell.style.left).toBe("");
+	expect(pointsCell).not.toHaveClass("md:sticky");
+});
