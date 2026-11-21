@@ -64,6 +64,7 @@ function makePlayer(overrides: Partial<FormPlayer> = {}): FormPlayer {
 		next_opponent_name: "Fulham",
 		next_was_home: true,
 		next_fdr: 2,
+		next_fixtures: [],
 		current_ownership: 35.4,
 		as_of_gw: 9,
 		...overrides,
