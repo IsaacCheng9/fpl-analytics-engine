@@ -32,7 +32,7 @@ def test_get_fpl_data_returns_decoded_json(
         assert timeout == app.REQUEST_TIMEOUT_SECONDS
         return fake_response
 
-    monkeypatch.setattr(app.requests, "get", fake_get)
+    monkeypatch.setattr(app.SESSION, "get", fake_get)
 
     result = app.get_fpl_data()
 
@@ -51,7 +51,7 @@ def test_get_player_history_returns_history_list(
         assert "element-summary/100/" in url
         return _FakeResponse(payload)
 
-    monkeypatch.setattr(app.requests, "get", fake_get)
+    monkeypatch.setattr(app.SESSION, "get", fake_get)
 
     assert app.get_player_history(100) == history
 
@@ -65,7 +65,7 @@ def test_get_fixtures_returns_fixture_list(
         assert url == app.FIXTURES_ENDPOINT
         return _FakeResponse(payload)
 
-    monkeypatch.setattr(app.requests, "get", fake_get)
+    monkeypatch.setattr(app.SESSION, "get", fake_get)
 
     assert app.get_fixtures() == payload
 
@@ -80,7 +80,7 @@ def test_get_entry_event_picks_returns_public_entry_picks(
         assert "entry/123/event/4/picks/" in url
         return _FakeResponse(payload)
 
-    monkeypatch.setattr(app.requests, "get", fake_get)
+    monkeypatch.setattr(app.SESSION, "get", fake_get)
 
     assert app.get_entry_event_picks(123, 4) == payload
 
@@ -97,11 +97,56 @@ def test_get_json_retries_on_transient_failure(
             raise requests.ConnectionError("transient")
         return _FakeResponse(payload)
 
-    monkeypatch.setattr(app.requests, "get", flaky_get)
+    monkeypatch.setattr(app.SESSION, "get", flaky_get)
     # Avoid real backoff sleeps during the test.
     monkeypatch.setattr(app.time, "sleep", lambda _seconds: None)
 
     result = app._get_json("https://example.test/")
 
     assert result == payload
+    assert calls["count"] == 2
+
+
+@pytest.mark.parametrize("status_code", [400, 403, 404])
+def test_get_json_does_not_retry_client_http_errors(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    calls = {"count": 0}
+    sleeps: list[float] = []
+
+    def failing_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        calls["count"] += 1
+        response = requests.Response()
+        response.status_code = status_code
+        raise requests.HTTPError(f"{status_code} error", response=response)
+
+    monkeypatch.setattr(app.SESSION, "get", failing_get)
+    monkeypatch.setattr(app.time, "sleep", sleeps.append)
+
+    with pytest.raises(requests.HTTPError):
+        app._get_json("https://example.test/")
+
+    assert calls["count"] == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("status_code", [429, 500, 503])
+def test_get_json_retries_rate_limit_and_server_http_errors(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    payload = {"ok": True}
+    calls = {"count": 0}
+
+    def flaky_get(url: str, headers: dict, timeout: int) -> _FakeResponse:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            response = requests.Response()
+            response.status_code = status_code
+            raise requests.HTTPError(f"{status_code} error", response=response)
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(app.SESSION, "get", flaky_get)
+    monkeypatch.setattr(app.time, "sleep", lambda _seconds: None)
+
+    assert app._get_json("https://example.test/") == payload
     assert calls["count"] == 2

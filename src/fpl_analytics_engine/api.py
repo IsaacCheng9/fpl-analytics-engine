@@ -8,6 +8,7 @@ from typing import Annotated, cast
 import polars as pl
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Path as ApiPath
 
 from fpl_analytics_engine import app as fpl_client
 from fpl_analytics_engine import club, data, defcon, fixtures, form, player
@@ -544,7 +545,7 @@ def root(
 
 @app.get("/fpl-team/{entry_id}")
 def fpl_team(
-    entry_id: int,
+    entry_id: Annotated[int, ApiPath(ge=1)],
     history: Annotated[pl.DataFrame, Depends(get_history)],
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
     teams: Annotated[pl.DataFrame, Depends(get_teams)],
@@ -932,7 +933,7 @@ def clubs_form_validation(
 
 @app.get("/players/{element}")
 def player_detail(
-    element: int,
+    element: Annotated[int, ApiPath(ge=1)],
     all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
     history: Annotated[pl.DataFrame, Depends(get_history)],
     current_season: Annotated[str, Depends(get_current_season)],
