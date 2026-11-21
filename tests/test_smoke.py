@@ -92,15 +92,31 @@ def _write_valid_smoke_root(data_root: Path) -> None:
         [
             _row(
                 "2025-26",
+                round_=1,
                 defcon_hit=True,
                 defcon_threshold=12,
                 defensive_contribution=13,
-            )
+            ),
+            _row(
+                "2025-26",
+                round_=2,
+                defcon_hit=False,
+                defcon_threshold=12,
+                defensive_contribution=8,
+            ),
         ],
     )
 
 
-def test_smoke_failures_passes_on_valid_snapshot_root(tmp_path: Path) -> None:
+def test_approx_equal_handles_none_and_tolerance_boundaries() -> None:
+    assert not smoke._approx_equal(None, 0.6)
+    assert smoke._approx_equal(0.6, 0.6 + 5e-10)
+    assert not smoke._approx_equal(0.6, 0.6 + 1e-6)
+
+
+def test_smoke_failures_passes_on_valid_multi_row_snapshot_root(
+    tmp_path: Path,
+) -> None:
     _write_valid_smoke_root(tmp_path)
 
     assert smoke.smoke_failures(tmp_path, "Saka") == []
@@ -125,8 +141,18 @@ def test_smoke_failures_reports_missing_player_in_current_season(
     ]
 
 
-def test_smoke_failures_reports_ambiguous_current_season_code(
+@pytest.mark.parametrize(
+    "codes",
+    [
+        [500, 501],
+        [None, None],
+        [500, None],
+    ],
+)
+def test_smoke_failures_reports_unstable_or_null_current_season_code(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    codes: list[int | None],
 ) -> None:
     _write_valid_smoke_root(tmp_path)
     _write_enriched(
@@ -135,34 +161,49 @@ def test_smoke_failures_reports_ambiguous_current_season_code(
         [
             _row(
                 "2025-26",
-                element=7,
-                code=500,
+                round_=index + 1,
+                element=7 + index,
+                code=code,
                 defcon_hit=True,
                 defcon_threshold=12,
                 defensive_contribution=13,
-            ),
-            _row(
-                "2025-26",
-                element=8,
-                code=501,
-                defcon_hit=False,
-                defcon_threshold=12,
-                defensive_contribution=8,
-            ),
+            )
+            for index, code in enumerate(codes)
         ],
     )
+    # Bypass data_health so smoke's own code-stability guard is exercised even
+    # when current-season rows contain null codes.
+    monkeypatch.setattr(data_health, "validate_data_root", lambda _: [])
 
     assert smoke.smoke_failures(tmp_path, "Saka") == [
         "Saka does not map to one stable current-season code."
     ]
 
 
-def test_smoke_failures_reports_missing_player_seasons(tmp_path: Path) -> None:
+def test_smoke_failures_reports_missing_player_seasons_sorted(
+    tmp_path: Path,
+) -> None:
     _write_valid_smoke_root(tmp_path)
-    _write_enriched(tmp_path, "2023-24", [_row("2023-24", code=999, web_name="Other")])
+    _write_enriched(
+        tmp_path,
+        "2022-23",
+        [
+            _row(
+                "2022-23",
+                round_=1,
+                code=999,
+                web_name="Other",
+                expected_goals=None,
+                expected_assists=None,
+                expected_goal_involvements=None,
+            ),
+            _row("2022-23", round_=16, code=999, web_name="Other"),
+        ],
+    )
+    _write_enriched(tmp_path, "2024-25", [_row("2024-25", code=999, web_name="Other")])
 
     assert smoke.smoke_failures(tmp_path, "Saka") == [
-        "Saka is missing seasons: 2023-24."
+        "Saka is missing seasons: 2022-23, 2024-25."
     ]
 
 
@@ -213,8 +254,18 @@ def test_smoke_failures_reports_zero_expected_stat_minutes_in_2022_23(
     ]
 
 
+@pytest.mark.parametrize(
+    ("bad_xgi90", "expected_text"),
+    [
+        (9.99, "2022-23 xGI/90 is not scoped to GW16+ (expected 0.6000, got 9.99)."),
+        (None, "2022-23 xGI/90 is not scoped to GW16+ (expected 0.6000, got None)."),
+    ],
+)
 def test_smoke_failures_reports_misaligned_2022_23_xgi90(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bad_xgi90: float | None,
+    expected_text: str,
 ) -> None:
     _write_valid_smoke_root(tmp_path)
     original = player.season_summaries
@@ -222,19 +273,17 @@ def test_smoke_failures_reports_misaligned_2022_23_xgi90(
     def skew_partial_season(history: pl.DataFrame) -> pl.DataFrame:
         return original(history).with_columns(
             pl.when(pl.col("season") == data_health.PARTIAL_EXPECTED_STAT_SEASON)
-            .then(9.99)
+            .then(pl.lit(bad_xgi90, dtype=pl.Float64))
             .otherwise(pl.col("xgi90"))
             .alias("xgi90")
         )
 
     monkeypatch.setattr(player, "season_summaries", skew_partial_season)
 
-    failures = smoke.smoke_failures(tmp_path, "Saka")
-    assert len(failures) == 1
-    assert failures[0].startswith("2022-23 xGI/90 is not scoped to GW16+")
+    assert smoke.smoke_failures(tmp_path, "Saka") == [expected_text]
 
 
-def test_smoke_failures_reports_non_null_pre_gw16_expected_and_rolling_stats(
+def test_smoke_failures_reports_non_null_pre_gw16_expected_stats(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_valid_smoke_root(tmp_path)
@@ -249,9 +298,17 @@ def test_smoke_failures_reports_non_null_pre_gw16_expected_and_rolling_stats(
         )
 
     monkeypatch.setattr(player, "player_gameweeks", leak_raw_xgi)
+
     assert smoke.smoke_failures(tmp_path, "Saka") == [
         "2022-23 pre-GW16 expected stats are not null in player detail."
     ]
+
+
+def test_smoke_failures_reports_non_null_pre_gw16_rolling_xgi90(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_valid_smoke_root(tmp_path)
+    original = player.player_gameweeks
 
     def leak_rolling_xgi(frame: pl.DataFrame, *, window: int) -> pl.DataFrame:
         return original(frame, window=window).with_columns(
@@ -262,6 +319,7 @@ def test_smoke_failures_reports_non_null_pre_gw16_expected_and_rolling_stats(
         )
 
     monkeypatch.setattr(player, "player_gameweeks", leak_rolling_xgi)
+
     assert smoke.smoke_failures(tmp_path, "Saka") == [
         "2022-23 pre-GW16 rolling xGI/90 is not null in player detail."
     ]
@@ -279,3 +337,23 @@ def test_main_prints_ok_and_fail_statuses(
     exit_fail = smoke.main(["--data-root", str(tmp_path), "--player", "Missing"])
     assert exit_fail == 1
     assert capsys.readouterr().out.strip() == "[FAIL] Missing was not found in 2025-26."
+
+
+def test_main_uses_default_arguments_and_prints_multiple_failures(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[tuple[Path, str]] = []
+
+    def fake_smoke_failures(data_root: Path, player_name: str) -> list[str]:
+        seen.append((data_root, player_name))
+        return ["First failure.", "Second failure."]
+
+    monkeypatch.setattr(smoke, "smoke_failures", fake_smoke_failures)
+
+    exit_code = smoke.main([])
+    assert exit_code == 1
+    assert seen == [(Path("data"), "Saka")]
+    assert capsys.readouterr().out.splitlines() == [
+        "[FAIL] First failure.",
+        "[FAIL] Second failure.",
+    ]

@@ -12,9 +12,11 @@ import polars as pl
 from fpl_analytics_engine import data, data_health, player
 
 
-def _single_code(current: pl.DataFrame, player_name: str) -> int | None:
-    """Return the unique current-season code for ``player_name`` if available."""
-    codes = current["code"].drop_nulls().unique().to_list()
+def _single_code(current: pl.DataFrame) -> int | None:
+    """Return the single non-null current-season code if every row agrees."""
+    if current["code"].null_count() > 0:
+        return None
+    codes = current["code"].unique().to_list()
     if len(codes) != 1:
         return None
     return int(codes[0])
@@ -51,14 +53,15 @@ def smoke_failures(data_root: Path, player_name: str) -> list[str]:
     if current.is_empty():
         return [f"{player_name} was not found in {current_season}."]
 
-    code = _single_code(current, player_name)
+    code = _single_code(current)
     if code is None:
         return [f"{player_name} does not map to one stable current-season code."]
 
+    expected_seasons = set(data_health.expected_seasons(data_root))
     history = all_seasons.filter(pl.col("code") == code)
     seasons = set(history["season"].unique().to_list())
     missing = sorted(
-        set(data_health.expected_seasons(data_root)) - seasons,
+        expected_seasons - seasons,
         key=data.season_sort_key,
     )
     if missing:
@@ -66,36 +69,41 @@ def smoke_failures(data_root: Path, player_name: str) -> list[str]:
 
     summaries = player.season_summaries(history)
     by_season = {row["season"]: row for row in summaries.to_dicts()}
-    if set(by_season) != set(data_health.expected_seasons(data_root)):
+    if set(by_season) != expected_seasons:
         return [f"{player_name} season summaries do not cover every expected season."]
 
-    season_2022 = history.filter(
-        pl.col("season") == data_health.PARTIAL_EXPECTED_STAT_SEASON
-    )
-    expected_rows = season_2022.filter(
-        pl.col("round") >= data_health.PARTIAL_EXPECTED_STAT_START_GW
-    )
+    partial_season = data_health.PARTIAL_EXPECTED_STAT_SEASON
+    partial_start = data_health.PARTIAL_EXPECTED_STAT_START_GW
+    season_2022 = history.filter(pl.col("season") == partial_season)
+    expected_rows = season_2022.filter(pl.col("round") >= partial_start)
     expected_minutes = float(expected_rows["minutes"].sum() or 0)
     if expected_minutes <= 0:
-        return ["2022-23 has no expected-stat minutes from GW16 onward."]
+        return [
+            f"{partial_season} has no expected-stat minutes from GW{partial_start}"
+            " onward."
+        ]
 
     expected_xgi = float(expected_rows["expected_goal_involvements"].sum() or 0)
     expected_xgi90 = expected_xgi / expected_minutes * 90
-    actual_xgi90 = by_season[data_health.PARTIAL_EXPECTED_STAT_SEASON]["xgi90"]
+    actual_xgi90 = by_season[partial_season]["xgi90"]
     if not _approx_equal(actual_xgi90, expected_xgi90):
         return [
-            "2022-23 xGI/90 is not scoped to GW16+ "
+            f"{partial_season} xGI/90 is not scoped to GW{partial_start}+ "
             f"(expected {expected_xgi90:.4f}, got {actual_xgi90})."
         ]
 
     gameweeks_2022 = player.player_gameweeks(season_2022, window=5)
-    pre_expected = gameweeks_2022.filter(
-        pl.col("round") < data_health.PARTIAL_EXPECTED_STAT_START_GW
-    )
+    pre_expected = gameweeks_2022.filter(pl.col("round") < partial_start)
     if pre_expected["expected_goal_involvements"].drop_nulls().len():
-        return ["2022-23 pre-GW16 expected stats are not null in player detail."]
+        return [
+            f"{partial_season} pre-GW{partial_start} expected stats are not null in"
+            " player detail."
+        ]
     if pre_expected["rolling_xgi90"].drop_nulls().len():
-        return ["2022-23 pre-GW16 rolling xGI/90 is not null in player detail."]
+        return [
+            f"{partial_season} pre-GW{partial_start} rolling xGI/90 is not null in"
+            " player detail."
+        ]
 
     return []
 
