@@ -50,14 +50,17 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 
 	const header = (
 		<div className="flex flex-wrap items-center justify-between gap-3">
-			<h2 id="form-scatter-title" className="font-medium text-sm text-zinc-700">
+			<h2
+				id="form-scatter-title"
+				className="font-medium text-sm text-zinc-700 dark:text-zinc-200"
+			>
 				{CHART_TITLE}
 			</h2>
 			<button
 				type="button"
 				aria-controls={CHART_BODY_ID}
 				aria-expanded={!isCollapsed}
-				className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-zinc-300 hover:bg-white"
+				className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-xs text-zinc-700 hover:border-zinc-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
 				onClick={() => setIsCollapsed((current) => !current)}
 			>
 				{isCollapsed ? "Show Chart" : "Hide Chart"}
@@ -69,7 +72,7 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 		return (
 			<section
 				aria-labelledby="form-scatter-title"
-				className="mb-4 rounded-lg border border-zinc-200 bg-white px-4 py-3"
+				className="mb-4 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
 			>
 				{header}
 			</section>
@@ -82,13 +85,13 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 		return (
 			<section
 				aria-labelledby="form-scatter-title"
-				className="mb-4 rounded-lg border border-zinc-200 bg-white p-4"
+				className="mb-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
 			>
 				{header}
 				<section
 					id={CHART_BODY_ID}
 					aria-label="Attacking Form Scatter Chart"
-					className="mt-3 flex h-[320px] items-center justify-center text-sm text-zinc-400"
+					className="mt-3 flex h-[320px] items-center justify-center text-sm text-zinc-400 dark:text-zinc-500"
 				>
 					No qualifying players for this window and filter.
 				</section>
@@ -102,7 +105,7 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 	return (
 		<section
 			aria-labelledby="form-scatter-title"
-			className="mb-4 rounded-lg border border-zinc-200 bg-white p-4"
+			className="mb-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
 		>
 			{header}
 			<section
@@ -112,7 +115,7 @@ export function FormScatter({ players }: { players: FormPlayer[] }) {
 			>
 				<Suspense
 					fallback={
-						<div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">
+						<div className="flex h-[320px] items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
 							Loading chart...
 						</div>
 					}

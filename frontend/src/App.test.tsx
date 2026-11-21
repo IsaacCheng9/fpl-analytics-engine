@@ -740,6 +740,7 @@ beforeEach(() => {
 	mockLocalStorage();
 	window.history.replaceState(null, "", "/");
 	window.localStorage.clear();
+	document.documentElement.classList.remove("dark");
 	vi.stubGlobal("fetch", vi.fn(mockApiFetch));
 });
 
@@ -2723,4 +2724,54 @@ test("keeps the table sort in the URL and clears it when switching tabs", async 
 		);
 	});
 	expect(firstPlayer()).toHaveTextContent("Haaland");
+});
+
+test("toggles dark mode from the header control and persists the choice", async () => {
+	render(withProviders(<App />));
+	await screen.findByRole("table");
+
+	const darkButton = screen.getByRole("button", { name: "Dark theme" });
+	const lightButton = screen.getByRole("button", { name: "Light theme" });
+	const systemButton = screen.getByRole("button", { name: "System theme" });
+	expect(systemButton).toHaveAttribute("aria-pressed", "true");
+	expect(document.documentElement).not.toHaveClass("dark");
+
+	fireEvent.click(darkButton);
+	expect(darkButton).toHaveAttribute("aria-pressed", "true");
+	expect(document.documentElement).toHaveClass("dark");
+	expect(window.localStorage.getItem("fpl-theme")).toBe("dark");
+
+	fireEvent.click(lightButton);
+	expect(lightButton).toHaveAttribute("aria-pressed", "true");
+	expect(document.documentElement).not.toHaveClass("dark");
+	expect(window.localStorage.getItem("fpl-theme")).toBe("light");
+
+	fireEvent.click(systemButton);
+	expect(systemButton).toHaveAttribute("aria-pressed", "true");
+	expect(window.localStorage.getItem("fpl-theme")).toBe("system");
+});
+
+test("renders the theme toggle while showing season status", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(() =>
+			Promise.resolve(
+				new Response(
+					JSON.stringify({
+						...meta,
+						latest_gw: 0,
+						data_status: "preseason",
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+			),
+		),
+	);
+
+	render(withProviders(<App />));
+	await screen.findByText("Waiting For GW1 Data");
+
+	fireEvent.click(screen.getByRole("button", { name: "Dark theme" }));
+	expect(document.documentElement).toHaveClass("dark");
+	expect(window.localStorage.getItem("fpl-theme")).toBe("dark");
 });

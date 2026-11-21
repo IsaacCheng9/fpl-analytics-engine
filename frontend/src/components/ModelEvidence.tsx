@@ -44,12 +44,12 @@ function toneFromValue(value: number | null | undefined): Tone {
 
 function toneClass(tone: Tone): string {
 	if (tone === "good") {
-		return "text-emerald-700";
+		return "text-emerald-700 dark:text-emerald-400";
 	}
 	if (tone === "bad") {
-		return "text-red-700";
+		return "text-red-700 dark:text-red-400";
 	}
-	return "text-zinc-700";
+	return "text-zinc-700 dark:text-zinc-200";
 }
 
 function targetLabel(target: string): string {
@@ -97,13 +97,17 @@ function MetricCard({
 	tone?: Tone;
 }) {
 	return (
-		<div className="rounded-md border border-zinc-200 bg-white px-3 py-3">
-			<div className="font-medium text-xs text-zinc-500">{label}</div>
+		<div className="rounded-md border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/60">
+			<div className="font-medium text-xs text-zinc-500 dark:text-zinc-400">
+				{label}
+			</div>
 			<div className={`mt-1 font-semibold text-2xl ${toneClass(tone)}`}>
 				{value}
 			</div>
 			{detail ? (
-				<div className="mt-1 text-xs text-zinc-500">{detail}</div>
+				<div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+					{detail}
+				</div>
 			) : null}
 		</div>
 	);
@@ -118,8 +122,11 @@ function EmptyTableRow({
 	message: string;
 }) {
 	return (
-		<tr className="border-zinc-100 border-t">
-			<td colSpan={columns} className="px-3 py-6 text-center text-zinc-500">
+		<tr className="border-zinc-100 border-t dark:border-zinc-800">
+			<td
+				colSpan={columns}
+				className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400"
+			>
 				{message}
 			</td>
 		</tr>
@@ -156,7 +163,7 @@ function FormSignalSection({
 		<section aria-busy={isLoading} className={className}>
 			<div className="mb-3">
 				<h3 className="font-semibold text-base">Player Form Signals</h3>
-				<p className="mt-1 text-sm text-zinc-500">
+				<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
 					After each as-of gameweek, every signal ranks the same outfield
 					players – those with 450+ season minutes and some minutes in the
 					window – then is scored on their xGI over the next {horizon}{" "}
@@ -186,9 +193,9 @@ function FormSignalSection({
 					detail={`${fmtNum(validation?.n_gameweeks, 0)} as-of gameweeks`}
 				/>
 			</div>
-			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200">
+			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 				<table className="w-full min-w-[40rem] border-collapse text-sm">
-					<thead className="bg-zinc-100 text-left text-zinc-600">
+					<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 						<tr>
 							<th className="px-3 py-2 font-medium">Signal</th>
 							<th className="px-3 py-2 font-medium">
@@ -221,8 +228,11 @@ function FormSignalSection({
 							/>
 						) : null}
 						{signals.map((row) => (
-							<tr key={row.signal} className="border-zinc-100 border-t">
-								<th className="px-3 py-2 text-left font-medium text-zinc-700">
+							<tr
+								key={row.signal}
+								className="border-zinc-100 border-t dark:border-zinc-800"
+							>
+								<th className="px-3 py-2 text-left font-medium text-zinc-700 dark:text-zinc-200">
 									<span className="flex items-center gap-1">
 										{FORM_SIGNAL_LABELS[row.signal] ?? row.signal}
 										{FORM_SIGNAL_TOOLTIPS[row.signal] ? (
@@ -242,9 +252,9 @@ function FormSignalSection({
 					</tbody>
 				</table>
 			</div>
-			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200">
+			<div className="mt-4 overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 				<table className="w-full min-w-[32rem] border-collapse text-sm">
-					<thead className="bg-zinc-100 text-left text-zinc-600">
+					<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 						<tr>
 							<th className="px-3 py-2 font-medium">Minutes Forecast</th>
 							<th className="px-3 py-2 font-medium">
@@ -265,8 +275,11 @@ function FormSignalSection({
 							/>
 						) : null}
 						{forecasts.map((row) => (
-							<tr key={row.forecast} className="border-zinc-100 border-t">
-								<th className="px-3 py-2 text-left font-medium text-zinc-700">
+							<tr
+								key={row.forecast}
+								className="border-zinc-100 border-t dark:border-zinc-800"
+							>
+								<th className="px-3 py-2 text-left font-medium text-zinc-700 dark:text-zinc-200">
 									{MINUTES_FORECAST_LABELS[row.forecast] ?? row.forecast}
 								</th>
 								<td className="px-3 py-2">
@@ -306,17 +319,17 @@ export function ModelEvidence({
 	const calibration = defconValidation?.calibration ?? [];
 	const hasSmallBuckets = calibration.some(isSmallBucket);
 	// Dim the previous season's results while a newly selected season loads.
-	const resultSectionClass = `rounded-lg border border-zinc-200 bg-white p-4 ${
+	const resultSectionClass = `rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 ${
 		isLoadingSeason ? "opacity-60" : ""
 	}`;
 
 	return (
 		<div className="space-y-4">
-			<section className="rounded-lg border border-zinc-200 bg-white p-4">
+			<section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
 						<h2 className="font-semibold text-lg">Backtested Evidence</h2>
-						<p className="mt-1 max-w-3xl text-sm text-zinc-500">
+						<p className="mt-1 max-w-3xl text-sm text-zinc-500 dark:text-zinc-400">
 							Historic as-of gameweeks are replayed, then scored against what
 							happened next. This keeps the scouting signals accountable to the
 							same point-in-time rules used by the transfer tables.
@@ -337,7 +350,7 @@ export function ModelEvidence({
 						</select>
 					</label>
 				</div>
-				<p className="mt-2 max-w-3xl text-xs text-zinc-500">
+				<p className="mt-2 max-w-3xl text-xs text-zinc-500 dark:text-zinc-400">
 					Defaults to the last complete season until the live season reaches GW
 					{EVIDENCE_MIN_LIVE_GW} (halfway), because earlier samples are too
 					small to judge the models. Evidence starts in {EVIDENCE_START_SEASON},
@@ -354,7 +367,7 @@ export function ModelEvidence({
 			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">DefCon Probability Model</h3>
-					<p className="mt-1 text-sm text-zinc-500">
+					<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
 						Calibrated contribution-count predictions, scored against the
 						following gameweek among appearances of at least 60 minutes.
 					</p>
@@ -395,9 +408,9 @@ export function ModelEvidence({
 						<CalibrationChart buckets={calibration} />
 					) : null}
 					<div>
-						<div className="overflow-x-auto rounded-md border border-zinc-200">
+						<div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 							<table className="w-full min-w-[36rem] border-collapse text-sm">
-								<thead className="bg-zinc-100 text-left text-zinc-600">
+								<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 									<tr>
 										<th className="px-3 py-2 font-medium">
 											<span className="flex items-center gap-1">
@@ -425,8 +438,8 @@ export function ModelEvidence({
 										return (
 											<tr
 												key={row.bin}
-												className={`border-zinc-100 border-t ${
-													isSmall ? "text-zinc-400" : ""
+												className={`border-zinc-100 border-t dark:border-zinc-800 ${
+													isSmall ? "text-zinc-400 dark:text-zinc-500" : ""
 												}`}
 											>
 												<td className="px-3 py-2">{row.bin}</td>
@@ -448,7 +461,7 @@ export function ModelEvidence({
 							</table>
 						</div>
 						{hasSmallBuckets ? (
-							<p className="mt-2 text-xs text-zinc-500">
+							<p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
 								Greyed buckets have fewer than {MIN_BUCKET_PREDICTIONS}{" "}
 								predictions, so their error is mostly noise rather than
 								miscalibration.
@@ -461,15 +474,15 @@ export function ModelEvidence({
 			<section aria-busy={isLoadingSeason} className={resultSectionClass}>
 				<div className="mb-3">
 					<h3 className="font-semibold text-base">Recent Club Form</h3>
-					<p className="mt-1 text-sm text-zinc-500">
+					<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
 						Season-to-date baselines compared with those baselines plus recent
 						club-form context. Historical FDR is excluded because point-in-time
 						rating snapshots are unavailable.
 					</p>
 				</div>
-				<div className="overflow-x-auto rounded-md border border-zinc-200">
+				<div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 					<table className="w-full min-w-[46rem] border-collapse text-sm">
-						<thead className="bg-zinc-100 text-left text-zinc-600">
+						<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 							<tr>
 								<th className="px-3 py-2 font-medium">Target</th>
 								<th className="px-3 py-2 font-medium">Predictions</th>
@@ -491,8 +504,11 @@ export function ModelEvidence({
 								/>
 							) : null}
 							{clubRows.map((row) => (
-								<tr key={row.target} className="border-zinc-100 border-t">
-									<th className="px-3 py-2 text-left font-medium text-zinc-700">
+								<tr
+									key={row.target}
+									className="border-zinc-100 border-t dark:border-zinc-800"
+								>
+									<th className="px-3 py-2 text-left font-medium text-zinc-700 dark:text-zinc-200">
 										{targetLabel(row.target)}
 									</th>
 									<td className="px-3 py-2">{fmtNum(row.n_predictions, 0)}</td>

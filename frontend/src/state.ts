@@ -207,13 +207,13 @@ export const ATTACKING_METRIC_STYLES: Record<
 	{ header: string }
 > = {
 	xg: {
-		header: "bg-emerald-100/80",
+		header: "bg-emerald-100/80 dark:bg-emerald-950 dark:text-emerald-200",
 	},
 	xa: {
-		header: "bg-amber-100/80",
+		header: "bg-amber-100/80 dark:bg-amber-950 dark:text-amber-200",
 	},
 	xgi: {
-		header: "bg-indigo-100/80",
+		header: "bg-indigo-100/80 dark:bg-indigo-950 dark:text-indigo-200",
 	},
 };
 export const DEFAULT_ATTACKING_METRICS: AttackingMetricVisibility = {

@@ -1,8 +1,6 @@
 import { expect, test } from "vitest";
 import { divergingScale, FDR_SCALE, heatColour, sequentialScale } from "./heat";
 
-const WHITE = "rgb(255, 255, 255)";
-
 test("leaves zero uncoloured on a diverging scale", () => {
 	const scale = divergingScale({ min: -0.2, max: 0.4 });
 
@@ -10,12 +8,13 @@ test("leaves zero uncoloured on a diverging scale", () => {
 	expect(heatColour(null, scale)).toBeUndefined();
 });
 
-test("shades gains and losses of equal size with equal strength", () => {
+test("shades gains and losses of equal size with equal translucent strength", () => {
 	const scale = divergingScale({ min: -0.2, max: 0.4 });
 
-	// Half the 0.4 extent gives half the maximum tint in each direction.
-	expect(heatColour(0.2, scale)).toBe("rgb(205, 242, 219)");
-	expect(heatColour(-0.2, scale)).toBe("rgb(251, 213, 213)");
+	// Half the 0.4 extent gives half the maximum alpha in each direction so
+	// shading adapts to both light and dark table backgrounds.
+	expect(heatColour(0.2, scale)).toBe("rgba(34, 197, 94, 0.225)");
+	expect(heatColour(-0.2, scale)).toBe("rgba(239, 68, 68, 0.225)");
 });
 
 test("treats lower values as favourable when lower is better", () => {
@@ -36,10 +35,10 @@ test("shades FDR on its fixed scale with 3 as neutral", () => {
 	);
 });
 
-test("shades sequential metrics in one hue from white", () => {
+test("shades sequential metrics transparently from the minimum value", () => {
 	const scale = sequentialScale({ min: 0, max: 1 });
 
-	expect(heatColour(0, scale)).toBe(WHITE);
+	expect(heatColour(0, scale)).toBeUndefined();
 	expect(heatColour(1, scale)).toBe(
 		heatColour(1, divergingScale({ min: -1, max: 1 })),
 	);

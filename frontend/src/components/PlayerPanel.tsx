@@ -37,13 +37,15 @@ function Chart({
 	return (
 		<div>
 			<div className="mb-1 flex items-baseline justify-between gap-2">
-				<h4 className="font-medium text-sm text-zinc-700">{title}</h4>
+				<h4 className="font-medium text-sm text-zinc-700 dark:text-zinc-200">
+					{title}
+				</h4>
 				{/* Label the reference line outside the plot so data never covers it. */}
 				{seasonAverage == null ? null : (
-					<span className="flex items-center gap-1.5 text-xs text-zinc-500">
+					<span className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
 						<span
 							aria-hidden="true"
-							className="w-4 border-zinc-400 border-t border-dashed"
+							className="w-4 border-zinc-400 border-t border-dashed dark:border-zinc-500"
 						/>
 						Season {seasonAverage.toFixed(2)}
 					</span>
@@ -54,26 +56,45 @@ function Chart({
 					data={data}
 					margin={{ top: 4, right: 8, bottom: 4, left: -8 }}
 				>
-					<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+					<CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
 					{/* A numeric axis keeps blank gameweeks as visible gaps. */}
 					<XAxis
 						dataKey="round"
 						type="number"
 						domain={["dataMin", "dataMax"]}
 						allowDecimals={false}
-						tick={{ fontSize: 11 }}
+						stroke="var(--chart-axis)"
+						tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
 					/>
-					<YAxis tick={{ fontSize: 11 }} />
+					<YAxis
+						stroke="var(--chart-axis)"
+						tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
+					/>
 					<Tooltip
 						labelFormatter={(round) => `GW ${round}`}
 						formatter={(value) =>
 							typeof value === "number" ? value.toFixed(2) : value
 						}
+						cursor={{ stroke: "var(--chart-ref)", strokeDasharray: "3 3" }}
+						contentStyle={{
+							backgroundColor: "var(--chart-tooltip-bg)",
+							borderColor: "var(--chart-tooltip-border)",
+							borderRadius: "0.375rem",
+							color: "var(--chart-tooltip-text)",
+							fontSize: "0.75rem",
+						}}
+						labelStyle={{
+							color: "var(--chart-tooltip-text)",
+							fontWeight: 500,
+						}}
+						itemStyle={{
+							color: "var(--chart-line)",
+						}}
 					/>
 					{seasonAverage == null ? null : (
 						<ReferenceLine
 							y={seasonAverage}
-							stroke="#a1a1aa"
+							stroke="var(--chart-ref)"
 							strokeDasharray="4 4"
 							ifOverflow="extendDomain"
 						/>
@@ -83,9 +104,13 @@ function Chart({
 						type="linear"
 						dataKey={dataKey}
 						name="Rolling"
-						stroke="#2563eb"
-						dot={{ r: 2.5, fill: "#2563eb" }}
-						activeDot={{ r: 4 }}
+						stroke="var(--chart-line)"
+						dot={{ r: 2.5, fill: "var(--chart-line)" }}
+						activeDot={{
+							r: 4,
+							fill: "var(--chart-line)",
+							stroke: "var(--chart-tooltip-bg)",
+						}}
 						connectNulls
 						isAnimationActive={false}
 					/>
@@ -171,7 +196,7 @@ export function PlayerPanel({
 			<button
 				type="button"
 				aria-label="Close player detail"
-				className="fixed inset-0 cursor-default bg-black/40"
+				className="fixed inset-0 cursor-default bg-black/40 dark:bg-black/70"
 				onClick={onClose}
 			/>
 			<div
@@ -180,7 +205,7 @@ export function PlayerPanel({
 				aria-modal="true"
 				aria-labelledby="player-panel-title"
 				tabIndex={-1}
-				className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl outline-none"
+				className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl outline-none dark:border dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
 			>
 				<div className="mb-4 flex items-start justify-between">
 					<div>
@@ -188,7 +213,7 @@ export function PlayerPanel({
 							{detail?.web_name ?? "Player"}
 						</h2>
 						{detail ? (
-							<p className="text-sm text-zinc-500">
+							<p className="text-sm text-zinc-500 dark:text-zinc-400">
 								{detail.position} - {detail.team_name} - As Of GW{" "}
 								{detail.as_of_gw}
 							</p>
@@ -197,17 +222,17 @@ export function PlayerPanel({
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-md px-2 py-1 text-sm text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50"
+						className="rounded-md px-2 py-1 text-sm text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
 					>
 						Close
 					</button>
 				</div>
 
 				<div className="mb-3 flex flex-wrap gap-3">
-					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">
 						Season
 						<select
-							className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+							className="mt-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
 							value={selectedSeason}
 							onChange={(e) => onSeasonChange(e.target.value)}
 						>
@@ -219,10 +244,10 @@ export function PlayerPanel({
 						</select>
 					</label>
 
-					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600">
+					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">
 						Rolling Window (Gameweeks)
 						<select
-							className="mt-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+							className="mt-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
 							value={rollingWindow}
 							onChange={(e) => onWindowChange(Number(e.target.value))}
 						>
@@ -237,10 +262,12 @@ export function PlayerPanel({
 
 				{query.isError || (needsMetadata && meta.isError) ? (
 					<div className="flex items-center gap-3">
-						<p className="text-red-600 text-sm">Failed to load player.</p>
+						<p className="text-red-600 text-sm dark:text-red-400">
+							Failed to load player.
+						</p>
 						<button
 							type="button"
-							className="rounded-md px-2 py-1 text-sm text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							className="rounded-md px-2 py-1 text-sm text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
 							onClick={() => {
 								if (needsMetadata) void meta.refetch();
 								else void query.refetch();
@@ -250,7 +277,7 @@ export function PlayerPanel({
 						</button>
 					</div>
 				) : query.isPending || !detail ? (
-					<p className="text-sm text-zinc-500">Loading...</p>
+					<p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
 				) : (
 					<>
 						<div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -280,12 +307,12 @@ export function PlayerPanel({
 							/>
 						</div>
 
-						<h3 className="mb-2 font-medium text-sm text-zinc-700">
+						<h3 className="mb-2 font-medium text-sm text-zinc-700 dark:text-zinc-200">
 							Season History
 						</h3>
-						<div className="mb-5 overflow-x-auto rounded-md border border-zinc-200">
+						<div className="mb-5 overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 							<table className="w-full text-sm">
-								<thead className="bg-zinc-100 text-left text-zinc-600">
+								<thead className="bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 									<tr>
 										<th className="px-3 py-2 font-medium">Season</th>
 										<th className="px-3 py-2 font-medium">Games</th>
@@ -299,12 +326,15 @@ export function PlayerPanel({
 								</thead>
 								<tbody>
 									{detail.seasons.map((s) => (
-										<tr key={s.season} className="border-zinc-100 border-t">
+										<tr
+											key={s.season}
+											className="border-zinc-100 border-t dark:border-zinc-800"
+										>
 											<td className="px-3 py-2">
 												{s.season}
 												{s.season === PARTIAL_SEASON ? (
 													<span
-														className="ml-1 cursor-help text-zinc-400"
+														className="ml-1 cursor-help text-zinc-400 dark:text-zinc-500"
 														title="2022-23 expected-stat rates use GW16-38 only; games, minutes, and points remain full-season."
 													>
 														*
@@ -322,7 +352,7 @@ export function PlayerPanel({
 											<td className="px-3 py-2">
 												{s.defcon_hit_rate === null ? (
 													<span
-														className="text-zinc-300"
+														className="text-zinc-300 dark:text-zinc-600"
 														title="DefCon data does not exist before 2025-26."
 													>
 														n/a
@@ -337,12 +367,12 @@ export function PlayerPanel({
 							</table>
 						</div>
 
-						<h3 className="mb-2 font-medium text-sm text-zinc-700">
+						<h3 className="mb-2 font-medium text-sm text-zinc-700 dark:text-zinc-200">
 							{detail.selected_season} by Gameweek
 						</h3>
-						<div className="max-h-64 overflow-auto rounded-md border border-zinc-200">
+						<div className="max-h-64 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 							<table className="w-full text-sm">
-								<thead className="sticky top-0 bg-zinc-100 text-left text-zinc-600">
+								<thead className="sticky top-0 bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 									<tr>
 										<th className="px-3 py-2 font-medium">GW</th>
 										<th className="px-3 py-2 font-medium">Mins</th>
@@ -358,7 +388,7 @@ export function PlayerPanel({
 									{detail.gameweeks.map((g, index) => (
 										<tr
 											key={`${g.round}-${g.kickoff_time ?? index}`}
-											className="border-zinc-100 border-t"
+											className="border-zinc-100 border-t dark:border-zinc-800"
 										>
 											<td className="px-3 py-2">{g.round}</td>
 											<td className="px-3 py-2">{g.minutes}</td>

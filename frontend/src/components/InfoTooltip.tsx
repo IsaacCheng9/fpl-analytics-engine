@@ -81,7 +81,7 @@ export function InfoTooltip({ text }: { text: string }) {
 				aria-label="Show explanation"
 				aria-expanded={open}
 				aria-describedby={open ? tooltipId : undefined}
-				className="cursor-help select-none text-xs text-zinc-400 hover:text-zinc-600 focus-visible:rounded focus-visible:outline-2 focus-visible:outline-zinc-400"
+				className="cursor-help select-none text-xs text-zinc-400 hover:text-zinc-600 focus-visible:rounded focus-visible:outline-2 focus-visible:outline-zinc-400 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:outline-zinc-500"
 				onClick={(event) => {
 					event.stopPropagation();
 					if (pinned) {
@@ -110,7 +110,7 @@ export function InfoTooltip({ text }: { text: string }) {
 						ref={tooltipRef}
 						id={tooltipId}
 						role="tooltip"
-						className="fixed z-50 max-w-64 rounded-md bg-zinc-900 px-2 py-1 font-normal text-white text-xs shadow-lg"
+						className="fixed z-50 max-w-64 rounded-md bg-zinc-900 px-2 py-1 font-normal text-white text-xs shadow-lg dark:bg-zinc-800 dark:text-zinc-100 dark:ring-1 dark:ring-zinc-700"
 						style={{ top: pos.top, left: pos.left }}
 					>
 						{text}

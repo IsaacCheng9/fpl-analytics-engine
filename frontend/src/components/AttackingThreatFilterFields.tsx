@@ -32,13 +32,13 @@ export function AttackingThreatFilterFields({
 		<fieldset className="min-w-0 border-0 p-0">
 			<legend className="sr-only">Attacking Threat Filters</legend>
 			<div className="mb-2 flex items-center gap-2">
-				<span className="font-medium text-xs text-zinc-600">
+				<span className="font-medium text-xs text-zinc-600 dark:text-zinc-300">
 					Attacking Threat Filters
 				</span>
 				{hasActiveFilters ? (
 					<button
 						type="button"
-						className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+						className="rounded px-2 py-0.5 font-medium text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
 						onClick={onReset}
 					>
 						Reset Threat Filters

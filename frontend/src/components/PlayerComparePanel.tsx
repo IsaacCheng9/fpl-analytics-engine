@@ -17,8 +17,8 @@ import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
 
 function valueCellClass(row: CompareRow, side: "left" | "right"): string {
 	return winningSide(row) === side
-		? "bg-emerald-50 font-semibold text-emerald-800"
-		: "text-zinc-900";
+		? "bg-emerald-50 font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+		: "text-zinc-900 dark:text-zinc-100";
 }
 
 export function PlayerComparePanel({
@@ -154,7 +154,7 @@ export function PlayerComparePanel({
 			<button
 				type="button"
 				aria-label="Close player compare"
-				className="fixed inset-0 cursor-default bg-black/40"
+				className="fixed inset-0 cursor-default bg-black/40 dark:bg-black/70"
 				onClick={onClose}
 			/>
 			<div
@@ -163,21 +163,21 @@ export function PlayerComparePanel({
 				aria-modal="true"
 				aria-labelledby="player-compare-title"
 				tabIndex={-1}
-				className="relative mx-auto mt-6 w-full max-w-6xl rounded-lg bg-white p-5 shadow-xl outline-none"
+				className="relative mx-auto mt-6 w-full max-w-6xl rounded-lg bg-white p-5 shadow-xl outline-none dark:border dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
 			>
 				<div className="mb-4 flex items-start justify-between gap-4">
 					<div>
 						<h2 id="player-compare-title" className="font-semibold text-xl">
 							Compare Players
 						</h2>
-						<p className="mt-1 text-sm text-zinc-500">
+						<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
 							As Of GW {asOfGw ?? latestGw}, Window {window} Gameweeks
 						</p>
 					</div>
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-md px-2 py-1 text-sm text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50"
+						className="rounded-md px-2 py-1 text-sm text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
 					>
 						Close
 					</button>
@@ -198,10 +198,10 @@ export function PlayerComparePanel({
 						value={rightElement}
 						onChange={onRightChange}
 					/>
-					<label className="flex min-w-28 flex-col text-xs font-medium text-zinc-600">
+					<label className="flex min-w-28 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">
 						Window (Gameweeks)
 						<select
-							className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
+							className="mt-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
 							value={window}
 							onChange={(event) => onWindowChange(Number(event.target.value))}
 						>
@@ -214,10 +214,10 @@ export function PlayerComparePanel({
 							)}
 						</select>
 					</label>
-					<label className="flex min-w-28 flex-col text-xs font-medium text-zinc-600">
+					<label className="flex min-w-28 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">
 						As Of GW
 						<select
-							className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
+							className="mt-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
 							value={asOfGw ?? ""}
 							onChange={(event) =>
 								onAsOfGwChange(
@@ -239,21 +239,21 @@ export function PlayerComparePanel({
 				</div>
 
 				{!canCompare ? (
-					<p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+					<p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-400">
 						Select two players to compare.
 					</p>
 				) : isLoading ? (
-					<p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+					<p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-400">
 						Loading comparison...
 					</p>
 				) : isError ? (
-					<div className="flex flex-col items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-6 text-center">
-						<p className="text-red-700 text-sm">
+					<div className="flex flex-col items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-6 text-center dark:border-red-800/70 dark:bg-red-950/60">
+						<p className="text-red-700 text-sm dark:text-red-300">
 							Failed to load player comparison.
 						</p>
 						<button
 							type="button"
-							className="rounded-md bg-white px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							className="rounded-md bg-white px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
 							onClick={() => {
 								if (contextError) {
 									onRetryContext?.();
@@ -270,9 +270,9 @@ export function PlayerComparePanel({
 						</button>
 					</div>
 				) : (
-					<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
+					<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800">
 						<table className="w-full min-w-[44rem] border-collapse text-sm">
-							<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600">
+							<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
 								<tr>
 									<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
 									<th className="w-1/3 px-3 py-2 font-medium">
@@ -297,14 +297,14 @@ export function PlayerComparePanel({
 												<tr>
 													<th
 														colSpan={3}
-														className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700"
+														className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200"
 													>
 														{row.section}
 													</th>
 												</tr>
 											) : null}
-											<tr className="border-zinc-100 border-t">
-												<th className="px-3 py-2 text-left font-medium text-zinc-600">
+											<tr className="border-zinc-100 border-t dark:border-zinc-800">
+												<th className="px-3 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">
 													{row.label}
 												</th>
 												<td

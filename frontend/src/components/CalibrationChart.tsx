@@ -34,11 +34,11 @@ function CalibrationTooltip({
 	}
 	const bucket = payload[0].payload;
 	return (
-		<div className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs shadow-sm">
-			<div className="font-medium text-zinc-900">
+		<div className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+			<div className="font-medium text-zinc-900 dark:text-zinc-100">
 				Bucket {bucket.bin} ({bucket.n} predictions)
 			</div>
-			<div className="text-zinc-500">
+			<div className="text-zinc-500 dark:text-zinc-400">
 				Predicted {fmtPercentTick(bucket.mean_predicted)} / Observed{" "}
 				{fmtPercentTick(bucket.observed_rate)}
 			</div>
@@ -57,15 +57,15 @@ export function CalibrationChart({
 	return (
 		<section aria-label="DefCon Reliability Diagram">
 			<div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-				<h4 className="font-medium text-sm text-zinc-700">
+				<h4 className="font-medium text-sm text-zinc-700 dark:text-zinc-200">
 					Reliability Diagram
 				</h4>
 				{/* Label the marks outside the plot so data never covers them. */}
-				<span className="flex items-center gap-3 text-xs text-zinc-500">
+				<span className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
 					<span className="flex items-center gap-1.5">
 						<span
 							aria-hidden="true"
-							className="w-4 border-zinc-400 border-t border-dashed"
+							className="w-4 border-zinc-400 border-t border-dashed dark:border-zinc-500"
 						/>
 						Perfect Calibration
 					</span>
@@ -73,7 +73,7 @@ export function CalibrationChart({
 						<span className="flex items-center gap-1.5">
 							<span
 								aria-hidden="true"
-								className="size-2 rounded-full bg-zinc-300"
+								className="size-2 rounded-full bg-zinc-300 dark:bg-zinc-600"
 							/>
 							Fewer Than {MIN_BUCKET_PREDICTIONS} Predictions
 						</span>
@@ -82,19 +82,21 @@ export function CalibrationChart({
 			</div>
 			<ResponsiveContainer width="100%" height={280} debounce={50}>
 				<ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-					<CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+					<CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
 					<XAxis
 						type="number"
 						dataKey="mean_predicted"
 						domain={[0, 1]}
 						ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]}
 						tickFormatter={fmtPercentTick}
-						tick={{ fontSize: 12 }}
+						stroke="var(--chart-axis)"
+						tick={{ fontSize: 12, fill: "var(--chart-axis)" }}
 						label={{
 							value: "Mean Predicted Probability",
 							position: "insideBottom",
 							offset: -12,
 							fontSize: 12,
+							fill: "var(--chart-axis)",
 						}}
 					/>
 					<YAxis
@@ -103,12 +105,14 @@ export function CalibrationChart({
 						domain={[0, 1]}
 						ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]}
 						tickFormatter={fmtPercentTick}
-						tick={{ fontSize: 12 }}
+						stroke="var(--chart-axis)"
+						tick={{ fontSize: 12, fill: "var(--chart-axis)" }}
 						label={{
 							value: "Observed Hit Rate",
 							angle: -90,
 							position: "insideLeft",
 							fontSize: 12,
+							fill: "var(--chart-axis)",
 						}}
 					/>
 					<ReferenceLine
@@ -116,24 +120,24 @@ export function CalibrationChart({
 							{ x: 0, y: 0 },
 							{ x: 1, y: 1 },
 						]}
-						stroke="#a1a1aa"
+						stroke="var(--chart-ref)"
 						strokeDasharray="4 4"
 					/>
 					<Tooltip
 						content={<CalibrationTooltip />}
-						cursor={{ strokeDasharray: "3 3" }}
+						cursor={{ stroke: "var(--chart-ref)", strokeDasharray: "3 3" }}
 					/>
 					<Scatter
 						name="Buckets"
 						data={reliable}
-						fill="#10b981"
-						fillOpacity={0.8}
+						fill="var(--chart-scatter)"
+						fillOpacity={0.85}
 						isAnimationActive={false}
 					/>
 					<Scatter
 						name={`Fewer Than ${MIN_BUCKET_PREDICTIONS} Predictions`}
 						data={small}
-						fill="#d4d4d8"
+						fill="var(--chart-small-bucket)"
 						isAnimationActive={false}
 					/>
 				</ScatterChart>

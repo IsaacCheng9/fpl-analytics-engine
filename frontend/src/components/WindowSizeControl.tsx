@@ -23,7 +23,7 @@ export function WindowSizeControl({
 					onChange={(e) => onChange(clampWindowSize(Number(e.target.value)))}
 					className="range-slider w-32"
 					style={{
-						background: `linear-gradient(to right, #18181b 0%, #18181b ${fillPct}%, #e4e4e7 ${fillPct}%, #e4e4e7 100%)`,
+						background: `linear-gradient(to right, var(--slider-fill) 0%, var(--slider-fill) ${fillPct}%, var(--slider-track) ${fillPct}%, var(--slider-track) 100%)`,
 					}}
 				/>
 				<input
