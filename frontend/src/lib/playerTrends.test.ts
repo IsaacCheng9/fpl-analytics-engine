@@ -37,15 +37,19 @@ test("plots one end-of-gameweek point per double gameweek", () => {
 	expect(rows[1].kickoff_time).toBe("second");
 });
 
-test("averages recorded defensive contributions and ignores missing ones", () => {
+test("averages recorded defensive contributions and ignores missing and zero-minute ones", () => {
 	expect(
 		meanDefensiveContribution([
 			gameweek(1, { defensive_contribution: 6 }),
 			gameweek(2, { defensive_contribution: null }),
-			gameweek(3, { defensive_contribution: 12 }),
+			gameweek(3, { minutes: 0, defensive_contribution: 0, defcon_hit: false }),
+			gameweek(4, { defensive_contribution: 12 }),
 		]),
 	).toBe(9);
 	expect(
-		meanDefensiveContribution([gameweek(1, { defensive_contribution: null })]),
+		meanDefensiveContribution([
+			gameweek(1, { defensive_contribution: null }),
+			gameweek(2, { minutes: 0, defensive_contribution: 0, defcon_hit: false }),
+		]),
 	).toBeNull();
 });
