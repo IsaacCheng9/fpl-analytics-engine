@@ -305,10 +305,20 @@ export interface DefconProbabilityValidationParams {
 	season?: string;
 }
 
+export class ApiError extends Error {
+	readonly status: number;
+
+	constructor(status: number) {
+		super(`Request failed with status ${status}`);
+		this.name = "ApiError";
+		this.status = status;
+	}
+}
+
 async function getJson<T>(path: string): Promise<T> {
 	const response = await fetch(`${API_BASE}${path}`);
 	if (!response.ok) {
-		throw new Error(`Request failed with status ${response.status}`);
+		throw new ApiError(response.status);
 	}
 	return (await response.json()) as T;
 }
