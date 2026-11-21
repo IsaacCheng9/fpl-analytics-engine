@@ -13,6 +13,7 @@ import {
 	type CompareSide,
 	winningSide,
 } from "../lib/compareRows";
+import { CompareTrendCharts } from "./CompareTrendCharts";
 import { PlayerCombobox, type PlayerOption } from "./PlayerCombobox";
 
 function valueCellClass(row: CompareRow, side: "left" | "right"): string {
@@ -122,6 +123,9 @@ export function PlayerComparePanel({
 		[left, right, window, asOfGw, latestGw],
 	);
 	const canCompare = leftElement !== null && rightElement !== null;
+	const leftName = left.detail?.web_name ?? left.option?.web_name ?? "Player 1";
+	const rightName =
+		right.detail?.web_name ?? right.option?.web_name ?? "Player 2";
 	const isLoading =
 		canCompare &&
 		(contextLoading || leftQuery.isPending || rightQuery.isPending);
@@ -270,60 +274,60 @@ export function PlayerComparePanel({
 						</button>
 					</div>
 				) : (
-					<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
-						<table className="w-full min-w-[44rem] border-collapse text-sm">
-							<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600">
-								<tr>
-									<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
-									<th className="w-1/3 px-3 py-2 font-medium">
-										{left.detail?.web_name ??
-											left.option?.web_name ??
-											"Player 1"}
-									</th>
-									<th className="w-1/3 px-3 py-2 font-medium">
-										{right.detail?.web_name ??
-											right.option?.web_name ??
-											"Player 2"}
-									</th>
-								</tr>
-							</thead>
-							<tbody>
-								{rows.map((row, index) => {
-									const showSection =
-										index === 0 || rows[index - 1]?.section !== row.section;
-									return (
-										<Fragment key={`${row.section}-${row.label}`}>
-											{showSection ? (
-												<tr>
-													<th
-														colSpan={3}
-														className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700"
-													>
-														{row.section}
+					<>
+						<CompareTrendCharts
+							leftName={leftName}
+							rightName={rightName}
+							leftGameweeks={left.detail?.gameweeks ?? []}
+							rightGameweeks={right.detail?.gameweeks ?? []}
+						/>
+						<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
+							<table className="w-full min-w-[44rem] border-collapse text-sm">
+								<thead className="sticky top-0 z-20 bg-zinc-100 text-left text-zinc-600">
+									<tr>
+										<th className="w-1/3 px-3 py-2 font-medium">Stat</th>
+										<th className="w-1/3 px-3 py-2 font-medium">{leftName}</th>
+										<th className="w-1/3 px-3 py-2 font-medium">{rightName}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{rows.map((row, index) => {
+										const showSection =
+											index === 0 || rows[index - 1]?.section !== row.section;
+										return (
+											<Fragment key={`${row.section}-${row.label}`}>
+												{showSection ? (
+													<tr>
+														<th
+															colSpan={3}
+															className="border-zinc-200 border-t bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700"
+														>
+															{row.section}
+														</th>
+													</tr>
+												) : null}
+												<tr className="border-zinc-100 border-t">
+													<th className="px-3 py-2 text-left font-medium text-zinc-600">
+														{row.label}
 													</th>
+													<td
+														className={`px-3 py-2 ${valueCellClass(row, "left")}`}
+													>
+														{row.left}
+													</td>
+													<td
+														className={`px-3 py-2 ${valueCellClass(row, "right")}`}
+													>
+														{row.right}
+													</td>
 												</tr>
-											) : null}
-											<tr className="border-zinc-100 border-t">
-												<th className="px-3 py-2 text-left font-medium text-zinc-600">
-													{row.label}
-												</th>
-												<td
-													className={`px-3 py-2 ${valueCellClass(row, "left")}`}
-												>
-													{row.left}
-												</td>
-												<td
-													className={`px-3 py-2 ${valueCellClass(row, "right")}`}
-												>
-													{row.right}
-												</td>
-											</tr>
-										</Fragment>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
+											</Fragment>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+					</>
 				)}
 			</div>
 		</div>
