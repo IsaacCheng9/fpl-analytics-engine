@@ -32,7 +32,6 @@ import { ClubColumnChooser } from "./components/ClubColumnChooser";
 import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { InfoTooltip } from "./components/InfoTooltip";
-import { ModelEvidence } from "./components/ModelEvidence";
 import { SeasonStatus } from "./components/SeasonStatus";
 import { SquadInspection } from "./components/SquadInspection";
 import { TransferFilterFields } from "./components/TransferFilterFields";
@@ -48,6 +47,7 @@ import {
 } from "./lib/filters";
 import { fmtNum, fmtPctPoints, fmtPrice } from "./lib/format";
 import { sortingFromParam, sortingToParam } from "./lib/tableSort";
+import { LIVE_TEAM_STALE_TIME_MS } from "./queryClient";
 import {
 	type ActiveFilterChip,
 	ATTACKING_METRIC_COLUMN_ORDER,
@@ -94,7 +94,12 @@ import {
 import { inputClass, labelClass } from "./styles";
 import { useUrlState } from "./urlState";
 
-// Load the modal panels on demand to keep them out of the initial bundle.
+// Load secondary views and charts on demand to keep Recharts out of the initial bundle.
+const ModelEvidence = lazy(() =>
+	import("./components/ModelEvidence").then((m) => ({
+		default: m.ModelEvidence,
+	})),
+);
 const PlayerPanel = lazy(() =>
 	import("./components/PlayerPanel").then((m) => ({ default: m.PlayerPanel })),
 );
@@ -390,6 +395,7 @@ export default function App() {
 		queryKey: ["fplTeam", fplTeamId],
 		queryFn: () => fetchFplTeam(fplTeamId as number, null),
 		enabled: analyticsReady && fplTeamId !== null,
+		staleTime: LIVE_TEAM_STALE_TIME_MS,
 	});
 	const importedTeam =
 		fplTeamQuery.data?.entry_id === fplTeamId ? fplTeamQuery.data : undefined;
@@ -469,7 +475,7 @@ export default function App() {
 		placeholderData: keepPreviousData,
 	});
 	const squadFormQuery = useQuery({
-		queryKey: ["squadForm", windowSize, asOfGw],
+		queryKey: ["form", windowSize, 0, asOfGw],
 		queryFn: () => fetchForm(squadBase),
 		enabled: analyticsReady && isSquadViewActive,
 	});
@@ -490,7 +496,7 @@ export default function App() {
 	});
 
 	const compareFormQuery = useQuery({
-		queryKey: ["compareForm", compareWindow, compareAsOfGw],
+		queryKey: ["form", compareWindow, 0, compareAsOfGw],
 		queryFn: () =>
 			fetchForm({
 				window: compareWindow,
@@ -501,7 +507,7 @@ export default function App() {
 		enabled: analyticsReady && compareOpen,
 	});
 	const compareDefconQuery = useQuery({
-		queryKey: ["compareDefcon", compareWindow, compareAsOfGw],
+		queryKey: ["defcon", compareWindow, 0, compareAsOfGw],
 		queryFn: () =>
 			fetchDefcon({
 				window: compareWindow,
@@ -513,7 +519,7 @@ export default function App() {
 		enabled: analyticsReady && compareOpen,
 	});
 	const compareDefconProbabilityQuery = useQuery({
-		queryKey: ["compareDefconProbability", compareAsOfGw],
+		queryKey: ["defconProb", compareAsOfGw],
 		queryFn: () =>
 			fetchDefconProbability({
 				position: "",
@@ -523,7 +529,7 @@ export default function App() {
 		enabled: analyticsReady && compareOpen,
 	});
 	const compareClubQuery = useQuery({
-		queryKey: ["compareClub", compareWindow, compareAsOfGw],
+		queryKey: ["clubs", compareWindow, compareAsOfGw],
 		queryFn: () =>
 			fetchClubForm({ window: compareWindow, asOfGw: compareAsOfGw }),
 		enabled: analyticsReady && compareOpen,
@@ -1577,20 +1583,24 @@ export default function App() {
 							Failed to load - is the API running on port 8000?
 						</p>
 					) : (
-						<ModelEvidence
-							formValidation={formValidationQuery.data}
-							defconValidation={defconValidationQuery.data}
-							clubValidation={clubValidationQuery.data ?? []}
-							season={evidenceSeason}
-							seasons={evidenceSeasons(liveSeason)}
-							liveSeason={liveSeason}
-							isLoadingSeason={
-								defconValidationQuery.isPlaceholderData ||
-								clubValidationQuery.isPlaceholderData ||
-								formValidationQuery.isPlaceholderData
-							}
-							onSeasonChange={setEvidenceSeasonChoice}
-						/>
+						<Suspense
+							fallback={<p className="text-sm text-zinc-500">Loading...</p>}
+						>
+							<ModelEvidence
+								formValidation={formValidationQuery.data}
+								defconValidation={defconValidationQuery.data}
+								clubValidation={clubValidationQuery.data ?? []}
+								season={evidenceSeason}
+								seasons={evidenceSeasons(liveSeason)}
+								liveSeason={liveSeason}
+								isLoadingSeason={
+									defconValidationQuery.isPlaceholderData ||
+									clubValidationQuery.isPlaceholderData ||
+									formValidationQuery.isPlaceholderData
+								}
+								onSeasonChange={setEvidenceSeasonChoice}
+							/>
+						</Suspense>
 					)
 				) : isSquadViewActive ? (
 					<SquadInspection
