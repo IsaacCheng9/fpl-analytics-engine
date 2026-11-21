@@ -14,6 +14,12 @@ export function InfoTooltip({ text }: { text: string }) {
 	const [pos, setPos] = useState({ top: 0, left: 0 });
 	const open = pinned || hovered || focused;
 
+	const close = () => {
+		setPinned(false);
+		setHovered(false);
+		setFocused(false);
+	};
+
 	const place = () => {
 		const rect = buttonRef.current?.getBoundingClientRect();
 		if (rect) {
@@ -24,12 +30,17 @@ export function InfoTooltip({ text }: { text: string }) {
 	};
 
 	useEffect(() => {
-		if (!pinned) {
+		if (!open) {
 			return;
 		}
 		function onKeyDown(event: KeyboardEvent) {
 			if (event.key === "Escape") {
+				// Capture-phase dismissal prevents Escape from also closing a parent dialog.
+				event.preventDefault();
+				event.stopPropagation();
 				setPinned(false);
+				setHovered(false);
+				setFocused(false);
 			}
 		}
 		function onPointerDown(event: PointerEvent) {
@@ -40,23 +51,27 @@ export function InfoTooltip({ text }: { text: string }) {
 				!tooltipRef.current?.contains(target)
 			) {
 				setPinned(false);
+				setHovered(false);
+				setFocused(false);
 			}
 		}
 		function onScroll() {
 			setPinned(false);
+			setHovered(false);
+			setFocused(false);
 		}
-		document.addEventListener("keydown", onKeyDown);
+		document.addEventListener("keydown", onKeyDown, true);
 		document.addEventListener("pointerdown", onPointerDown);
 		window.addEventListener("scroll", onScroll, {
 			capture: true,
 			passive: true,
 		});
 		return () => {
-			document.removeEventListener("keydown", onKeyDown);
+			document.removeEventListener("keydown", onKeyDown, true);
 			document.removeEventListener("pointerdown", onPointerDown);
 			window.removeEventListener("scroll", onScroll, { capture: true });
 		};
-	}, [pinned]);
+	}, [open]);
 
 	return (
 		<>
@@ -69,8 +84,12 @@ export function InfoTooltip({ text }: { text: string }) {
 				className="cursor-help select-none text-xs text-zinc-400 hover:text-zinc-600 focus-visible:rounded focus-visible:outline-2 focus-visible:outline-zinc-400"
 				onClick={(event) => {
 					event.stopPropagation();
-					place();
-					setPinned((value) => !value);
+					if (pinned) {
+						close();
+					} else {
+						place();
+						setPinned(true);
+					}
 				}}
 				onMouseEnter={() => {
 					place();

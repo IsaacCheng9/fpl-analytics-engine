@@ -18,9 +18,11 @@ function formatDeadline(deadline: string | null): string {
 export function SeasonStatus({
 	meta,
 	state,
+	onRetry,
 }: {
 	meta?: Meta;
 	state: "loading" | "error" | "preseason";
+	onRetry?: () => void;
 }) {
 	const title =
 		state === "loading"
@@ -63,6 +65,15 @@ export function SeasonStatus({
 							<p className="mt-3 max-w-2xl text-sm text-zinc-600 leading-6">
 								{description}
 							</p>
+							{state === "error" && onRetry ? (
+								<button
+									type="button"
+									className="mt-4 rounded-md px-3 py-1.5 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+									onClick={onRetry}
+								>
+									Retry
+								</button>
+							) : null}
 						</div>
 						{state === "preseason" ? (
 							<div className="border-zinc-200 border-t pt-5 md:border-t-0 md:border-l md:pt-0 md:pl-6">

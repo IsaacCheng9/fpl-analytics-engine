@@ -22,8 +22,10 @@ describe("PlayerCombobox", () => {
 		);
 
 		const input = screen.getByRole("combobox", { name: "First Player" });
+		expect(input).not.toHaveAttribute("aria-controls");
 		fireEvent.change(input, { target: { value: "Sa" } });
 		expect(screen.getByRole("listbox")).toBeInTheDocument();
+		expect(input).toHaveAttribute("aria-controls", "player-a-listbox");
 		expect(screen.getAllByRole("option")).toHaveLength(2);
 
 		fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -33,9 +35,60 @@ describe("PlayerCombobox", () => {
 		expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 	});
 
+	test("opens at index 0 on ArrowDown when closed, stays open when cleared, and reopens on click", () => {
+		const onChange = vi.fn();
+		render(
+			<PlayerCombobox
+				id="player-c"
+				label="First Player"
+				options={options}
+				value={1}
+				onChange={onChange}
+			/>,
+		);
+
+		const input = screen.getByRole("combobox", { name: "First Player" });
+		fireEvent.keyDown(input, { key: "ArrowDown" });
+		expect(screen.getByRole("listbox")).toBeInTheDocument();
+		expect(input).toHaveAttribute("aria-activedescendant", "player-c-option-1");
+
+		fireEvent.change(input, { target: { value: "" } });
+		expect(onChange).toHaveBeenCalledWith(null);
+		expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+		fireEvent.keyDown(input, { key: "Escape" });
+		expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+		fireEvent.click(input);
+		expect(screen.getByRole("listbox")).toBeInTheDocument();
+	});
+
+	test("shows truncation notice when matches exceed 50 players", () => {
+		const manyOptions: PlayerOption[] = Array.from({ length: 60 }, (_, i) => ({
+			element: i + 1,
+			web_name: `Player ${i + 1}`,
+			team_name: "Arsenal",
+			position: "MID",
+		}));
+		render(
+			<PlayerCombobox
+				id="player-many"
+				label="First Player"
+				options={manyOptions}
+				value={null}
+				onChange={() => {}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("combobox", { name: "First Player" }));
+		expect(screen.getAllByRole("option")).toHaveLength(50);
+		expect(
+			screen.getByText("Showing 50 of 60 players - type to filter"),
+		).toBeInTheDocument();
+	});
+
 	test("closes open dropdown on Escape without propagating to parent dialogs", () => {
 		const onDialogEscape = vi.fn();
-		const onChange = vi.fn();
 		render(
 			<div
 				role="dialog"
@@ -50,7 +103,7 @@ describe("PlayerCombobox", () => {
 					label="Second Player"
 					options={options}
 					value={1}
-					onChange={onChange}
+					onChange={() => {}}
 				/>
 			</div>,
 		);

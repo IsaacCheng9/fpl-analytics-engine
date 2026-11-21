@@ -128,7 +128,8 @@ export const DEFAULT_URL_STATE: UrlState = {
 	sort: null,
 };
 
-const SEASON_PATTERN = /^\d{4}-\d{2}$/;
+const SEASON_PATTERN = /^(\d{4})-(\d{2})$/;
+const MIN_EVIDENCE_SEASON_YEAR = 2025;
 
 function isBrowser() {
 	return typeof window !== "undefined";
@@ -184,7 +185,19 @@ function parseOptionalNumber(
 }
 
 function parseSeason(value: string | null): string | null {
-	return value !== null && SEASON_PATTERN.test(value) ? value : null;
+	if (value === null) {
+		return null;
+	}
+	const match = SEASON_PATTERN.exec(value);
+	if (!match) {
+		return null;
+	}
+	const start = Number(match[1]);
+	const end = Number(match[2]);
+	if (start < MIN_EVIDENCE_SEASON_YEAR || (start + 1) % 100 !== end) {
+		return null;
+	}
+	return value;
 }
 
 function parseTab(value: string | null): Tab {
@@ -274,6 +287,14 @@ export function readUrlState(): UrlState {
 	const windowSize = parseOptionalNumber(params.get("window"), {
 		integer: true,
 	});
+	const compareLeftElement = parseOptionalNumber(params.get("compare_a"), {
+		min: 1,
+		integer: true,
+	});
+	const compareRightElement = parseOptionalNumber(params.get("compare_b"), {
+		min: 1,
+		integer: true,
+	});
 	return {
 		tab,
 		playerSearch: params.get("q") ?? DEFAULT_PLAYER_SEARCH,
@@ -307,16 +328,10 @@ export function readUrlState(): UrlState {
 		showSquadView,
 		compareOpen:
 			params.get("compare") === "1" ||
-			params.has("compare_a") ||
-			params.has("compare_b"),
-		compareLeftElement: parseOptionalNumber(params.get("compare_a"), {
-			min: 1,
-			integer: true,
-		}),
-		compareRightElement: parseOptionalNumber(params.get("compare_b"), {
-			min: 1,
-			integer: true,
-		}),
+			compareLeftElement !== null ||
+			compareRightElement !== null,
+		compareLeftElement,
+		compareRightElement,
 		compareWindow: clampWindowSize(
 			parseNumber(params.get("compare_window"), DEFAULT_COMPARE_WINDOW, {
 				integer: true,

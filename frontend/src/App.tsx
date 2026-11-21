@@ -450,8 +450,15 @@ export default function App() {
 		enabled: analyticsReady && tab === "clubs",
 	});
 	const liveSeason = meta.data?.season ?? "";
+	const availableEvidenceSeasons = liveSeason
+		? evidenceSeasons(liveSeason)
+		: [];
 	const evidenceSeason =
-		evidenceSeasonChoice ?? defaultEvidenceSeason(liveSeason, latestGw);
+		evidenceSeasonChoice !== null &&
+		(availableEvidenceSeasons.length === 0 ||
+			availableEvidenceSeasons.includes(evidenceSeasonChoice))
+			? evidenceSeasonChoice
+			: defaultEvidenceSeason(liveSeason, latestGw);
 	// Keep the previous season on screen while a newly selected one loads, so
 	// the season selector stays put.
 	const defconValidationQuery = useQuery({
@@ -1096,7 +1103,14 @@ export default function App() {
 		return <SeasonStatus state="loading" />;
 	}
 	if (meta.isError || meta.data === undefined) {
-		return <SeasonStatus state="error" />;
+		return (
+			<SeasonStatus
+				state="error"
+				onRetry={() => {
+					void meta.refetch();
+				}}
+			/>
+		);
 	}
 	if (!analyticsReady) {
 		return <SeasonStatus meta={meta.data} state="preseason" />;
@@ -1641,6 +1655,20 @@ export default function App() {
 							squadCurrentContextQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
+						onRetry={() => {
+							if (fplTeamQuery.isError || teamImportIdentityError) {
+								void fplTeamQuery.refetch();
+							}
+							if (squadFormQuery.isError) {
+								void squadFormQuery.refetch();
+							}
+							if (squadCurrentContextQuery.isError) {
+								void squadCurrentContextQuery.refetch();
+							}
+							if (squadDefconProbabilityQuery.isError) {
+								void squadDefconProbabilityQuery.refetch();
+							}
+						}}
 						onPlayerClick={openPlayerDetail}
 					/>
 				) : activeLoading ? (
@@ -1747,6 +1775,20 @@ export default function App() {
 						onAsOfGwChange={setCompareAsOfGw}
 						onLeftChange={updateCompareLeft}
 						onRightChange={updateCompareRight}
+						onRetryContext={() => {
+							if (compareFormQuery.isError) {
+								void compareFormQuery.refetch();
+							}
+							if (compareDefconQuery.isError) {
+								void compareDefconQuery.refetch();
+							}
+							if (compareDefconProbabilityQuery.isError) {
+								void compareDefconProbabilityQuery.refetch();
+							}
+							if (compareClubQuery.isError) {
+								void compareClubQuery.refetch();
+							}
+						}}
 						onClose={closeComparePanel}
 					/>
 				</Suspense>
