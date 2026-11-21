@@ -704,6 +704,59 @@ def backtest_defcon_count_probabilities(
     return pl.concat(calibrated_frames, how="vertical")
 
 
+def _raw_count_calibration_rows(
+    history: pl.DataFrame,
+    max_as_of_gw: int,
+    prior_strength: float,
+    min_minutes: int,
+    empirical_bayes: bool,
+    min_games_for_prior: int,
+) -> pl.DataFrame:
+    """Build point-in-time raw count predictions paired with realised next-GW hits.
+
+    Skip both the unused binary model and nested per-gameweek calibration loops
+    because :func:`_apply_count_calibration` only reads ``count_prob`` and
+    ``hit``.
+    """
+    if history.is_empty() or max_as_of_gw < 1:
+        return pl.DataFrame()
+    max_round = cast(int, history["round"].max())
+    last_gw = min(max_as_of_gw, max_round - 1)
+    if last_gw < 1:
+        return pl.DataFrame()
+
+    next_hit = history.filter(
+        (pl.col("minutes") >= min_minutes) & pl.col("defcon_hit").is_not_null()
+    ).select("element", "round", pl.col("defcon_hit").alias("hit"))
+
+    frames = [
+        defcon_count_probabilities(
+            history,
+            gw,
+            prior_strength,
+            min_minutes,
+            empirical_bayes,
+            min_games_for_prior,
+        ).select(
+            "element",
+            pl.col("prob").alias("count_prob"),
+            (pl.lit(gw) + 1).alias("next_round"),
+        )
+        for gw in range(1, last_gw + 1)
+    ]
+    return (
+        pl.concat(frames, how="vertical")
+        .join(
+            next_hit,
+            left_on=["element", "next_round"],
+            right_on=["element", "round"],
+            how="left",
+        )
+        .filter(pl.col("hit").is_not_null())
+        .with_columns(pl.col("hit").cast(pl.Float64))
+    )
+
+
 def calibrated_defcon_count_probabilities(
     history: pl.DataFrame,
     as_of_gw: int,
@@ -755,15 +808,13 @@ def calibrated_defcon_count_probabilities(
             "as_of_gw",
         )
 
-    calibration_rows = backtest_defcon_count_probabilities(
+    calibration_rows = _raw_count_calibration_rows(
         history,
-        gw_range=range(1, as_of_gw),
+        max_as_of_gw=as_of_gw - 1,
         prior_strength=prior_strength,
         min_minutes=min_minutes,
         empirical_bayes=empirical_bayes,
         min_games_for_prior=min_games_for_prior,
-        calibration_bins=calibration_bins,
-        calibration_prior_strength=calibration_prior_strength,
     )
     calibrated = _apply_count_calibration(
         current,
