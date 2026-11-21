@@ -17,7 +17,10 @@ import { DataTable } from "./components/DataTable";
 import { FormScatter } from "./components/FormScatter";
 import { PlayerToolbar } from "./components/PlayerToolbar";
 import { SeasonStatus } from "./components/SeasonStatus";
-import { SquadInspection } from "./components/SquadInspection";
+import {
+	type ReplacementRequest,
+	SquadInspection,
+} from "./components/SquadInspection";
 import { useDashboardQueries } from "./hooks/useDashboardQueries";
 import {
 	buildActiveFilterChips,
@@ -54,6 +57,7 @@ import {
 	defaultTransferFilters,
 	type FilterPreset,
 	isPlayerTab,
+	POSITIONS,
 	type ShortlistablePlayer,
 	TAB_LABELS,
 	TABS,
@@ -370,6 +374,24 @@ export default function App() {
 		setSelectedElement(element);
 		setPlayerWindow(DEFAULT_PLAYER_WINDOW);
 		setPlayerSeason(DEFAULT_PLAYER_SEASON);
+	}
+
+	function findReplacement(request: ReplacementRequest) {
+		if (tab !== "form") {
+			setTab("form");
+			setSort(null);
+		}
+		setShowSquadView(false);
+		const nextPosition = POSITIONS.find((value) => value === request.position);
+		setPosition(nextPosition ?? DEFAULT_POSITION);
+		setTransferFilters((current) => ({
+			...current,
+			maxPrice: request.maxPrice ?? null,
+		}));
+		setOwnershipFilter("not-owned");
+		setPlayerSearch(DEFAULT_PLAYER_SEARCH);
+		setTeamFilter(DEFAULT_TEAM_FILTER);
+		setShowShortlistedOnly(false);
 	}
 
 	function openComparePanel() {
@@ -997,6 +1019,7 @@ export default function App() {
 							}
 						}}
 						onPlayerClick={openPlayerDetail}
+						onFindReplacement={findReplacement}
 					/>
 				) : active?.isPending ? (
 					<p className="text-sm text-zinc-500">Loading...</p>
