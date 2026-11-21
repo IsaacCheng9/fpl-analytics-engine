@@ -1803,3 +1803,40 @@ def test_live_player_context_stays_present_day_when_as_of_gw_changes(
     assert early_p1["news"] == "Suspended until GW6"
     assert early_p1["penalties_order"] == 1
     assert early_p1["corners_order"] == 1
+
+
+def test_player_detail_omits_live_snapshot_on_archived_seasons(
+    historical_client: TestClient,
+) -> None:
+    api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame(
+        {
+            "id": [7],
+            "code": [500],
+            "status": ["i"],
+            "chance_of_playing_next_round": [0],
+            "news": ["Thigh injury"],
+            "yellow_cards": [4],
+            "penalties_order": [1],
+            "corners_and_indirect_freekicks_order": [1],
+            "direct_freekicks_order": [2],
+        }
+    )
+
+    live = historical_client.get("/players/7")
+    assert live.status_code == 200
+    live_body = live.json()
+    assert live_body["selected_season"] == "2026-27"
+    assert live_body["status"] == "i"
+    assert live_body["chance_of_playing_next_round"] == 0
+    assert live_body["news"] == "Thigh injury"
+    assert live_body["yellow_cards"] == 4
+    assert live_body["penalties_order"] == 1
+    assert live_body["corners_order"] == 1
+    assert live_body["direct_freekicks_order"] == 2
+
+    archived = historical_client.get("/players/7", params={"season": "2025-26"})
+    assert archived.status_code == 200
+    archived_body = archived.json()
+    assert archived_body["selected_season"] == "2025-26"
+    for key in api.LIVE_STATUS_COLUMNS:
+        assert archived_body[key] is None

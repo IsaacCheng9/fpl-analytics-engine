@@ -441,7 +441,7 @@ def _validation_history(
 def _optional_col(
     frame: pl.DataFrame,
     name: str,
-    dtype: pl.DataType,
+    dtype: pl.DataType | type[pl.DataType],
     alias: str | None = None,
 ) -> pl.Expr:
     """Select and cast an optional column, falling back to typed nulls."""
@@ -538,7 +538,7 @@ def _attach_context(
     gw: int,
     horizon: int,
 ) -> pl.DataFrame:
-    """Attach fixture difficulty and the current-ownership overlay to a table."""
+    """Attach fixture difficulty and the live-snapshot overlay to a table."""
     with_fdr = fixtures.attach_team_fdr(table, fixtures_data, teams, gw, horizon)
     return _attach_overlay(with_fdr, players)
 
@@ -751,8 +751,6 @@ def players_current_context(
         "web_name": pl.String,
         "element_type": pl.Int64,
         "team": pl.Int64,
-        "now_cost": pl.Float64,
-        "selected_by_percent": pl.Float64,
     }
     players = raw_players.select(
         (pl.col(name) if name in raw_players.columns else pl.lit(None))
@@ -1307,7 +1305,11 @@ def player_detail(
             ]
     gw_cols = list(PlayerGameweek.model_fields)
     season_cols = list(PlayerSeasonSummary.model_fields)
-    live_status = _live_player_status(players, element)
+    live_status = (
+        _live_player_status(players, element)
+        if selected_season == current_season
+        else _empty_live_status()
+    )
     return PlayerDetail(
         element=element,
         code=code,

@@ -44,8 +44,8 @@ class FixtureContext(BaseModel):
         default=None,
         description=(
             "Live availability status code ('a' available, 'd' doubtful, 'i' "
-            "injured, 's' suspended, 'u' unavailable). Present-day live snapshot, "
-            "not point-in-time."
+            "injured, 's' suspended, 'u' unavailable, 'n' ineligible/not in "
+            "squad). Present-day live snapshot, not point-in-time."
         ),
     )
     chance_of_playing_next_round: int | None = Field(
@@ -337,50 +337,53 @@ class PlayerDetail(BaseModel):
     status: str | None = Field(
         default=None,
         description=(
-            "Live availability status code ('a', 'd', 'i', 's', 'u'). "
-            "Present-day live snapshot, not point-in-time."
+            "Live availability status code ('a', 'd', 'i', 's', 'u', 'n'). "
+            "Present-day live snapshot for the current season; null for "
+            "historical seasons."
         ),
     )
     chance_of_playing_next_round: int | None = Field(
         default=None,
         description=(
             "Live percentage chance of playing next round. Present-day live "
-            "snapshot, not point-in-time."
+            "snapshot for the current season; null for historical seasons."
         ),
     )
     news: str | None = Field(
         default=None,
         description=(
             "Live injury or suspension news text, normalised to null when blank. "
-            "Present-day live snapshot, not point-in-time."
+            "Present-day live snapshot for the current season; null for "
+            "historical seasons."
         ),
     )
     yellow_cards: int | None = Field(
         default=None,
         description=(
-            "Live season yellow-card count. Present-day live snapshot, not "
-            "point-in-time."
+            "Live season yellow-card count. Present-day live snapshot for the "
+            "current season; null for historical seasons."
         ),
     )
     penalties_order: int | None = Field(
         default=None,
         description=(
             "Live club penalty-taking order (1 = primary taker). Present-day "
-            "live snapshot, not point-in-time."
+            "live snapshot for the current season; null for historical seasons."
         ),
     )
     corners_order: int | None = Field(
         default=None,
         description=(
             "Live club corners and indirect free-kicks order (1 = primary "
-            "taker). Present-day live snapshot, not point-in-time."
+            "taker). Present-day live snapshot for the current season; null for "
+            "historical seasons."
         ),
     )
     direct_freekicks_order: int | None = Field(
         default=None,
         description=(
             "Live club direct free-kicks order (1 = primary taker). Present-day "
-            "live snapshot, not point-in-time."
+            "live snapshot for the current season; null for historical seasons."
         ),
     )
 
