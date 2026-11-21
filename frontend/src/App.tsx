@@ -1073,7 +1073,12 @@ export default function App() {
 					<>
 						{/* A 200-point scatter is unreadable at phone widths. */}
 						<div className="hidden sm:block">
-							<FormScatter players={visibleFormRows} />
+							<FormScatter
+								players={visibleFormRows}
+								onPlayerClick={openPlayerDetail}
+								ownedElements={ownedElements}
+								shortlist={shortlist}
+							/>
 						</div>
 						{renderPlayerTable(visibleFormRows, formColumns)}
 					</>
