@@ -423,3 +423,44 @@ def test_double_gameweek_calibration_is_per_appearance_and_point_in_time() -> No
         changed_future, as_of_gw=2, calibration_bins=1, calibration_prior_strength=2
     )
     assert_frame_equal(current, changed_current)
+
+
+def test_defcon_probabilities_use_latest_club_for_mid_season_transfers() -> None:
+    # Unsorted rows where the transferred player has not yet played 60+ mins
+    # for the new club, plus a future transfer after as_of_gw that must not leak.
+    rows = [
+        {**_count_game(1, 3, count=0), "minutes": 15, "team_name": "Brighton"},
+        {**_count_game(1, 1, count=12), "team_name": "West Ham"},
+        {**_count_game(1, 2, count=11), "team_name": "West Ham"},
+        {**_count_game(1, 4, count=10), "team_name": "Fulham"},
+    ]
+    history = _frame(rows)
+
+    binary = defcon.defcon_probabilities(history, as_of_gw=3, min_minutes=60)
+    count = defcon.defcon_count_probabilities(history, as_of_gw=3, min_minutes=60)
+    calibrated = defcon.calibrated_defcon_count_probabilities(
+        history, as_of_gw=3, min_minutes=60
+    )
+
+    assert binary["team_name"].to_list() == ["Brighton"]
+    assert count["team_name"].to_list() == ["Brighton"]
+    assert calibrated["team_name"].to_list() == ["Brighton"]
+
+
+def test_defcon_models_return_empty_frames_when_no_appearances_qualify() -> None:
+    history = _frame([_count_game(1, 1, count=12), _count_game(1, 2, count=8)])
+
+    binary = defcon.defcon_probabilities(history, as_of_gw=2, min_minutes=200)
+    count = defcon.defcon_count_probabilities(history, as_of_gw=2, min_minutes=200)
+    calibrated = defcon.calibrated_defcon_count_probabilities(
+        history, as_of_gw=2, min_minutes=200
+    )
+    backtest = defcon.backtest_defcon_count_probabilities(history, min_minutes=200)
+
+    assert binary.is_empty()
+    assert "prob" in binary.columns
+    assert count.is_empty()
+    assert "prob" in count.columns
+    assert calibrated.is_empty()
+    assert {"element", "games", "prob", "team_name"} <= set(calibrated.columns)
+    assert backtest.is_empty()
