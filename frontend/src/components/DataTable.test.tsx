@@ -262,9 +262,13 @@ test("restricts horizontal sticky columns to medium and wider viewports", () => 
 	const [actionHeader, playerHeader, pointsHeader] = headerCells;
 	expect(actionHeader).toHaveClass("md:left-0", "md:z-40");
 	expect(actionHeader).not.toHaveClass("left-0");
-	expect(playerHeader).toHaveClass("md:left-(--sticky-left)", "md:z-40");
+	expect(playerHeader).toHaveClass(
+		"md:left-(--sticky-left)",
+		"md:max-w-(--sticky-width)",
+		"md:z-40",
+	);
 	expect(playerHeader.style.getPropertyValue("--sticky-left")).toBe("48px");
-	expect(playerHeader.style.getPropertyValue("--sticky-width")).toBe("144px");
+	expect(playerHeader.style.getPropertyValue("--sticky-width")).toBe("216px");
 	expect(playerHeader.style.left).toBe("");
 	expect(pointsHeader).not.toHaveClass("md:left-(--sticky-left)");
 
@@ -273,7 +277,11 @@ test("restricts horizontal sticky columns to medium and wider viewports", () => 
 	).getAllByRole("cell");
 	expect(actionCell).toHaveClass("md:sticky", "md:left-0");
 	expect(actionCell).not.toHaveClass("sticky");
-	expect(playerCell).toHaveClass("md:sticky", "md:left-(--sticky-left)");
+	expect(playerCell).toHaveClass(
+		"md:sticky",
+		"md:left-(--sticky-left)",
+		"md:max-w-(--sticky-width)",
+	);
 	expect(playerCell).not.toHaveClass("sticky");
 	expect(playerCell.style.getPropertyValue("--sticky-left")).toBe("48px");
 	expect(playerCell.style.left).toBe("");

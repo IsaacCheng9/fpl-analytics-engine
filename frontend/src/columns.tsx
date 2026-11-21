@@ -261,12 +261,17 @@ function buildPlayerIdentityColumns<
 		{
 			accessorKey: "web_name",
 			header: "Player",
-			cell: (info) => (
-				<span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-					<span>{info.getValue<string>()}</span>
-					<PlayerStatusBadges player={info.row.original} mode="compact" />
-				</span>
-			),
+			cell: (info) => {
+				const name = info.getValue<string>();
+				return (
+					<span className="flex min-w-0 items-center gap-1.5">
+						<span className="min-w-0 truncate" title={name}>
+							{name}
+						</span>
+						<PlayerStatusBadges player={info.row.original} mode="compact" />
+					</span>
+				);
+			},
 		},
 		{ accessorKey: "position", header: "Pos" },
 		{ accessorKey: "team_name", header: "Team" },

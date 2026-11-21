@@ -10,11 +10,12 @@ const candidates: Candidate[] = [
 	{ web_name: "InjuredPen", status: "i", penalties_order: 1 },
 	{ web_name: "Suspended", status: "s", penalties_order: null },
 	{ web_name: "Unavailable", status: "u", penalties_order: null },
+	{ web_name: "NotInSquad", status: "n", penalties_order: null },
 	{ web_name: "UnknownStatus", status: null, penalties_order: null },
 ];
 
 describe("filterTransferCandidates live-snapshot filters", () => {
-	test("excludeUnavailable drops i/s/u rows and keeps a/d/null rows", () => {
+	test("excludeUnavailable drops i/s/u/n rows and keeps a/d/null rows", () => {
 		const filtered = filterTransferCandidates(candidates, {
 			...DEFAULT_TRANSFER_FILTERS,
 			excludeUnavailable: true,

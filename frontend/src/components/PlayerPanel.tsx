@@ -196,11 +196,18 @@ export function PlayerPanel({
 	const seasonSummary = detail?.seasons.find(
 		(summary) => summary.season === detail.selected_season,
 	);
-	const duties = detail ? setPieceDuties(detail) : [];
+	const isLiveSeason =
+		detail !== undefined &&
+		(meta.data ? detail.selected_season === meta.data.season : season === null);
+	const liveDetail = isLiveSeason ? detail : undefined;
+	const duties = liveDetail ? setPieceDuties(liveDetail) : [];
 	const statusText =
-		detail?.status && detail.status !== "a" ? statusLabel(detail.status) : null;
+		liveDetail?.status && liveDetail.status !== "a"
+			? statusLabel(liveDetail.status)
+			: null;
 	const showLiveMeta =
-		detail !== undefined && (duties.length > 0 || detail.yellow_cards !== null);
+		liveDetail !== undefined &&
+		(duties.length > 0 || liveDetail.yellow_cards !== null);
 
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const onCloseRef = useRef(onClose);
@@ -247,7 +254,7 @@ export function PlayerPanel({
 							<h2 id="player-panel-title" className="font-semibold text-xl">
 								{detail?.web_name ?? "Player"}
 							</h2>
-							<PlayerStatusBadges player={detail} mode="full" />
+							<PlayerStatusBadges player={liveDetail} mode="full" />
 						</div>
 						{detail ? (
 							<p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -255,23 +262,26 @@ export function PlayerPanel({
 								{detail.as_of_gw}
 							</p>
 						) : null}
-						{showLiveMeta ? (
+						{showLiveMeta && liveDetail ? (
 							<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+								<span className="font-medium text-zinc-500">
+									Live snapshot:
+								</span>
 								{duties.length > 0 ? (
 									<span>
 										Set Pieces: {duties.map((duty) => duty.label).join(", ")}
 									</span>
 								) : null}
-								{detail.yellow_cards !== null ? (
+								{liveDetail.yellow_cards !== null ? (
 									<span
 										className={
-											isCardRisk(detail.yellow_cards)
+											isCardRisk(liveDetail.yellow_cards)
 												? "font-medium text-amber-800"
 												: undefined
 										}
 									>
-										Yellow Cards: {detail.yellow_cards}
-										{isCardRisk(detail.yellow_cards)
+										Yellow Cards: {liveDetail.yellow_cards}
+										{isCardRisk(liveDetail.yellow_cards)
 											? " (suspension watch)"
 											: ""}
 									</span>
@@ -288,11 +298,11 @@ export function PlayerPanel({
 					</button>
 				</div>
 
-				{detail && statusText ? (
+				{liveDetail && statusText ? (
 					<div
 						role="status"
 						className={`mb-4 rounded-md border px-3 py-2 text-sm ${
-							isUnavailableStatus(detail.status)
+							isUnavailableStatus(liveDetail.status)
 								? "border-red-200 bg-red-50 text-red-900"
 								: "border-amber-200 bg-amber-50 text-amber-900"
 						}`}
@@ -300,14 +310,14 @@ export function PlayerPanel({
 						<div className="flex flex-wrap items-baseline justify-between gap-2">
 							<span className="font-semibold">
 								{statusText}
-								{detail.chance_of_playing_next_round !== null
-									? ` - ${detail.chance_of_playing_next_round}% chance of playing`
+								{liveDetail.chance_of_playing_next_round !== null
+									? ` - ${liveDetail.chance_of_playing_next_round}% chance of playing`
 									: ""}
 							</span>
 							<span className="text-xs opacity-75">Live snapshot</span>
 						</div>
-						{detail.news ? (
-							<p className="mt-0.5 text-xs">{detail.news}</p>
+						{liveDetail.news ? (
+							<p className="mt-0.5 text-xs">{liveDetail.news}</p>
 						) : null}
 					</div>
 				) : null}

@@ -16,14 +16,17 @@ describe("playerStatus helpers", () => {
 		expect(isUnavailableStatus("i")).toBe(true);
 		expect(isUnavailableStatus("s")).toBe(true);
 		expect(isUnavailableStatus("u")).toBe(true);
+		expect(isUnavailableStatus("n")).toBe(true);
 		expect(isUnavailableStatus("d")).toBe(false);
 		expect(isUnavailableStatus("a")).toBe(false);
+		expect(isUnavailableStatus("x")).toBe(false);
 		expect(isUnavailableStatus(null)).toBe(false);
 
 		expect(isCardRisk(4)).toBe(true);
 		expect(isCardRisk(9)).toBe(true);
 		expect(isCardRisk(3)).toBe(false);
 		expect(isCardRisk(5)).toBe(false);
+		expect(isCardRisk(10)).toBe(false);
 		expect(isCardRisk(null)).toBe(false);
 	});
 
@@ -38,6 +41,17 @@ describe("playerStatus helpers", () => {
 			label: "Inj",
 			tone: "risk",
 			tooltip: "Injured - 0% chance: Hamstring injury",
+		});
+		expect(
+			availabilityBadge({
+				status: "n",
+				chance_of_playing_next_round: 0,
+				news: "Not registered in squad",
+			}),
+		).toEqual({
+			label: "Out",
+			tone: "risk",
+			tooltip: "Unavailable - 0% chance: Not registered in squad",
 		});
 		expect(
 			availabilityBadge({
@@ -62,6 +76,7 @@ describe("playerStatus helpers", () => {
 			tooltip: "Doubtful",
 		});
 		expect(availabilityBadge({ status: "a" })).toBeNull();
+		expect(availabilityBadge({ status: "x" })).toBeNull();
 	});
 
 	test("formats card risk, set-piece duties, and compare summaries", () => {
@@ -123,30 +138,30 @@ describe("PlayerStatusBadges", () => {
 		const { rerender } = render(
 			<PlayerStatusBadges player={player} mode="compact" />,
 		);
-		expect(screen.getByText("Inj")).toHaveAttribute(
-			"title",
-			"Injured - 0% chance: Knee injury",
-		);
-		expect(screen.getByText("4 YC")).toHaveAttribute(
-			"title",
-			"4 yellow cards - suspension watch",
-		);
-		expect(screen.getByText("P")).toHaveAttribute(
-			"title",
-			"Primary penalty taker",
+		expect(screen.getByText("Inj")).toHaveAttribute("aria-hidden", "true");
+		expect(
+			screen.getByTitle("Injured - 0% chance: Knee injury"),
+		).toHaveTextContent("InjInjured - 0% chance: Knee injury");
+		expect(screen.getByText("4 YC")).toHaveAttribute("aria-hidden", "true");
+		expect(
+			screen.getByTitle("4 yellow cards - suspension watch"),
+		).toHaveTextContent("4 YC4 yellow cards - suspension watch");
+		expect(screen.getByText("P")).toHaveAttribute("aria-hidden", "true");
+		expect(screen.getByTitle("Primary penalty taker")).toHaveTextContent(
+			"PPrimary penalty taker",
 		);
 		expect(screen.queryByText("C")).not.toBeInTheDocument();
 		expect(screen.queryByText("FK")).not.toBeInTheDocument();
 
 		rerender(<PlayerStatusBadges player={player} mode="full" />);
 		expect(screen.getByText("P")).toBeInTheDocument();
-		expect(screen.getByText("C")).toHaveAttribute(
-			"title",
-			"Primary corner and indirect free-kick taker",
-		);
-		expect(screen.getByText("FK")).toHaveAttribute(
-			"title",
-			"Primary direct free-kick taker",
-		);
+		expect(screen.getByText("C")).toHaveAttribute("aria-hidden", "true");
+		expect(
+			screen.getByTitle("Primary corner and indirect free-kick taker"),
+		).toHaveTextContent("CPrimary corner and indirect free-kick taker");
+		expect(screen.getByText("FK")).toHaveAttribute("aria-hidden", "true");
+		expect(
+			screen.getByTitle("Primary direct free-kick taker"),
+		).toHaveTextContent("FKPrimary direct free-kick taker");
 	});
 });

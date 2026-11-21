@@ -22,7 +22,7 @@ export type SetPieceDuty = {
 	tooltip: string;
 };
 
-export const UNAVAILABLE_STATUSES = new Set(["i", "s", "u"]);
+export const UNAVAILABLE_STATUSES = new Set(["i", "s", "u", "n"]);
 
 const STATUS_LABELS: Record<string, string> = {
 	a: "Available",
@@ -30,12 +30,14 @@ const STATUS_LABELS: Record<string, string> = {
 	i: "Injured",
 	s: "Suspended",
 	u: "Unavailable",
+	n: "Unavailable",
 };
 
 const UNAVAILABLE_SHORT_LABELS: Record<string, string> = {
 	i: "Inj",
 	s: "Susp",
 	u: "Out",
+	n: "Out",
 };
 
 export function isUnavailableStatus(

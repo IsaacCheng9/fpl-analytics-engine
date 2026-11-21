@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { DefconPlayer, FormPlayer, PlayerDetail } from "../api";
-import { buildCompareRows, type CompareSide } from "./compareRows";
+import {
+	buildCompareRows,
+	type CompareRow,
+	type CompareSide,
+	winningSide,
+} from "./compareRows";
 
 function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 	const detail: PlayerDetail = {
@@ -351,5 +356,7 @@ describe("buildCompareRows", () => {
 			left: "Penalties, Corners",
 			right: "None",
 		});
+		expect(winningSide(availability as CompareRow)).toBeNull();
+		expect(winningSide(setPieces as CompareRow)).toBeNull();
 	});
 });

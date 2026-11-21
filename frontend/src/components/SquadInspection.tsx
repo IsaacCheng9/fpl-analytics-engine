@@ -8,7 +8,7 @@ import type {
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 import {
 	availabilityTooltip,
-	isCardRisk,
+	cardRiskBadge,
 	isUnavailableStatus,
 	statusLabel,
 } from "../lib/playerStatus";
@@ -246,11 +246,12 @@ function squadFlags(
 		});
 	}
 
-	if (isCardRisk(live?.yellow_cards)) {
+	const cardRisk = cardRiskBadge(live?.yellow_cards);
+	if (cardRisk) {
 		flags.push({
 			label: "Card Risk",
 			tone: "watch",
-			title: `${live?.yellow_cards} yellow cards - suspension watch`,
+			title: cardRisk.tooltip,
 		});
 	}
 

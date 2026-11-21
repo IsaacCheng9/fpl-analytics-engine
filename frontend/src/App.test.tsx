@@ -3188,3 +3188,78 @@ test("filters by live availability and primary penalty takers with URL and chip 
 		new URLSearchParams(window.location.search).get("penalties_only"),
 	).toBeNull();
 });
+
+test("applies live availability and penalty filters on the DefCon Form tab", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/players/defcon")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify([
+						{
+							...defconRows[0],
+							status: "a",
+							chance_of_playing_next_round: null,
+							news: null,
+							yellow_cards: 0,
+							penalties_order: 1,
+							corners_order: null,
+							direct_freekicks_order: null,
+						},
+						{
+							...defconRows[1],
+							status: "n",
+							chance_of_playing_next_round: 0,
+							news: "Ineligible",
+							yellow_cards: 0,
+							penalties_order: 1,
+							corners_order: null,
+							direct_freekicks_order: null,
+						},
+						{
+							...defconRows[2],
+							status: "d",
+							chance_of_playing_next_round: 50,
+							news: "Knock",
+							yellow_cards: 4,
+							penalties_order: null,
+							corners_order: null,
+							direct_freekicks_order: null,
+						},
+					]),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+
+	window.history.replaceState(null, "", "/?tab=defcon");
+	render(withProviders(<App />));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Saka"),
+		).toBeInTheDocument();
+	});
+
+	const table = within(screen.getByRole("table"));
+	openMoreFilters();
+	fireEvent.click(screen.getByLabelText("Exclude Unavailable"));
+	await waitFor(() => {
+		expect(table.queryByText("Saka")).not.toBeInTheDocument();
+	});
+	expect(table.getByText("Mbeumo")).toBeInTheDocument();
+	expect(table.getByText("Haaland")).toBeInTheDocument();
+
+	fireEvent.click(screen.getByLabelText("Penalties Only"));
+	await waitFor(() => {
+		expect(table.queryByText("Haaland")).not.toBeInTheDocument();
+	});
+	expect(table.getByText("Mbeumo")).toBeInTheDocument();
+	expect(
+		new URLSearchParams(window.location.search).get("exclude_unavailable"),
+	).toBe("1");
+	expect(
+		new URLSearchParams(window.location.search).get("penalties_only"),
+	).toBe("1");
+});

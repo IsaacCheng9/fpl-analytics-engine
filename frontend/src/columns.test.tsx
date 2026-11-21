@@ -401,23 +401,22 @@ describe("nullable numeric column sorting", () => {
 		);
 		render(<DataTable data={players} columns={columns} />);
 
-		expect(screen.getByText("Inj")).toHaveAttribute(
-			"title",
-			"Injured - 0% chance: Hamstring injury",
-		);
-		expect(screen.getByText("P")).toHaveAttribute(
-			"title",
-			"Primary penalty taker",
-		);
+		expect(
+			screen.getByTitle("Injured - 0% chance: Hamstring injury"),
+		).toBeInTheDocument();
+		expect(screen.getByText("Inj")).toHaveAttribute("aria-hidden", "true");
+		expect(screen.getByTitle("Primary penalty taker")).toBeInTheDocument();
+		expect(screen.getByText("P")).toHaveAttribute("aria-hidden", "true");
 		expect(screen.queryByText("C")).not.toBeInTheDocument();
 		expect(screen.queryByText("FK")).not.toBeInTheDocument();
-		expect(screen.getByText("75%")).toHaveAttribute(
-			"title",
-			"Doubtful - 75% chance: Knock",
-		);
-		expect(screen.getByText("4 YC")).toHaveAttribute(
-			"title",
-			"4 yellow cards - suspension watch",
-		);
+		expect(
+			screen.getByTitle("Doubtful - 75% chance: Knock"),
+		).toBeInTheDocument();
+		expect(screen.getByText("75%")).toHaveAttribute("aria-hidden", "true");
+		expect(
+			screen.getByTitle("4 yellow cards - suspension watch"),
+		).toBeInTheDocument();
+		expect(screen.getByText("4 YC")).toHaveAttribute("aria-hidden", "true");
+		expect(screen.getByText("Saka")).toHaveClass("min-w-0", "truncate");
 	});
 });

@@ -41,7 +41,8 @@ export function PlayerStatusBadges({
 					title={availability.tooltip}
 					className={`${basePillClass} ${statusBadgeClass[availability.tone]}`}
 				>
-					{availability.label}
+					<span aria-hidden="true">{availability.label}</span>
+					<span className="sr-only">{availability.tooltip}</span>
 				</span>
 			) : null}
 			{cardRisk ? (
@@ -49,7 +50,8 @@ export function PlayerStatusBadges({
 					title={cardRisk.tooltip}
 					className={`${basePillClass} ${statusBadgeClass[cardRisk.tone]}`}
 				>
-					{cardRisk.label}
+					<span aria-hidden="true">{cardRisk.label}</span>
+					<span className="sr-only">{cardRisk.tooltip}</span>
 				</span>
 			) : null}
 			{duties.map((duty) => (
@@ -58,7 +60,8 @@ export function PlayerStatusBadges({
 					title={duty.tooltip}
 					className={`${basePillClass} border-indigo-200 bg-indigo-50 text-indigo-700`}
 				>
-					{duty.code}
+					<span aria-hidden="true">{duty.code}</span>
+					<span className="sr-only">{duty.tooltip}</span>
 				</span>
 			))}
 		</span>
