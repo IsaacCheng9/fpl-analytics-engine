@@ -35,7 +35,7 @@ export function PlayerCombobox({
 		setInput(selectedLabel);
 	}, [selectedLabel]);
 
-	const filtered = useMemo(() => {
+	const { filtered, totalMatches } = useMemo(() => {
 		const query = input.trim().toLowerCase();
 		const matches =
 			query === "" || query === selectedLabel.toLowerCase()
@@ -43,7 +43,10 @@ export function PlayerCombobox({
 				: options.filter((option) =>
 						playerOptionLabel(option).toLowerCase().includes(query),
 					);
-		return matches.slice(0, MAX_VISIBLE_OPTIONS);
+		return {
+			filtered: matches.slice(0, MAX_VISIBLE_OPTIONS),
+			totalMatches: matches.length,
+		};
 	}, [input, options, selectedLabel]);
 
 	function selectOption(option: PlayerOption) {
@@ -57,7 +60,7 @@ export function PlayerCombobox({
 		setActiveIndex(0);
 		if (nextValue.trim() === "") {
 			onChange(null);
-			setOpen(false);
+			setOpen(true);
 			return;
 		}
 		const exactMatch = options.find(
@@ -76,7 +79,11 @@ export function PlayerCombobox({
 	function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
 		if (event.key === "ArrowDown") {
 			event.preventDefault();
-			setOpen(true);
+			if (!open) {
+				setOpen(true);
+				setActiveIndex(0);
+				return;
+			}
 			setActiveIndex((index) =>
 				filtered.length === 0 ? 0 : (index + 1) % filtered.length,
 			);
@@ -84,7 +91,11 @@ export function PlayerCombobox({
 		}
 		if (event.key === "ArrowUp") {
 			event.preventDefault();
-			setOpen(true);
+			if (!open) {
+				setOpen(true);
+				setActiveIndex(Math.max(0, filtered.length - 1));
+				return;
+			}
 			setActiveIndex((index) =>
 				filtered.length === 0
 					? 0
@@ -122,10 +133,12 @@ export function PlayerCombobox({
 				type="search"
 				role="combobox"
 				aria-expanded={open}
-				aria-controls={listboxId}
+				aria-controls={open ? listboxId : undefined}
 				aria-autocomplete="list"
 				aria-activedescendant={
-					activeOption ? `${id}-option-${activeOption.element}` : undefined
+					open && activeOption
+						? `${id}-option-${activeOption.element}`
+						: undefined
 				}
 				placeholder="Search player, club, or position..."
 				className="mt-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
@@ -134,6 +147,7 @@ export function PlayerCombobox({
 					setActiveIndex(0);
 					setOpen(true);
 				}}
+				onClick={() => setOpen(true)}
 				onChange={(event) => handleInputChange(event.target.value)}
 				onKeyDown={handleKeyDown}
 				onBlur={() => {
@@ -153,33 +167,41 @@ export function PlayerCombobox({
 							No matching players
 						</div>
 					) : (
-						filtered.map((option, index) => {
-							const isActive = index === safeActiveIndex;
-							const isSelected = option.element === value;
-							return (
-								<div
-									key={option.element}
-									id={`${id}-option-${option.element}`}
-									role="option"
-									tabIndex={-1}
-									aria-selected={isSelected}
-									className={`cursor-pointer px-2.5 py-1.5 ${
-										isActive
-											? "bg-sky-50 text-sky-900"
-											: isSelected
-												? "bg-zinc-50 font-medium text-zinc-900"
-												: "text-zinc-800 hover:bg-zinc-50"
-									}`}
-									onMouseEnter={() => setActiveIndex(index)}
-									onMouseDown={(event) => {
-										event.preventDefault();
-										selectOption(option);
-									}}
-								>
-									{playerOptionLabel(option)}
+						<>
+							{filtered.map((option, index) => {
+								const isActive = index === safeActiveIndex;
+								const isSelected = option.element === value;
+								return (
+									<div
+										key={option.element}
+										id={`${id}-option-${option.element}`}
+										role="option"
+										tabIndex={-1}
+										aria-selected={isSelected}
+										className={`cursor-pointer px-2.5 py-1.5 ${
+											isActive
+												? "bg-sky-50 text-sky-900"
+												: isSelected
+													? "bg-zinc-50 font-medium text-zinc-900"
+													: "text-zinc-800 hover:bg-zinc-50"
+										}`}
+										onMouseEnter={() => setActiveIndex(index)}
+										onMouseDown={(event) => {
+											event.preventDefault();
+											selectOption(option);
+										}}
+									>
+										{playerOptionLabel(option)}
+									</div>
+								);
+							})}
+							{totalMatches > MAX_VISIBLE_OPTIONS ? (
+								<div className="border-zinc-100 border-t px-2.5 py-1.5 text-xs text-zinc-500">
+									Showing {MAX_VISIBLE_OPTIONS} of {totalMatches} players - type
+									to filter
 								</div>
-							);
-						})
+							) : null}
+						</>
 					)}
 				</div>
 			) : null}

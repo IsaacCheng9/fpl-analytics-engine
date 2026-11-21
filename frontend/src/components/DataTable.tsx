@@ -21,7 +21,6 @@ import {
 	type CSSProperties,
 	type ReactNode,
 	type Ref,
-	useEffect,
 	useId,
 	useMemo,
 	useRef,
@@ -222,18 +221,31 @@ export function DataTable<T>({
 		}
 		return filtered.length === activeSorting.length ? activeSorting : filtered;
 	}, [columns, controlledSorting, localSorting]);
-	const prevPaginationReset = useRef({ data, sorting });
-	useEffect(() => {
+	const sortKey = sorting.map((sort) => `${sort.id}:${sort.desc}`).join(",");
+	const [prevReset, setPrevReset] = useState({
+		data,
+		sortKey,
+		initialPageSize,
+	});
+	if (
+		prevReset.data !== data ||
+		prevReset.sortKey !== sortKey ||
+		prevReset.initialPageSize !== initialPageSize
+	) {
+		const resetPage = prevReset.data !== data || prevReset.sortKey !== sortKey;
+		const nextPageSize =
+			prevReset.initialPageSize !== initialPageSize
+				? initialPageSize
+				: pagination.pageSize;
+		const nextPageIndex = resetPage ? 0 : pagination.pageIndex;
+		setPrevReset({ data, sortKey, initialPageSize });
 		if (
-			prevPaginationReset.current.data !== data ||
-			prevPaginationReset.current.sorting !== sorting
+			nextPageSize !== pagination.pageSize ||
+			nextPageIndex !== pagination.pageIndex
 		) {
-			prevPaginationReset.current = { data, sorting };
-			setPagination((current) =>
-				current.pageIndex === 0 ? current : { ...current, pageIndex: 0 },
-			);
+			setPagination({ pageIndex: nextPageIndex, pageSize: nextPageSize });
 		}
-	}, [data, sorting]);
+	}
 	const setSorting = (updater: Updater<SortingState>) => {
 		const next = typeof updater === "function" ? updater(sorting) : updater;
 		if (onSortingChange) {

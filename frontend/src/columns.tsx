@@ -657,7 +657,13 @@ export function buildClubColumns(
 			accessorFn: (row) => {
 				const value = row[key];
 				// Preserve the API's conceded-minus-expected sign; show favourable values as positive.
-				return value == null ? undefined : defensive ? -value : value;
+				return value == null
+					? undefined
+					: defensive
+						? value === 0
+							? 0
+							: -value
+						: value;
 			},
 			sortUndefined: "last",
 			header: `${label} ${metric} +/- ${total ? "Total" : "Per Match"}`,

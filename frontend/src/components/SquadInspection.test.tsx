@@ -40,7 +40,7 @@ const picks: FplTeamPick[] = [
 ];
 
 describe("SquadInspection", () => {
-	test("renders captain, vice-captain, and bench badges and opens player on Enter", () => {
+	test("renders accessible captain, vice-captain, and bench badges and interactive player buttons", () => {
 		const onPlayerClick = vi.fn();
 		render(
 			<SquadInspection
@@ -57,13 +57,39 @@ describe("SquadInspection", () => {
 			/>,
 		);
 
-		expect(screen.getByText("C")).toBeInTheDocument();
-		expect(screen.getByText("VC")).toBeInTheDocument();
+		expect(screen.getByText("Captain")).toBeInTheDocument();
+		expect(screen.getByText("Vice-captain")).toBeInTheDocument();
 		expect(screen.getByText("Bench")).toBeInTheDocument();
 
-		const sakaRow = screen.getByText("Saka").closest("tr");
-		expect(sakaRow).toHaveAttribute("tabindex", "0");
-		fireEvent.keyDown(sakaRow as HTMLElement, { key: "Enter" });
+		fireEvent.click(screen.getByRole("button", { name: "Saka" }));
 		expect(onPlayerClick).toHaveBeenCalledWith(1);
+
+		const palmerRow = screen
+			.getByRole("button", { name: "Palmer" })
+			.closest("tr");
+		fireEvent.keyDown(palmerRow as HTMLElement, { key: "Enter" });
+		expect(onPlayerClick).toHaveBeenCalledWith(2);
+	});
+
+	test("renders a Retry button when squad loading fails", () => {
+		const onRetry = vi.fn();
+		render(
+			<SquadInspection
+				picks={[]}
+				formPlayers={[]}
+				currentPlayers={[]}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={true}
+				onRetry={onRetry}
+				onPlayerClick={() => {}}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 });

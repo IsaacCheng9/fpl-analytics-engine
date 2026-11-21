@@ -731,7 +731,14 @@ export default function App() {
 		return <SeasonStatus state="loading" />;
 	}
 	if (meta.isError || meta.data === undefined) {
-		return <SeasonStatus state="error" />;
+		return (
+			<SeasonStatus
+				state="error"
+				onRetry={() => {
+					void meta.refetch();
+				}}
+			/>
+		);
 	}
 	if (!analyticsReady) {
 		return <SeasonStatus meta={meta.data} state="preseason" />;
@@ -975,6 +982,20 @@ export default function App() {
 							squadCurrentContextQuery.isError ||
 							squadDefconProbabilityQuery.isError
 						}
+						onRetry={() => {
+							if (fplTeamQuery.isError || teamImportIdentityError) {
+								void fplTeamQuery.refetch();
+							}
+							if (squadFormQuery.isError) {
+								void squadFormQuery.refetch();
+							}
+							if (squadCurrentContextQuery.isError) {
+								void squadCurrentContextQuery.refetch();
+							}
+							if (squadDefconProbabilityQuery.isError) {
+								void squadDefconProbabilityQuery.refetch();
+							}
+						}}
 						onPlayerClick={openPlayerDetail}
 					/>
 				) : active?.isPending ? (
@@ -1081,6 +1102,20 @@ export default function App() {
 						onAsOfGwChange={setCompareAsOfGw}
 						onLeftChange={updateCompareLeft}
 						onRightChange={updateCompareRight}
+						onRetryContext={() => {
+							if (compareFormQuery.isError) {
+								void compareFormQuery.refetch();
+							}
+							if (compareDefconQuery.isError) {
+								void compareDefconQuery.refetch();
+							}
+							if (compareDefconProbabilityQuery.isError) {
+								void compareDefconProbabilityQuery.refetch();
+							}
+							if (compareClubQuery.isError) {
+								void compareClubQuery.refetch();
+							}
+						}}
 						onClose={() => setCompareOpen(false)}
 					/>
 				</Suspense>

@@ -15,6 +15,7 @@ import {
 	DEFAULT_CLUB_COLUMNS,
 	DEFAULT_MIN_HIT_RATE,
 	DEFAULT_MIN_MINUTES,
+	DEFAULT_PLAYER_SEARCH,
 	DEFAULT_POSITION,
 	DEFAULT_TEAM_FILTER,
 	isPlayerTab,
@@ -116,7 +117,7 @@ export function buildActiveFilterChips({
 		chips.push({
 			id: "player",
 			label: `Player ${playerSearch.trim()}`,
-			onClear: () => setters.playerSearch(""),
+			onClear: () => setters.playerSearch(DEFAULT_PLAYER_SEARCH),
 		});
 	}
 	if (isPlayerTab(tab) && position !== DEFAULT_POSITION) {

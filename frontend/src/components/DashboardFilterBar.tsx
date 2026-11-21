@@ -8,7 +8,6 @@ import {
 	type AttackingThreatPeriod,
 	type ClubColumnGroup,
 	type ClubColumnVisibility,
-	DEFAULT_CLUB_COLUMNS,
 	FILTER_PRESETS,
 	type FilterPreset,
 	HIT_RATES,
@@ -378,5 +377,3 @@ export function DashboardFilterBar({
 		</div>
 	);
 }
-
-export { DEFAULT_CLUB_COLUMNS };

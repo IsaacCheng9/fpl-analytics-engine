@@ -38,6 +38,7 @@ export function PlayerComparePanel({
 	onAsOfGwChange,
 	onLeftChange,
 	onRightChange,
+	onRetryContext,
 	onClose,
 }: {
 	playerOptions: PlayerOption[];
@@ -56,6 +57,7 @@ export function PlayerComparePanel({
 	onAsOfGwChange: (gameweek: number | null) => void;
 	onLeftChange: (element: number | null) => void;
 	onRightChange: (element: number | null) => void;
+	onRetryContext?: () => void;
 	onClose: () => void;
 }) {
 	const leftQuery = useQuery({
@@ -245,9 +247,28 @@ export function PlayerComparePanel({
 						Loading comparison...
 					</p>
 				) : isError ? (
-					<p className="rounded-md border border-red-200 bg-red-50 px-3 py-6 text-center text-red-700 text-sm">
-						Failed to load player comparison.
-					</p>
+					<div className="flex flex-col items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-6 text-center">
+						<p className="text-red-700 text-sm">
+							Failed to load player comparison.
+						</p>
+						<button
+							type="button"
+							className="rounded-md bg-white px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							onClick={() => {
+								if (contextError) {
+									onRetryContext?.();
+								}
+								if (leftQuery.isError) {
+									void leftQuery.refetch();
+								}
+								if (rightQuery.isError) {
+									void rightQuery.refetch();
+								}
+							}}
+						>
+							Retry
+						</button>
+					</div>
 				) : (
 					<div className="max-h-[70vh] overflow-auto rounded-md border border-zinc-200">
 						<table className="w-full min-w-[44rem] border-collapse text-sm">

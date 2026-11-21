@@ -189,7 +189,10 @@ function SquadRows({
 									className="cursor-pointer border-zinc-100 border-t bg-white hover:bg-sky-50 focus-visible:bg-sky-50 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:-outline-offset-2"
 									onClick={() => onPlayerClick(row.pick.element)}
 									onKeyDown={(event) => {
-										if (event.key === "Enter" || event.key === " ") {
+										if (
+											event.target === event.currentTarget &&
+											(event.key === "Enter" || event.key === " ")
+										) {
 											event.preventDefault();
 											onPlayerClick(row.pick.element);
 										}
@@ -197,20 +200,31 @@ function SquadRows({
 								>
 									<td className="px-3 py-2 font-medium text-zinc-900">
 										<span className="inline-flex items-center gap-1.5">
-											<span>{playerName(row)}</span>
+											<button
+												type="button"
+												className="cursor-pointer text-left hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500"
+												onClick={(event) => {
+													event.stopPropagation();
+													onPlayerClick(row.pick.element);
+												}}
+											>
+												{playerName(row)}
+											</button>
 											{row.pick.is_captain ? (
 												<span
 													title="Captain"
 													className="rounded bg-zinc-900 px-1.5 py-0.5 font-semibold text-[10px] text-white"
 												>
-													C
+													<span aria-hidden="true">C</span>
+													<span className="sr-only">Captain</span>
 												</span>
 											) : row.pick.is_vice_captain ? (
 												<span
 													title="Vice-captain"
 													className="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 font-semibold text-[10px] text-zinc-700"
 												>
-													VC
+													<span aria-hidden="true">VC</span>
+													<span className="sr-only">Vice-captain</span>
 												</span>
 											) : null}
 											{!row.pick.is_starting ? (
@@ -293,6 +307,7 @@ export function SquadInspection({
 	latestGw,
 	loading,
 	error,
+	onRetry,
 	onPlayerClick,
 }: {
 	picks: FplTeamPick[];
@@ -304,6 +319,7 @@ export function SquadInspection({
 	latestGw: number;
 	loading: boolean;
 	error: boolean;
+	onRetry?: () => void;
 	onPlayerClick: (element: number) => void;
 }) {
 	const formByElement = indexByElement(formPlayers);
@@ -346,7 +362,18 @@ export function SquadInspection({
 			{loading ? (
 				<p className="text-sm text-zinc-500">Loading squad context...</p>
 			) : error ? (
-				<p className="text-red-600 text-sm">Failed to load squad context.</p>
+				<div className="flex items-center gap-3">
+					<p className="text-red-600 text-sm">Failed to load squad context.</p>
+					{onRetry ? (
+						<button
+							type="button"
+							className="rounded-md px-2.5 py-1 text-sm text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-50"
+							onClick={onRetry}
+						>
+							Retry
+						</button>
+					) : null}
+				</div>
 			) : rows.length === 0 ? (
 				<p className="text-sm text-zinc-500">
 					No imported squad players found.

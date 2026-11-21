@@ -13,7 +13,7 @@ import {
 	fetchFplTeam,
 	fetchMeta,
 } from "../api";
-import { defaultEvidenceSeason } from "../lib/evidenceSeason";
+import { defaultEvidenceSeason, evidenceSeasons } from "../lib/evidenceSeason";
 import { LIVE_TEAM_STALE_TIME_MS } from "../queryClient";
 import { defaultMinGames, defaultWindowSize, isPlayerTab } from "../state";
 import type { UrlState } from "../urlState";
@@ -101,8 +101,15 @@ export function useDashboardQueries(urlState: UrlState) {
 	});
 
 	const liveSeason = meta.data?.season ?? "";
+	const availableEvidenceSeasons = liveSeason
+		? evidenceSeasons(liveSeason)
+		: [];
 	const evidenceSeason =
-		evidenceSeasonChoice ?? defaultEvidenceSeason(liveSeason, latestGw);
+		evidenceSeasonChoice !== null &&
+		(availableEvidenceSeasons.length === 0 ||
+			availableEvidenceSeasons.includes(evidenceSeasonChoice))
+			? evidenceSeasonChoice
+			: defaultEvidenceSeason(liveSeason, latestGw);
 	// Keep the previous season on screen while a newly selected one loads, so
 	// the season selector stays put.
 	const defconValidationQuery = useQuery({

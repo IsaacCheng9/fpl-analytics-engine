@@ -243,6 +243,9 @@ function summariseGameweeks(
 
 // Prefer backend-computed FormPlayer and DefconPlayer aggregates whenever they
 // match the comparison gameweek so Compare never drifts from the main tables.
+// Appearance counts and raw window totals (not exposed on FormPlayer) come from
+// the player detail gameweeks so Games, Mins Per App, and DefCon Games all stay
+// consistently scoped to minutes > 0 appearances.
 function buildWindowSummary(
 	side: CompareSide,
 	windowRange: GameweekRange,
@@ -256,12 +259,15 @@ function buildWindowSummary(
 	const form = side.form?.as_of_gw === comparisonGw ? side.form : undefined;
 	const defcon =
 		side.defcon?.as_of_gw === comparisonGw ? side.defcon : undefined;
-	const price = form?.price ?? fallback.price;
+	const price = form !== undefined ? form.price : fallback.price;
+	// Backend window_defcon_games/hits return 0 when no appearances qualify;
+	// map zero qualifying appearances to null to match the empty-state display.
+	const hasBackendDefcon =
+		defcon !== undefined && (defcon.window_defcon_games ?? 0) > 0;
 
 	return {
 		...fallback,
-		games: form?.window_games ?? fallback.games,
-		minutes: form?.window_minutes ?? fallback.minutes,
+		minutes: form !== undefined ? form.window_minutes : fallback.minutes,
 		minsPerAppearance:
 			form !== undefined
 				? form.window_mins_per_appearance
@@ -284,12 +290,22 @@ function buildWindowSummary(
 				? form.window_xgi90_per_million
 				: fallback.xgi90PerMillion,
 		defconGames:
-			defcon !== undefined ? defcon.window_defcon_games : fallback.defconGames,
+			defcon !== undefined
+				? hasBackendDefcon
+					? defcon.window_defcon_games
+					: null
+				: fallback.defconGames,
 		defconHits:
-			defcon !== undefined ? defcon.window_defcon_hits : fallback.defconHits,
+			defcon !== undefined
+				? hasBackendDefcon
+					? defcon.window_defcon_hits
+					: null
+				: fallback.defconHits,
 		defconHitRate:
 			defcon !== undefined
-				? defcon.window_defcon_hit_rate
+				? hasBackendDefcon
+					? defcon.window_defcon_hit_rate
+					: null
 				: fallback.defconHitRate,
 	};
 }
@@ -308,24 +324,44 @@ function buildSeasonSummary(
 					(summary) => summary.season === side.detail?.selected_season,
 				)
 			: undefined;
-	const price = form?.price ?? fallback.price;
-	const games = backendSeason?.games ?? fallback.games;
-	const minutes = backendSeason?.minutes ?? fallback.minutes;
-	const xg90 = form?.season_xg90 ?? backendSeason?.xg90 ?? fallback.xg90;
-	const xa90 = form?.season_xa90 ?? backendSeason?.xa90 ?? fallback.xa90;
-	const xgi90 = form?.season_xgi90 ?? backendSeason?.xgi90 ?? fallback.xgi90;
+	const price = form !== undefined ? form.price : fallback.price;
+	const minutes =
+		backendSeason !== undefined ? backendSeason.minutes : fallback.minutes;
+	const xg90 =
+		form !== undefined
+			? form.season_xg90
+			: backendSeason !== undefined
+				? backendSeason.xg90
+				: fallback.xg90;
+	const xa90 =
+		form !== undefined
+			? form.season_xa90
+			: backendSeason !== undefined
+				? backendSeason.xa90
+				: fallback.xa90;
+	const xgi90 =
+		form !== undefined
+			? form.season_xgi90
+			: backendSeason !== undefined
+				? backendSeason.xgi90
+				: fallback.xgi90;
+	const pointsPerMillion =
+		form !== undefined
+			? form.season_points_per_million
+			: backendSeason !== undefined
+				? backendSeason.points_per_million
+				: fallback.pointsPerMillion;
 
 	return {
 		...fallback,
-		games,
+		// Keep games and minsPerAppearance scoped to minutes > 0 appearances
+		// (backend season_summaries.games counts all fixture rows including DNPs).
 		minutes,
-		minsPerAppearance: games === 0 ? null : minutes / games,
-		points: backendSeason?.points ?? fallback.points,
+		minsPerAppearance: fallback.games === 0 ? null : minutes / fallback.games,
+		points:
+			backendSeason !== undefined ? backendSeason.points : fallback.points,
 		price,
-		pointsPerMillion:
-			form?.season_points_per_million ??
-			backendSeason?.points_per_million ??
-			fallback.pointsPerMillion,
+		pointsPerMillion,
 		xg90,
 		xa90,
 		xgi90,

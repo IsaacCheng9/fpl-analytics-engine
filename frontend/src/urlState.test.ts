@@ -7,7 +7,7 @@ beforeEach(() => {
 });
 
 describe("urlState integer parsing and evidence season sync", () => {
-	test("rejects float values for integer query parameters", () => {
+	test("rejects float values for integer query parameters and does not open Compare on invalid IDs", () => {
 		window.history.replaceState(
 			null,
 			"",
@@ -18,6 +18,7 @@ describe("urlState integer parsing and evidence season sync", () => {
 		expect(state.fplTeamId).toBeNull();
 		expect(state.asOfGw).toBeNull();
 		expect(state.selectedElement).toBeNull();
+		expect(state.compareOpen).toBe(false);
 		expect(state.compareLeftElement).toBeNull();
 		expect(state.compareRightElement).toBeNull();
 		expect(state.compareAsOfGw).toBeNull();
@@ -41,7 +42,7 @@ describe("urlState integer parsing and evidence season sync", () => {
 		expect(state.attackingThreatFilters.xgi.window).toBe(0.35);
 	});
 
-	test("round-trips evidence_season only on the evidence tab", () => {
+	test("round-trips valid evidence_season only on the evidence tab and rejects non-consecutive or pre-2025 seasons", () => {
 		writeUrlState({
 			...DEFAULT_URL_STATE,
 			tab: "evidence",
@@ -61,7 +62,13 @@ describe("urlState integer parsing and evidence season sync", () => {
 			new URLSearchParams(window.location.search).get("evidence_season"),
 		).toBeNull();
 
-		window.history.replaceState(null, "", "/?tab=evidence&evidence_season=bad");
-		expect(readUrlState().evidenceSeason).toBeNull();
+		for (const invalid of ["bad", "2025-99", "2019-20", "2024-25"]) {
+			window.history.replaceState(
+				null,
+				"",
+				`/?tab=evidence&evidence_season=${invalid}`,
+			);
+			expect(readUrlState().evidenceSeason).toBeNull();
+		}
 	});
 });
