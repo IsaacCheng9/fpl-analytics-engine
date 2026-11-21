@@ -74,6 +74,7 @@ function makeCurrent(
 		next_opponent_name: "Everton",
 		next_was_home: true,
 		next_fdr: 2,
+		next_fixtures: [],
 		current_ownership: 15,
 		...overrides,
 	};
@@ -115,6 +116,7 @@ function makeForm(
 		next_opponent_name: "Everton",
 		next_was_home: true,
 		next_fdr: 2,
+		next_fixtures: [],
 		current_ownership: 15,
 		as_of_gw: 10,
 		...overrides,
@@ -145,6 +147,7 @@ function makeDefcon(
 		next_opponent_name: "Everton",
 		next_was_home: true,
 		next_fdr: 2,
+		next_fixtures: [],
 		current_ownership: 15,
 		as_of_gw: 10,
 		...overrides,
@@ -677,5 +680,136 @@ describe("SquadInspection", () => {
 		});
 		expect("maxPrice" in lastCall).toBe(false);
 		expect(onPlayerClick).not.toHaveBeenCalled();
+	});
+
+	test("renders 5-GW fixture strips without mislabeling already-played opening rounds as BGW", () => {
+		const currentPlayers: CurrentPlayerContext[] = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				team_name: "Arsenal",
+				price: 10.0,
+				upcoming_fixtures: 2,
+				avg_fdr: 2.5,
+				next_fixture_gw: 11,
+				next_opponent_name: "Bournemouth",
+				next_was_home: true,
+				next_fdr: 2,
+				next_fixtures: [
+					{
+						gw: 11,
+						opponent_name: "Bournemouth",
+						opponent_short_name: "BOU",
+						was_home: true,
+						fdr: 2,
+					},
+					// GW12 is a genuine mid-window blank gameweek.
+					{
+						gw: 13,
+						opponent_name: "Chelsea",
+						opponent_short_name: "CHE",
+						was_home: false,
+						fdr: 3,
+					},
+				],
+				current_ownership: 30,
+			}),
+			makeCurrent({
+				element: 2,
+				web_name: "Palmer",
+				position: "MID",
+				team_name: "Chelsea",
+				price: 10.5,
+				upcoming_fixtures: 4,
+				avg_fdr: 3.0,
+				next_fixture_gw: 12,
+				next_opponent_name: "Arsenal",
+				next_was_home: true,
+				next_fdr: 4,
+				// Already played GW11 in a live mid-GW snapshot: next fixtures cover GW12-15.
+				next_fixtures: [
+					{
+						gw: 12,
+						opponent_name: "Arsenal",
+						opponent_short_name: "ARS",
+						was_home: true,
+						fdr: 4,
+					},
+					{
+						gw: 13,
+						opponent_name: "Fulham",
+						opponent_short_name: "FUL",
+						was_home: false,
+						fdr: 2,
+					},
+					{
+						gw: 14,
+						opponent_name: "Everton",
+						opponent_short_name: "EVE",
+						was_home: true,
+						fdr: 2,
+					},
+					{
+						gw: 15,
+						opponent_name: "Liverpool",
+						opponent_short_name: "LIV",
+						was_home: false,
+						fdr: 4,
+					},
+				],
+				current_ownership: 42,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={picks.slice(0, 2)}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		expect(
+			screen.getByRole("columnheader", { name: "Fixtures" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("columnheader", { name: "FDR" }),
+		).toBeInTheDocument();
+
+		const sakaRow = within(
+			screen.getByRole("button", { name: "Saka" }).closest("tr") as HTMLElement,
+		);
+		expect(sakaRow.getByText("BOU (H)")).toHaveAttribute(
+			"title",
+			"GW11: Bournemouth (H) - FDR 2",
+		);
+		expect(sakaRow.getAllByText("BGW")[0]).toHaveAttribute(
+			"title",
+			"GW12: Blank gameweek",
+		);
+		expect(sakaRow.getAllByRole("cell")[5]).toHaveTextContent("2");
+
+		// Palmer already played GW11, so he gets GW12-15 with neither a GW11 nor GW16 BGW.
+		const palmerRow = within(
+			screen
+				.getByRole("button", { name: "Palmer" })
+				.closest("tr") as HTMLElement,
+		);
+		expect(palmerRow.queryByText("BGW")).not.toBeInTheDocument();
+		expect(palmerRow.getAllByRole("listitem")).toHaveLength(4);
+		expect(palmerRow.getByText("ARS (H)")).toHaveAttribute(
+			"title",
+			"GW12: Arsenal (H) - FDR 4",
+		);
+		expect(palmerRow.getAllByRole("cell")[5]).toHaveTextContent("4");
 	});
 });

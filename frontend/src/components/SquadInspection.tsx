@@ -8,6 +8,11 @@ import type {
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 import { parseOptionalInputNumber } from "../state";
 import { fieldClass } from "../styles";
+import {
+	DEFAULT_FIXTURE_HORIZON,
+	FixtureStrip,
+	MAX_GAMEWEEK,
+} from "./FixtureStrip";
 
 // Carry player identity alongside position and budget so callers can track
 // which squad pick triggered a replacement search.
@@ -164,17 +169,28 @@ function summarizeSquad(
 	};
 }
 
-function formatNextFixture(current: CurrentPlayerContext | undefined): string {
-	if (!current?.next_opponent_name) {
-		return "-";
+function currentWindowEndGw(
+	players: readonly CurrentPlayerContext[],
+): number | undefined {
+	let earliest: number | null = null;
+	let latest: number | null = null;
+	for (const player of players) {
+		for (const fixture of player.next_fixtures ?? []) {
+			if (earliest === null || fixture.gw < earliest) {
+				earliest = fixture.gw;
+			}
+			if (latest === null || fixture.gw > latest) {
+				latest = fixture.gw;
+			}
+		}
 	}
-	const venue =
-		current.next_was_home == null ? "" : current.next_was_home ? "H " : "A ";
-	const gameweek =
-		typeof current.next_fixture_gw === "number"
-			? `GW${current.next_fixture_gw} `
-			: "";
-	return `${gameweek}${venue}${current.next_opponent_name}`;
+	if (earliest === null || latest === null) {
+		return undefined;
+	}
+	return Math.min(
+		earliest + DEFAULT_FIXTURE_HORIZON - 1,
+		Math.max(MAX_GAMEWEEK, latest),
+	);
 }
 
 function fixtureClass(fdr: number | null | undefined): string {
@@ -359,6 +375,7 @@ function SquadSectionBody({
 	rows,
 	isBench,
 	bank,
+	stripEndGw,
 	onPlayerClick,
 	onFindReplacement,
 }: {
@@ -366,6 +383,7 @@ function SquadSectionBody({
 	rows: SquadInspectionRow[];
 	isBench: boolean;
 	bank: number;
+	stripEndGw: number | undefined;
 	onPlayerClick: (element: number) => void;
 	onFindReplacement: (request: ReplacementRequest) => void;
 }) {
@@ -466,8 +484,15 @@ function SquadSectionBody({
 						<td className="px-3 py-2">{playerPosition(row) ?? "-"}</td>
 						<td className="px-3 py-2">{playerTeam(row) ?? "-"}</td>
 						<td className="px-3 py-2">{fmtPrice(current?.price ?? null)}</td>
-						<td className="px-3 py-2">{formatNextFixture(current)}</td>
-						<td className={`px-3 py-2 ${fixtureClass(current?.next_fdr)}`}>
+						<td className="px-3 py-2">
+							<FixtureStrip
+								fixtures={current?.next_fixtures ?? []}
+								maxGw={stripEndGw}
+							/>
+						</td>
+						<td
+							className={`px-3 py-2 text-right tabular-nums ${fixtureClass(current?.next_fdr)}`}
+						>
 							{fmtNum(current?.next_fdr ?? null, 0)}
 						</td>
 						<td className="px-3 py-2">{fmtNum(form?.projected_xgi ?? null)}</td>
@@ -522,12 +547,14 @@ function SquadTable({
 	startingRows,
 	benchRows,
 	bank,
+	stripEndGw,
 	onPlayerClick,
 	onFindReplacement,
 }: {
 	startingRows: SquadInspectionRow[];
 	benchRows: SquadInspectionRow[];
 	bank: number;
+	stripEndGw: number | undefined;
 	onPlayerClick: (element: number) => void;
 	onFindReplacement: (request: ReplacementRequest) => void;
 }) {
@@ -544,8 +571,8 @@ function SquadTable({
 						<th className="px-3 py-2 font-medium">Pos</th>
 						<th className="px-3 py-2 font-medium">Team</th>
 						<th className="px-3 py-2 font-medium">Price</th>
-						<th className="px-3 py-2 font-medium">Next</th>
-						<th className="px-3 py-2 font-medium">FDR</th>
+						<th className="px-3 py-2 font-medium">Fixtures</th>
+						<th className="px-3 py-2 text-right font-medium">FDR</th>
 						<th className="px-3 py-2 font-medium">Projected xGI</th>
 						<th className="px-3 py-2 font-medium">Est. xGI/90</th>
 						<th className="px-3 py-2 font-medium">Window xGI/90</th>
@@ -565,6 +592,7 @@ function SquadTable({
 					rows={startingRows}
 					isBench={false}
 					bank={bank}
+					stripEndGw={stripEndGw}
 					onPlayerClick={onPlayerClick}
 					onFindReplacement={onFindReplacement}
 				/>
@@ -573,6 +601,7 @@ function SquadTable({
 					rows={benchRows}
 					isBench={true}
 					bank={bank}
+					stripEndGw={stripEndGw}
 					onPlayerClick={onPlayerClick}
 					onFindReplacement={onFindReplacement}
 				/>
@@ -615,6 +644,7 @@ export function SquadInspection({
 	const formByElement = indexByElement(formPlayers);
 	const currentByElement = indexByElement(currentPlayers);
 	const defconByElement = indexByElement(defconPlayers);
+	const stripEndGw = currentWindowEndGw(currentPlayers);
 	const allRows: SquadInspectionRow[] = picks.map((pick) => {
 		const baseRow = {
 			pick,
@@ -708,6 +738,7 @@ export function SquadInspection({
 						startingRows={startingRows}
 						benchRows={benchRows}
 						bank={bank}
+						stripEndGw={stripEndGw}
 						onPlayerClick={onPlayerClick}
 						onFindReplacement={onFindReplacement}
 					/>

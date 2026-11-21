@@ -10,6 +10,14 @@ export interface Meta {
 	next_deadline: string | null;
 }
 
+export interface UpcomingFixture {
+	gw: number;
+	opponent_name: string;
+	opponent_short_name: string;
+	was_home: boolean;
+	fdr: number;
+}
+
 // Fixture difficulty and the live ownership overlay shared by every player
 // view. current_ownership is always the present-day snapshot, not point-in-time.
 export interface FixtureContext {
@@ -19,6 +27,7 @@ export interface FixtureContext {
 	next_opponent_name: string | null;
 	next_was_home: boolean | null;
 	next_fdr: number | null;
+	next_fixtures: UpcomingFixture[];
 	current_ownership: number | null;
 }
 
@@ -100,6 +109,7 @@ export interface ClubForm {
 	defence_form: number | null;
 	upcoming_fixtures: number | null;
 	avg_fdr: number | null;
+	next_fixtures: UpcomingFixture[];
 	as_of_gw: number;
 }
 
@@ -201,8 +211,14 @@ export interface DefconProbabilityPlayer extends PlayerContext {
 export interface PlayerGameweek {
 	round: number;
 	kickoff_time: string | null;
+	opponent_name: string | null;
+	opponent_short_name: string | null;
+	was_home: boolean | null;
 	minutes: number;
 	total_points: number;
+	goals_scored: number | null;
+	assists: number | null;
+	bonus: number | null;
 	price: number | null;
 	expected_goals: number | null;
 	expected_assists: number | null;
@@ -237,6 +253,7 @@ export interface PlayerDetail {
 	rolling_window: number;
 	selected_season: string;
 	available_seasons: string[];
+	next_fixtures: UpcomingFixture[];
 	gameweeks: PlayerGameweek[];
 	seasons: PlayerSeasonSummary[];
 }

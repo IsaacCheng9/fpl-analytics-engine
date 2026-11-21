@@ -343,6 +343,7 @@ export function DataTable<T>({
 									</th>
 								) : null}
 								{group.headers.map((header, columnIndex) => {
+									const canSort = header.column.getCanSort();
 									const sorted = header.column.getIsSorted();
 									const meta = header.column.columnDef.meta;
 									const tooltip = meta?.tooltip;
@@ -356,25 +357,34 @@ export function DataTable<T>({
 											<div
 												className={`${headerContentClass}${numeric ? " ml-auto justify-end" : ""}`}
 											>
-												<button
-													type="button"
-													className={`flex min-w-0 cursor-pointer select-none items-start gap-1 ${numeric ? "text-right" : "text-left"}`}
-													onClick={header.column.getToggleSortingHandler()}
-												>
+												{canSort ? (
+													<button
+														type="button"
+														className={`flex min-w-0 cursor-pointer select-none items-start gap-1 ${numeric ? "text-right" : "text-left"}`}
+														onClick={header.column.getToggleSortingHandler()}
+													>
+														<span className="min-w-0 break-words whitespace-normal">
+															{flexRender(
+																header.column.columnDef.header,
+																header.getContext(),
+															)}
+														</span>
+														<span className="text-zinc-400 dark:text-zinc-500">
+															{sorted === "asc"
+																? "^"
+																: sorted === "desc"
+																	? "v"
+																	: ""}
+														</span>
+													</button>
+												) : (
 													<span className="min-w-0 break-words whitespace-normal">
 														{flexRender(
 															header.column.columnDef.header,
 															header.getContext(),
 														)}
 													</span>
-													<span className="text-zinc-400 dark:text-zinc-500">
-														{sorted === "asc"
-															? "^"
-															: sorted === "desc"
-																? "v"
-																: ""}
-													</span>
-												</button>
+												)}
 												{tooltip ? <InfoTooltip text={tooltip} /> : null}
 											</div>
 										</th>

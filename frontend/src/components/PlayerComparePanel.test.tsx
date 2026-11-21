@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { cloneElement, isValidElement, type ReactNode, useState } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { PlayerDetail, PlayerGameweek } from "../api";
+import type {
+	FormPlayer,
+	PlayerDetail,
+	PlayerGameweek,
+	UpcomingFixture,
+} from "../api";
 import type { PlayerOption } from "./PlayerCombobox";
 import { PlayerComparePanel } from "./PlayerComparePanel";
 
@@ -23,6 +28,40 @@ const options: PlayerOption[] = [
 	{ element: 2, web_name: "Saka", position: "MID", team_name: "Arsenal" },
 ];
 
+const leftFixtures: UpcomingFixture[] = [
+	{
+		gw: 11,
+		opponent_name: "Bournemouth",
+		opponent_short_name: "BOU",
+		was_home: true,
+		fdr: 2,
+	},
+	{
+		gw: 13,
+		opponent_name: "Chelsea",
+		opponent_short_name: "CHE",
+		was_home: false,
+		fdr: 4,
+	},
+];
+
+const rightFixtures: UpcomingFixture[] = [
+	{
+		gw: 11,
+		opponent_name: "Everton",
+		opponent_short_name: "EVE",
+		was_home: false,
+		fdr: 2,
+	},
+	{
+		gw: 11,
+		opponent_name: "Fulham",
+		opponent_short_name: "FUL",
+		was_home: true,
+		fdr: 2,
+	},
+];
+
 function makeGameweek(
 	round: number,
 	overrides: Partial<PlayerGameweek> = {},
@@ -30,8 +69,14 @@ function makeGameweek(
 	return {
 		round,
 		kickoff_time: null,
+		opponent_name: null,
+		opponent_short_name: null,
+		was_home: null,
 		minutes: 90,
 		total_points: 6,
+		goals_scored: null,
+		assists: null,
+		bonus: null,
 		price: 8.5,
 		expected_goals: 0.3,
 		expected_assists: 0.2,
@@ -51,19 +96,71 @@ function makeDetail(
 	webName: string,
 	teamName: string,
 	gameweeks: PlayerGameweek[],
+	{
+		asOfGw = 5,
+		nextFixtures = [],
+	}: { asOfGw?: number; nextFixtures?: UpcomingFixture[] } = {},
 ): PlayerDetail {
 	return {
 		element,
 		code: element * 100,
-		as_of_gw: 5,
+		as_of_gw: asOfGw,
 		web_name: webName,
 		position: "MID",
 		team_name: teamName,
 		rolling_window: 5,
-		selected_season: "2025-26",
-		available_seasons: ["2025-26"],
+		selected_season: "2026-27",
+		available_seasons: ["2026-27"],
+		next_fixtures: nextFixtures,
 		gameweeks,
 		seasons: [],
+	};
+}
+
+function makeFormPlayer(
+	element: number,
+	webName: string,
+	teamName: string,
+	nextFixtures: UpcomingFixture[],
+	avgFdr: number,
+): FormPlayer {
+	return {
+		element,
+		web_name: webName,
+		position: "MID",
+		team_name: teamName,
+		price: 9.0,
+		window_games: 5,
+		window_minutes: 450,
+		window_xg90: 0.5,
+		window_xa90: 0.3,
+		window_xgi90: 0.8,
+		season_xg90: 0.45,
+		season_xa90: 0.25,
+		season_xgi90: 0.7,
+		delta_xg90: 0.05,
+		delta_xa90: 0.05,
+		delta_xgi90: 0.1,
+		est_xg90: 0.48,
+		est_xa90: 0.28,
+		est_xgi90: 0.76,
+		projected_minutes: 85,
+		projected_xgi: 0.72,
+		window_xg90_per_million: 0.055,
+		window_xa90_per_million: 0.033,
+		window_xgi90_per_million: 0.089,
+		season_points_per_million: 7.5,
+		window_start_rate: 1.0,
+		window_mins_per_appearance: 90,
+		upcoming_fixtures: nextFixtures.length,
+		avg_fdr: avgFdr,
+		next_fixture_gw: 11,
+		next_opponent_name: nextFixtures[0]?.opponent_name ?? null,
+		next_was_home: nextFixtures[0]?.was_home ?? null,
+		next_fdr: nextFixtures[0]?.fdr ?? null,
+		next_fixtures: nextFixtures,
+		current_ownership: 25,
+		as_of_gw: 10,
 	};
 }
 
@@ -287,4 +384,100 @@ test("opens player detail when clicking either player column header", async () =
 
 	expect(onOpenPlayer).toHaveBeenNthCalledWith(1, 1);
 	expect(onOpenPlayer).toHaveBeenNthCalledWith(2, 2);
+});
+
+test("renders both players' 5-GW fixture strips side by side in the Fixtures section", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn((input: RequestInfo | URL) => {
+			const url = String(input);
+			const detail = url.includes("/players/1")
+				? makeDetail(1, "Saka", "Arsenal", [], {
+						asOfGw: 10,
+						nextFixtures: leftFixtures,
+					})
+				: makeDetail(2, "Palmer", "Chelsea", [], {
+						asOfGw: 10,
+						nextFixtures: rightFixtures,
+					});
+			return Promise.resolve(
+				new Response(JSON.stringify(detail), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}),
+	);
+
+	const client = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	});
+	render(
+		<QueryClientProvider client={client}>
+			<PlayerComparePanel
+				playerOptions={[
+					{
+						element: 1,
+						web_name: "Saka",
+						position: "MID",
+						team_name: "Arsenal",
+					},
+					{
+						element: 2,
+						web_name: "Palmer",
+						position: "MID",
+						team_name: "Chelsea",
+					},
+				]}
+				formPlayers={[
+					makeFormPlayer(1, "Saka", "Arsenal", leftFixtures, 3.0),
+					makeFormPlayer(2, "Palmer", "Chelsea", rightFixtures, 2.0),
+				]}
+				defconPlayers={[]}
+				defconProbabilityPlayers={[]}
+				clubForms={[]}
+				contextLoading={false}
+				contextError={false}
+				leftElement={1}
+				rightElement={2}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				onWindowChange={() => {}}
+				onAsOfGwChange={() => {}}
+				onLeftChange={() => {}}
+				onRightChange={() => {}}
+				onSwap={() => {}}
+				onOpenPlayer={() => {}}
+				onClose={() => {}}
+			/>
+		</QueryClientProvider>,
+	);
+
+	const dialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	const row = (await within(dialog).findByText("Next 5 Fixtures")).closest(
+		"tr",
+	);
+	expect(row).not.toBeNull();
+	expect(within(dialog).getByText("Fixtures")).toBeInTheDocument();
+
+	const cells = within(row as HTMLElement).getAllByRole("cell");
+	expect(within(cells[0]).getByText("BOU (H)")).toHaveAttribute(
+		"title",
+		"GW11: Bournemouth (H) - FDR 2",
+	);
+	expect(within(cells[0]).getByText("CHE (A)")).toHaveAttribute(
+		"title",
+		"GW13: Chelsea (A) - FDR 4",
+	);
+	expect(within(cells[0]).getAllByText("BGW")).toHaveLength(3);
+
+	expect(within(cells[1]).getByText("EVE (A)")).toBeInTheDocument();
+	expect(within(cells[1]).getByText("FUL (H)")).toBeInTheDocument();
+	expect(within(cells[1]).getByText("EVE (A)").parentElement).toHaveAttribute(
+		"title",
+		"GW11 (DGW): Everton (A) - FDR 2 / Fulham (H) - FDR 2",
+	);
 });

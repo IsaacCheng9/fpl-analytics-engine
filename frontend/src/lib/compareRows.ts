@@ -6,6 +6,7 @@ import type {
 	PlayerDetail,
 	PlayerGameweek,
 	PlayerSeasonSummary,
+	UpcomingFixture,
 } from "../api";
 import type { PlayerOption } from "../components/PlayerCombobox";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./format";
@@ -29,11 +30,19 @@ export type CompareRow = {
 	leftValue?: number | null;
 	rightValue?: number | null;
 	lowerIsBetter?: boolean;
+	leftFixtures?: UpcomingFixture[];
+	rightFixtures?: UpcomingFixture[];
+	fixtureStartGw?: number;
 };
 
 type CompareRowOptions = Pick<
 	CompareRow,
-	"leftValue" | "rightValue" | "lowerIsBetter"
+	| "leftValue"
+	| "rightValue"
+	| "lowerIsBetter"
+	| "leftFixtures"
+	| "rightFixtures"
+	| "fixtureStartGw"
 >;
 
 type SummaryMetricKey = "xgi" | "xg" | "xa";
@@ -382,6 +391,34 @@ function seasonByName(
 	return detail?.seasons.find((summary) => summary.season === season);
 }
 
+function sideUpcomingFixtures(
+	side: CompareSide,
+	comparisonGw: number,
+): UpcomingFixture[] {
+	if (side.form?.as_of_gw === comparisonGw && side.form.next_fixtures) {
+		return side.form.next_fixtures;
+	}
+	if (side.detail?.as_of_gw === comparisonGw && side.detail.next_fixtures) {
+		return side.detail.next_fixtures;
+	}
+	if (side.club?.as_of_gw === comparisonGw && side.club.next_fixtures) {
+		return side.club.next_fixtures;
+	}
+	return [];
+}
+
+function formatFixtureSummary(fixtures: readonly UpcomingFixture[]): string {
+	if (fixtures.length === 0) {
+		return "-";
+	}
+	return fixtures
+		.map(
+			(fixture) =>
+				`${fixture.opponent_short_name} (${fixture.was_home ? "H" : "A"})`,
+		)
+		.join(", ");
+}
+
 function uniqueSorted(values: string[]): string[] {
 	return Array.from(new Set(values)).sort((left, right) =>
 		right.localeCompare(left),
@@ -578,10 +615,38 @@ export function buildCompareRows(
 		right.form?.current_ownership,
 		{ format: (value) => fmtPctPoints(value, 1), lowerIsBetter: true },
 	);
-	addNumber("Player", "FDR (Next 5)", left.form?.avg_fdr, right.form?.avg_fdr, {
-		format: (value) => fmtNum(value, 1),
-		lowerIsBetter: true,
-	});
+
+	const leftFixtures = sideUpcomingFixtures(left, comparisonGw);
+	const rightFixtures = sideUpcomingFixtures(right, comparisonGw);
+	add(
+		"Fixtures",
+		"Next 5 Fixtures",
+		formatFixtureSummary(leftFixtures),
+		formatFixtureSummary(rightFixtures),
+		{
+			leftFixtures,
+			rightFixtures,
+			fixtureStartGw: comparisonGw + 1,
+		},
+	);
+	addNumber(
+		"Fixtures",
+		"FDR (Next 5)",
+		left.form?.avg_fdr,
+		right.form?.avg_fdr,
+		{
+			format: (value) => fmtNum(value, 1),
+			lowerIsBetter: true,
+		},
+	);
+	addNumber(
+		"Fixtures",
+		"Upcoming Fixtures",
+		left.form?.upcoming_fixtures,
+		right.form?.upcoming_fixtures,
+		{ format: (value) => fmtNum(value, 0) },
+	);
+
 	addNumber(
 		"Projection",
 		"Projected xGI",
@@ -626,13 +691,6 @@ export function buildCompareRows(
 			fmtDelta(right.form?.[metric.delta]),
 		);
 	}
-	addNumber(
-		"Recent Vs Season",
-		"Upcoming Fixtures",
-		left.form?.upcoming_fixtures,
-		right.form?.upcoming_fixtures,
-		{ format: (value) => fmtNum(value, 0) },
-	);
 
 	addNumber(
 		"DefCon",

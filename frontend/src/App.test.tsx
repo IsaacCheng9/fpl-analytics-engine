@@ -53,6 +53,15 @@ const formRows = [
 		next_opponent_name: "Everton",
 		next_was_home: true,
 		next_fdr: 2,
+		next_fixtures: [
+			{
+				gw: 39,
+				opponent_name: "Everton",
+				opponent_short_name: "EVE",
+				was_home: true,
+				fdr: 2,
+			},
+		],
 		current_ownership: 25.5,
 		as_of_gw: 38,
 	},
@@ -90,6 +99,15 @@ const formRows = [
 		next_opponent_name: "Chelsea",
 		next_was_home: false,
 		next_fdr: 4,
+		next_fixtures: [
+			{
+				gw: 39,
+				opponent_name: "Chelsea",
+				opponent_short_name: "CHE",
+				was_home: false,
+				fdr: 4,
+			},
+		],
 		current_ownership: 40.1,
 		as_of_gw: 38,
 	},
@@ -130,6 +148,15 @@ const broadFormRows = [
 		next_opponent_name: "Brighton",
 		next_was_home: true,
 		next_fdr: 3,
+		next_fixtures: [
+			{
+				gw: 39,
+				opponent_name: "Brighton",
+				opponent_short_name: "BHA",
+				was_home: true,
+				fdr: 3,
+			},
+		],
 		current_ownership: 55.2,
 		as_of_gw: 38,
 	},
@@ -143,6 +170,15 @@ const withHistoricalFixtureContext = <T extends typeof broadFormRows>(
 		next_opponent_name: "Historical",
 		next_was_home: true,
 		next_fdr: 5,
+		next_fixtures: [
+			{
+				gw: 31,
+				opponent_name: "Historical",
+				opponent_short_name: "HIS",
+				was_home: true,
+				fdr: 5,
+			},
+		],
 	})) as T;
 const currentPlayerContexts: CurrentPlayerContext[] = broadFormRows.map(
 	(row) => ({
@@ -158,6 +194,7 @@ const currentPlayerContexts: CurrentPlayerContext[] = broadFormRows.map(
 		next_opponent_name: row.next_opponent_name,
 		next_was_home: row.next_was_home,
 		next_fdr: row.next_fdr,
+		next_fixtures: row.next_fixtures,
 	}),
 );
 const clubRows = [
@@ -1271,10 +1308,16 @@ test("opens a current squad inspection view from an imported FPL team", async ()
 		expect(screen.getByText("Next-GW Squad Inspection")).toBeInTheDocument();
 	});
 	await waitFor(() => {
-		expect(screen.getByText("GW39 H Everton")).toBeInTheDocument();
+		expect(screen.getByText("EVE (H)")).toHaveAttribute(
+			"title",
+			"GW39: Everton (H) - FDR 2",
+		);
 	});
-	expect(screen.getByText("GW39 A Chelsea")).toBeInTheDocument();
-	expect(screen.queryByText("GW31 H Historical")).not.toBeInTheDocument();
+	expect(screen.getByText("CHE (A)")).toHaveAttribute(
+		"title",
+		"GW39: Chelsea (A) - FDR 4",
+	);
+	expect(screen.queryByText("HIS (H)")).not.toBeInTheDocument();
 	expect(screen.getByText("Starting XI")).toBeInTheDocument();
 	expect(screen.queryByText("Bench")).not.toBeInTheDocument();
 	expect(screen.queryByText("Slot")).not.toBeInTheDocument();
@@ -1316,6 +1359,15 @@ test("keeps the snapshot club and fixture when the analytical gameweek changes",
 							price: 9.5,
 							next_fixture_gw: 7,
 							next_opponent_name: "New Opponent",
+							next_fixtures: [
+								{
+									gw: 7,
+									opponent_name: "New Opponent",
+									opponent_short_name: "NEW",
+									was_home: true,
+									fdr: 2,
+								},
+							],
 						})),
 					),
 				),
@@ -1330,6 +1382,15 @@ test("keeps the snapshot club and fixture when the analytical gameweek changes",
 							...row,
 							team_name: "Old Club",
 							next_opponent_name: "Old Opponent",
+							next_fixtures: [
+								{
+									gw: 31,
+									opponent_name: "Old Opponent",
+									opponent_short_name: "OLD",
+									was_home: true,
+									fdr: 4,
+								},
+							],
 							window_xgi90: historical ? 0.11 : 0.97,
 						})),
 					),
@@ -1345,7 +1406,10 @@ test("keeps the snapshot club and fixture when the analytical gameweek changes",
 	let row = within(player.closest("tr") as HTMLElement);
 	expect(row.getByText("New Club")).toBeInTheDocument();
 	expect(row.getByText("\u00a39.5m")).toBeInTheDocument();
-	expect(row.getByText("GW7 H New Opponent")).toBeInTheDocument();
+	expect(row.getByText("NEW (H)")).toHaveAttribute(
+		"title",
+		"GW7: New Opponent (H) - FDR 2",
+	);
 	expect(row.getByText("0.97")).toBeInTheDocument();
 	expect(row.queryByText("Old Club")).not.toBeInTheDocument();
 
@@ -1357,8 +1421,11 @@ test("keeps the snapshot club and fixture when the analytical gameweek changes",
 		expect(row.getByText("0.11")).toBeInTheDocument();
 	});
 	expect(row.getByText("New Club")).toBeInTheDocument();
-	expect(row.getByText("GW7 H New Opponent")).toBeInTheDocument();
-	expect(screen.queryByText(/Old Opponent/)).not.toBeInTheDocument();
+	expect(row.getByText("NEW (H)")).toHaveAttribute(
+		"title",
+		"GW7: New Opponent (H) - FDR 2",
+	);
+	expect(screen.queryByText("OLD (H)")).not.toBeInTheDocument();
 	const contextCalls = vi
 		.mocked(fetch)
 		.mock.calls.map(([input]) => String(input))
@@ -1382,6 +1449,7 @@ test.each([
 					next_opponent_name: null,
 					next_was_home: null,
 					next_fdr: null,
+					next_fixtures: [],
 				}));
 			return Promise.resolve(new Response(JSON.stringify(rows)));
 		}
@@ -1416,10 +1484,10 @@ test("reports a failed current-context request instead of using old fixtures", a
 	expect(
 		await screen.findByText("Failed to load squad context."),
 	).toBeInTheDocument();
-	expect(screen.queryByText("GW39 H Everton")).not.toBeInTheDocument();
+	expect(screen.queryByText("EVE (H)")).not.toBeInTheDocument();
 });
 
-test("preserves unknown snapshot labels and venue instead of guessing", async () => {
+test("preserves unknown snapshot labels instead of guessing", async () => {
 	vi.mocked(fetch).mockImplementation((input) => {
 		if (String(input).includes("/players/current-context")) {
 			return Promise.resolve(
@@ -1433,6 +1501,7 @@ test("preserves unknown snapshot labels and venue instead of guessing", async ()
 							price: null,
 							current_ownership: null,
 							next_was_home: null,
+							next_fixtures: [],
 						})),
 					),
 				),
@@ -1446,12 +1515,9 @@ test("preserves unknown snapshot labels and venue instead of guessing", async ()
 	const player = await screen.findByText("#1");
 	const row = within(player.closest("tr") as HTMLElement);
 	const cells = row.getAllByRole("cell");
-	for (const index of [1, 2, 3, 15]) {
+	for (const index of [1, 2, 3, 4, 15]) {
 		expect(cells[index]).toHaveTextContent(/^-$/);
 	}
-	expect(cells[4]).toHaveTextContent("GW39 Everton");
-	expect(cells[4]).not.toHaveTextContent("H Everton");
-	expect(cells[4]).not.toHaveTextContent("A Everton");
 });
 
 test("shows no-form state instead of low threat for missing historical data", async () => {
@@ -2360,8 +2426,9 @@ test("renders the Club Form tab with team-level context", async () => {
 	expect(screen.getByText("Window xG")).toBeInTheDocument();
 	expect(screen.getByText("Delta xGC")).toBeInTheDocument();
 	expect(screen.queryByText("Defence Form")).not.toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(11);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(12);
 	expect(screen.getByText("FDR (Next 5)")).toBeInTheDocument();
+	expect(screen.getByText("Next 5")).toBeInTheDocument();
 	expect(screen.queryByText("Window Goals")).not.toBeInTheDocument();
 	expect(screen.queryByText("Delta Goals")).not.toBeInTheDocument();
 	expect(screen.queryByText("Window Goals Conceded")).not.toBeInTheDocument();
@@ -2379,7 +2446,7 @@ test("shows signed club overperformance totals and rates with numeric sorting", 
 	render(withProviders(<App />));
 	fireEvent.click(await screen.findByText("Club Form"));
 	await screen.findByRole("cell", { name: "Arsenal" });
-	fireEvent.click(screen.getByText("Columns (11)"));
+	fireEvent.click(screen.getByText("Columns (12)"));
 	for (const label of [
 		"xG +/- Totals",
 		"xG +/- Per Match",
@@ -2460,7 +2527,7 @@ test("shows club actual goal columns only when toggled on", async () => {
 		expect(screen.getAllByText("Arsenal").length).toBeGreaterThan(0);
 	});
 
-	fireEvent.click(screen.getByText("Columns (11)"));
+	fireEvent.click(screen.getByText("Columns (12)"));
 	const goalsToggle = screen.getByLabelText("Goals");
 	const goalsConcededToggle = screen.getByLabelText("Goals Conceded");
 	expect(goalsToggle).not.toBeChecked();
@@ -2503,7 +2570,7 @@ test("persists club column groups and resets to the compact defaults", async () 
 	expect(screen.getAllByRole("columnheader")).toHaveLength(1);
 	fireEvent.click(screen.getByText("Columns (1)"));
 	fireEvent.click(screen.getByRole("button", { name: "Reset Columns" }));
-	expect(screen.getAllByRole("columnheader")).toHaveLength(11);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(12);
 	await waitFor(() =>
 		expect(
 			new URLSearchParams(window.location.search).has("club_columns"),
@@ -2518,14 +2585,14 @@ test("preserves actual goals from legacy club column links", async () => {
 	expect(screen.getByText("Window Goals")).toBeInTheDocument();
 	expect(screen.getByText("Window Goals Conceded")).toBeInTheDocument();
 	expect(screen.getByText("Window xG")).toBeInTheDocument();
-	expect(screen.getAllByRole("columnheader")).toHaveLength(15);
+	expect(screen.getAllByRole("columnheader")).toHaveLength(16);
 });
 
 test("toggles club context groups independently and can hide the sorted group", async () => {
 	window.history.replaceState(null, "", "/?tab=clubs");
 	render(withProviders(<App />));
 	await screen.findByRole("cell", { name: "Arsenal" });
-	fireEvent.click(screen.getByText("Columns (11)"));
+	fireEvent.click(screen.getByText("Columns (12)"));
 	fireEvent.click(screen.getByRole("button", { name: "Window xGC" }));
 	for (const [label, headers] of [
 		["Matches", ["Matches"]],
