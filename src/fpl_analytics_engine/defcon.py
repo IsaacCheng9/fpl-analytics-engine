@@ -42,6 +42,7 @@ _PRIOR_DEFCON_SCHEMA: dict[str, type[pl.DataType]] = {
     "prior_count": pl.Float64,
     "prior_hits": pl.UInt32,
     "prior_games": pl.UInt32,
+    "prior_threshold": pl.Int64,
 }
 
 
@@ -57,9 +58,10 @@ def prior_season_defcon(history: pl.DataFrame, min_minutes: int = 1) -> pl.DataF
     Returns:
         One row per ``code`` with ``prior_count`` (sum of
         ``defensive_contribution``), ``prior_hits`` (sum of ``defcon_hit``),
-        and ``prior_games`` (eligible appearance count). Returns a typed empty
-        table when ``history`` is empty, lacks required columns, or has no
-        eligible DefCon rows.
+        ``prior_games`` (eligible appearance count), and ``prior_threshold``
+        (the player's DefCon rule threshold, or null when absent). Returns a
+        typed empty table when ``history`` is empty, lacks required columns,
+        or has no eligible DefCon rows.
     """
     required = {"code", "minutes", "defcon_hit", "defensive_contribution"}
     if history.is_empty() or not required.issubset(history.columns):
@@ -74,6 +76,15 @@ def prior_season_defcon(history: pl.DataFrame, min_minutes: int = 1) -> pl.DataF
     if eligible.is_empty():
         return pl.DataFrame(schema=_PRIOR_DEFCON_SCHEMA)
 
+    if "defcon_threshold" in eligible.columns:
+        threshold_expr = (
+            pl.col("defcon_threshold").sort_by("round").last()
+            if "round" in eligible.columns
+            else pl.col("defcon_threshold").last()
+        ).cast(pl.Int64)
+    else:
+        threshold_expr = pl.lit(None, dtype=pl.Int64)
+
     return (
         eligible.group_by(pl.col("code").cast(pl.Int64))
         .agg(
@@ -83,8 +94,9 @@ def prior_season_defcon(history: pl.DataFrame, min_minutes: int = 1) -> pl.DataF
             .alias("prior_count"),
             pl.col("defcon_hit").sum().cast(pl.UInt32).alias("prior_hits"),
             pl.len().cast(pl.UInt32).alias("prior_games"),
+            threshold_expr.alias("prior_threshold"),
         )
-        .select("code", "prior_count", "prior_hits", "prior_games")
+        .select("code", "prior_count", "prior_hits", "prior_games", "prior_threshold")
     )
 
 
@@ -513,7 +525,9 @@ def defcon_count_probabilities(
     supplied and ``history`` carries ``code``, each player with at least
     ``PRIOR_MIN_GAMES`` prior appearances adds capped prior-season count
     evidence (up to ``PRIOR_MAX_WEIGHT_GAMES`` games) on top of the
-    current-season positional Gamma prior.
+    current-season positional Gamma prior, provided the DefCon rule threshold
+    matches (skipping ``DEF`` to/from ``MID``/``FWD`` reclassifications whose
+    CBIT and CBIRT counts are on different scales).
 
     Note: back-testing shows this is sharper than the binary model (lower Brier)
     but overconfident at the extremes (worse calibration), so the dashboard
@@ -566,18 +580,31 @@ def defcon_count_probabilities(
         and {"code", "prior_count", "prior_games"}.issubset(prior.columns)
     )
     if has_prior and prior is not None:
+        has_prior_threshold = "prior_threshold" in prior.columns
         prior_lookup = prior.select(
             pl.col("code").cast(pl.Int64),
             pl.col("prior_count").cast(pl.Float64),
             pl.col("prior_games").cast(pl.Float64),
+            (
+                pl.col("prior_threshold").cast(pl.Int64)
+                if has_prior_threshold
+                else pl.lit(None, dtype=pl.Int64)
+            ).alias("prior_threshold"),
         )
         per_player = per_player.join(prior_lookup, on="code", how="left")
 
     records = []
     for row in per_player.iter_rows(named=True):
         shape_prior, rate_prior = priors.get(row["position"], (prior_strength, 1.0))
+        # Skip cross-season priors when DEF (CBIT, 10) <-> MID/FWD (CBIRT, 12)
+        # reclassification changes the underlying count definition.
+        threshold_matches = not has_prior or (
+            row["prior_threshold"] is None
+            or int(row["prior_threshold"]) == int(row["threshold"])
+        )
         if (
             has_prior
+            and threshold_matches
             and row["prior_games"] is not None
             and row["prior_count"] is not None
             and row["prior_games"] >= PRIOR_MIN_GAMES

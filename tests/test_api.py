@@ -1902,7 +1902,7 @@ def test_defcon_probability_incorporates_prior_season_counts(
 
     default_body = client.get("/players/defcon-probability").json()
     by_el = {row["element"]: row["prob"] for row in default_body}
-    # Code 1001 (high prior) > code 1003 (no 60+ min prior) > code 1002 (low prior).
+    # Code 1001 (high prior) > code 1003 (no 60+ min prior) > 1002 (low).
     assert by_el[1] > by_el[3] > by_el[2]
 
     # Lowering min_minutes to 30 activates code 1003's prior appearances.
@@ -1948,7 +1948,7 @@ def test_defcon_probability_validation_uses_preceding_season_prior(
     assert len(seen_priors) == 1
     prior = seen_priors[0]
     assert prior is not None
-    # Prior reflects 2025-26 (6 games each for codes 1001 and 1002 at 60+ mins),
+    # Prior reflects 2025-26 (6 games each for 1001 and 1002 at 60+ mins),
     # not 2027-28.
     by_code = {row["code"]: row for row in prior.to_dicts()}
     assert set(by_code) == {1001, 1002}
@@ -1957,7 +1957,7 @@ def test_defcon_probability_validation_uses_preceding_season_prior(
 
 
 def test_defcon_probability_isolates_synthetic_history_override() -> None:
-    # Pick a real 2025-26 code from disk so any accidental disk leak would alter prob.
+    # Pick a real 2025-26 code so any accidental disk leak would alter prob.
     real_prior = defcon.prior_season_defcon(
         api._load_all_seasons().filter(pl.col("season") == "2025-26"),
         min_minutes=60,
@@ -1997,7 +1997,7 @@ def test_defcon_probability_isolates_synthetic_history_override() -> None:
             ).json()
 
         by_el = {row["element"]: row["prob"] for row in probs}
-        # Real disk prior for real_code was NOT applied; both synthetic players match.
+        # Disk prior for real_code was not applied; synthetic players match.
         assert by_el[1] == pytest.approx(by_el[2])
         assert validation["n_predictions"] == 4
     finally:

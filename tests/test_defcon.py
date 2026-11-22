@@ -540,10 +540,28 @@ def test_prior_season_defcon_filters_minutes_and_nulls() -> None:
 
     prior = defcon.prior_season_defcon(history, min_minutes=60).sort("code")
 
-    assert prior.columns == ["code", "prior_count", "prior_hits", "prior_games"]
+    assert prior.columns == [
+        "code",
+        "prior_count",
+        "prior_hits",
+        "prior_games",
+        "prior_threshold",
+    ]
     assert prior.to_dicts() == [
-        {"code": 100, "prior_count": 24.0, "prior_hits": 2, "prior_games": 2},
-        {"code": 200, "prior_count": 8.0, "prior_hits": 0, "prior_games": 1},
+        {
+            "code": 100,
+            "prior_count": 24.0,
+            "prior_hits": 2,
+            "prior_games": 2,
+            "prior_threshold": 10,
+        },
+        {
+            "code": 200,
+            "prior_count": 8.0,
+            "prior_hits": 0,
+            "prior_games": 1,
+            "prior_threshold": 10,
+        },
     ]
 
 
@@ -554,7 +572,13 @@ def test_prior_season_defcon_filters_minutes_and_nulls() -> None:
 def test_prior_season_defcon_handles_empty_or_missing_columns(
     missing_col: str | None,
 ) -> None:
-    expected_cols = ["code", "prior_count", "prior_hits", "prior_games"]
+    expected_cols = [
+        "code",
+        "prior_count",
+        "prior_hits",
+        "prior_games",
+        "prior_threshold",
+    ]
     if missing_col is None:
         frame = pl.DataFrame()
     else:
@@ -581,7 +605,13 @@ def test_prior_season_defcon_returns_empty_for_all_null_defcon() -> None:
     prior = defcon.prior_season_defcon(frame)
 
     assert prior.is_empty()
-    assert prior.columns == ["code", "prior_count", "prior_hits", "prior_games"]
+    assert prior.columns == [
+        "code",
+        "prior_count",
+        "prior_hits",
+        "prior_games",
+        "prior_threshold",
+    ]
 
 
 def test_count_probabilities_with_prior_lift_high_prior_and_fade_over_time() -> None:
@@ -698,6 +728,53 @@ def test_backtest_with_prior_is_point_in_time() -> None:
     )
 
 
+def test_count_probabilities_skips_prior_on_def_mid_reclassification() -> None:
+    # Current season: two DEFs (1, 2), two MIDs (3, 4), and two FWDs (5, 6).
+    history = pl.DataFrame(
+        [
+            _coded_count_game(1, 101, 1, count=7, position="DEF", threshold=10),
+            _coded_count_game(2, 102, 1, count=7, position="DEF", threshold=10),
+            _coded_count_game(3, 201, 1, count=12, position="MID", threshold=12),
+            _coded_count_game(4, 202, 1, count=12, position="MID", threshold=12),
+            _coded_count_game(5, 301, 1, count=12, position="FWD", threshold=12),
+            _coded_count_game(6, 302, 1, count=12, position="FWD", threshold=12),
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    # Prior season:
+    # - code 101 was MID (CBIRT 14, threshold 12) -> now DEF (10): skip prior.
+    # - code 201 was DEF (CBIT 5, threshold 10) -> now MID (12): skip prior.
+    # - code 301 was MID (CBIRT 18, threshold 12) -> now FWD (12): keep prior.
+    prior_history = pl.DataFrame(
+        [
+            _coded_count_game(10, 101, r, count=14, position="MID", threshold=12)
+            for r in range(1, 11)
+        ]
+        + [
+            _coded_count_game(20, 201, r, count=5, position="DEF", threshold=10)
+            for r in range(1, 11)
+        ]
+        + [
+            _coded_count_game(30, 301, r, count=18, position="MID", threshold=12)
+            for r in range(1, 11)
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    prior = defcon.prior_season_defcon(prior_history)
+
+    baseline = defcon.defcon_count_probabilities(history, as_of_gw=1)
+    with_prior = defcon.defcon_count_probabilities(history, as_of_gw=1, prior=prior)
+    base_by_el = {row["element"]: row["prob"] for row in baseline.to_dicts()}
+    by_el = {row["element"]: row["prob"] for row in with_prior.to_dicts()}
+
+    # DEF <-> MID changers fall back to current-season positional priors.
+    assert by_el[1] == pytest.approx(base_by_el[1])
+    assert by_el[3] == pytest.approx(base_by_el[3])
+    # MID -> FWD shares the CBIRT (12) rule, so the high prior still lifts prob.
+    assert by_el[5] > base_by_el[5]
+    assert by_el[6] == pytest.approx(base_by_el[6])
+
+
 def test_backtest_real_snapshots_improve_2026_27_and_preserve_2025_26() -> None:
     data_root = Path("data")
     h24 = pl.read_parquet(data_root / "2024-25" / "enriched.parquet")
@@ -710,6 +787,7 @@ def test_backtest_real_snapshots_improve_2026_27_and_preserve_2025_26() -> None:
     with_prior_25 = defcon.backtest_defcon_count_probabilities(
         h25, min_minutes=60, prior=prior_24
     )
+    # Polars parallel group_by can shift empirical-Bayes variance by 1 ULP.
     assert_frame_equal(
         base_25.sort("as_of_gw", "element", "hit"),
         with_prior_25.sort("as_of_gw", "element", "hit"),

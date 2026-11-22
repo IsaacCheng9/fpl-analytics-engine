@@ -314,7 +314,7 @@ def get_all_seasons() -> pl.DataFrame:
 def _previous_season_history(
     all_seasons: pl.DataFrame, season: str
 ) -> pl.DataFrame | None:
-    """Return the archived history for the season immediately before ``season``."""
+    """Return archived history for the season immediately before ``season``."""
     if all_seasons.is_empty() or "season" not in all_seasons.columns:
         return None
     earlier = [
@@ -374,13 +374,18 @@ def _cached_prior_defcon(season: str, min_minutes: int) -> pl.DataFrame | None:
 
 
 def _resolve_prior_defcon(
-    all_seasons: pl.DataFrame, season: str, min_minutes: int
+    all_seasons: pl.DataFrame,
+    season: str,
+    min_minutes: int,
+    *,
+    using_live_history: bool = True,
 ) -> pl.DataFrame | None:
     """Return cached prior DefCon counts for default snapshots, or compute."""
     if not app.dependency_overrides and all_seasons is _load_all_seasons():
         return _cached_prior_defcon(season, min_minutes)
     if (
-        get_history in app.dependency_overrides
+        using_live_history
+        and get_history in app.dependency_overrides
         and get_all_seasons not in app.dependency_overrides
     ):
         return None
@@ -1038,7 +1043,12 @@ def _compute_defcon_probability_validation(
 ) -> DefconProbabilityValidation:
     """Run the DefCon probability model backtest for one season."""
     selected = _validation_history(season, history, all_seasons, current_season)
-    prior = _resolve_prior_defcon(all_seasons, season or current_season, min_minutes)
+    prior = _resolve_prior_defcon(
+        all_seasons,
+        season or current_season,
+        min_minutes,
+        using_live_history=(season is None or season == current_season),
+    )
     scored = defcon.backtest_defcon_count_probabilities(
         selected,
         min_minutes=min_minutes,
