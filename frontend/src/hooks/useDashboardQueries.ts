@@ -62,6 +62,7 @@ export function useDashboardQueries(urlState: UrlState) {
 	);
 	const ownedCount = importedTeam?.owned_elements.length ?? 0;
 	const hasImportedTeam = importedTeam !== undefined;
+	const importedTeamBank = importedTeam?.bank ?? null;
 	const squadPicks: FplTeamPick[] = importedTeam?.picks ?? [];
 
 	// Fetch each table league-wide so heat ranges stay fixed as filters change;
@@ -251,6 +252,7 @@ export function useDashboardQueries(urlState: UrlState) {
 		ownedElementList,
 		ownedCount,
 		hasImportedTeam,
+		importedTeamBank,
 		squadPicks,
 		formQuery,
 		defconQuery,

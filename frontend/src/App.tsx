@@ -54,6 +54,7 @@ import {
 	DEFAULT_PLAYER_WINDOW,
 	DEFAULT_POSITION,
 	DEFAULT_SHOW_SQUAD_VIEW,
+	DEFAULT_SQUAD_BANK,
 	DEFAULT_TEAM_FILTER,
 	defaultAttackingThreatFilters,
 	defaultTransferFilters,
@@ -100,9 +101,12 @@ export default function App() {
 	const { theme, setTheme } = useTheme();
 	const [tablePageSize, setTablePageSize] = useState(25);
 	const [showMoreFilters, setShowMoreFilters] = useState(false);
-	const [urlState, setUrlState] = useUrlState((restored) =>
-		setFplTeamInput(restored.fplTeamId?.toString() ?? ""),
-	);
+	const [replacingPlayer, setReplacingPlayer] =
+		useState<ReplacementRequest | null>(null);
+	const [urlState, setUrlState] = useUrlState((restored) => {
+		setFplTeamInput(restored.fplTeamId?.toString() ?? "");
+		setReplacingPlayer(null);
+	});
 	const {
 		tab,
 		playerSearch,
@@ -115,6 +119,7 @@ export default function App() {
 		playerWindow,
 		playerSeason,
 		fplTeamId,
+		squadBank,
 		ownershipFilter,
 		showSquadView,
 		compareOpen,
@@ -144,6 +149,7 @@ export default function App() {
 		playerWindow: setPlayerWindow,
 		playerSeason: setPlayerSeason,
 		fplTeamId: setFplTeamId,
+		squadBank: setSquadBank,
 		ownershipFilter: setOwnershipFilter,
 		showSquadView: setShowSquadView,
 		compareOpen: setCompareOpen,
@@ -181,6 +187,7 @@ export default function App() {
 		ownedElementList,
 		ownedCount,
 		hasImportedTeam,
+		importedTeamBank,
 		squadPicks,
 		formQuery,
 		defconQuery,
@@ -215,13 +222,58 @@ export default function App() {
 		if (fplTeamId === null && showSquadView) {
 			setShowSquadView(false);
 		}
+		if (fplTeamId === null && squadBank !== DEFAULT_SQUAD_BANK) {
+			setSquadBank(DEFAULT_SQUAD_BANK);
+		}
 	}, [
 		fplTeamId,
 		ownershipFilter,
 		showSquadView,
+		squadBank,
 		setOwnershipFilter,
 		setShowSquadView,
+		setSquadBank,
 	]);
+
+	// Include an outgoing squad player without form history in the compare
+	// combobox so Compare-from-Replace never silently drops them.
+	const effectiveComparePlayerOptions = useMemo(() => {
+		if (
+			replacingPlayer === null ||
+			compareOptionElements.has(replacingPlayer.element)
+		) {
+			return comparePlayerOptions;
+		}
+		const pick = squadPicks.find(
+			(item) => item.element === replacingPlayer.element,
+		);
+		const currentContext = squadCurrentContextQuery.data?.find(
+			(item) => item.element === replacingPlayer.element,
+		);
+		const fallbackOption = {
+			element: replacingPlayer.element,
+			web_name: replacingPlayer.webName,
+			position: replacingPlayer.position,
+			team_name: currentContext?.team_name ?? pick?.team_name ?? null,
+		};
+		return [...comparePlayerOptions, fallbackOption].sort((left, right) => {
+			const name = left.web_name.localeCompare(right.web_name);
+			return name !== 0
+				? name
+				: (left.team_name ?? "").localeCompare(right.team_name ?? "");
+		});
+	}, [
+		compareOptionElements,
+		comparePlayerOptions,
+		replacingPlayer,
+		squadCurrentContextQuery.data,
+		squadPicks,
+	]);
+	const effectiveCompareOptionElements = useMemo(
+		() =>
+			new Set(effectiveComparePlayerOptions.map((player) => player.element)),
+		[effectiveComparePlayerOptions],
+	);
 
 	useEffect(() => {
 		if (!compareOpen || comparePlayerOptions.length === 0) {
@@ -229,17 +281,17 @@ export default function App() {
 		}
 		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
 		const defaultElement = defaults.find((element) =>
-			compareOptionElements.has(element),
+			effectiveCompareOptionElements.has(element),
 		);
 		setCompareLeftElement((current) =>
-			current !== null && compareOptionElements.has(current)
+			current !== null && effectiveCompareOptionElements.has(current)
 				? current
 				: (defaultElement ?? null),
 		);
 	}, [
 		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
+		comparePlayerOptions.length,
+		effectiveCompareOptionElements,
 		ownedElementList,
 		shortlist,
 		setCompareLeftElement,
@@ -253,22 +305,23 @@ export default function App() {
 			if (
 				current !== null &&
 				current !== compareLeftElement &&
-				compareOptionElements.has(current)
+				effectiveCompareOptionElements.has(current)
 			) {
 				return current;
 			}
 			const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
 			const defaultElement = defaults.find(
 				(element) =>
-					element !== compareLeftElement && compareOptionElements.has(element),
+					element !== compareLeftElement &&
+					effectiveCompareOptionElements.has(element),
 			);
 			return defaultElement ?? null;
 		});
 	}, [
 		compareLeftElement,
 		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
+		comparePlayerOptions.length,
+		effectiveCompareOptionElements,
 		ownedElementList,
 		shortlist,
 		setCompareRightElement,
@@ -317,6 +370,7 @@ export default function App() {
 		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 		setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
 		setShowShortlistedOnly(false);
+		setReplacingPlayer(null);
 	}
 
 	function importFplTeam() {
@@ -327,6 +381,8 @@ export default function App() {
 		if (parsed !== fplTeamId) {
 			setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 			setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
+			setSquadBank(DEFAULT_SQUAD_BANK);
+			setReplacingPlayer(null);
 		}
 		setFplTeamId(parsed);
 	}
@@ -336,6 +392,8 @@ export default function App() {
 		setFplTeamInput("");
 		setOwnershipFilter(DEFAULT_OWNERSHIP_FILTER);
 		setShowSquadView(DEFAULT_SHOW_SQUAD_VIEW);
+		setSquadBank(DEFAULT_SQUAD_BANK);
+		setReplacingPlayer(null);
 	}
 
 	function applyFilterPreset(preset: FilterPreset) {
@@ -380,6 +438,7 @@ export default function App() {
 	}
 
 	function findReplacement(request: ReplacementRequest) {
+		setReplacingPlayer(request);
 		if (tab !== "form") {
 			setTab("form");
 			setSort(null);
@@ -395,6 +454,21 @@ export default function App() {
 		setPlayerSearch(DEFAULT_PLAYER_SEARCH);
 		setTeamFilter(DEFAULT_TEAM_FILTER);
 		setShowShortlistedOnly(false);
+	}
+
+	function returnToSquadView() {
+		setShowSquadView(true);
+		setShowShortlistedOnly(false);
+		setOwnershipFilter("all");
+		setReplacingPlayer(null);
+	}
+
+	function openCompareWithPlayers(left: number, right: number) {
+		setCompareLeftElement(left);
+		setCompareRightElement(right);
+		setCompareWindow(windowSize);
+		setCompareAsOfGw(asOfGw);
+		setCompareOpen(true);
 	}
 
 	function openComparePanel() {
@@ -695,6 +769,36 @@ export default function App() {
 		);
 	};
 
+	const showCompareFromReplace =
+		tab === "form" && !isSquadViewActive && replacingPlayer !== null;
+	const renderPlayerRowActions = (row: ShortlistablePlayer) => {
+		const shortlistButton = renderShortlistAction(row);
+		if (
+			!showCompareFromReplace ||
+			replacingPlayer === null ||
+			row.element === replacingPlayer.element
+		) {
+			return shortlistButton;
+		}
+		return (
+			<div className="flex items-center gap-1.5">
+				{shortlistButton}
+				<button
+					type="button"
+					aria-label={`Compare ${replacingPlayer.webName} with ${row.web_name}`}
+					title={`Compare ${replacingPlayer.webName} vs ${row.web_name}`}
+					className="cursor-pointer rounded-md border border-sky-300 bg-sky-50 px-2 py-1 font-medium text-xs text-sky-800 hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-sky-700 dark:bg-sky-950/60 dark:text-sky-200 dark:hover:bg-sky-950"
+					onClick={(event) => {
+						event.stopPropagation();
+						openCompareWithPlayers(replacingPlayer.element, row.element);
+					}}
+				>
+					Compare
+				</button>
+			</div>
+		);
+	};
+
 	const activeFilterChips = buildActiveFilterChips({
 		state: urlState,
 		setters: setUrlState,
@@ -750,7 +854,8 @@ export default function App() {
 				onRowClick={(row) => openPlayerDetail(row.element)}
 				rowClassName={playerRowClassName}
 				rowStickyClassName={playerStickyClassName}
-				renderRowActions={renderShortlistAction}
+				renderRowActions={renderPlayerRowActions}
+				rowActionsWidth={showCompareFromReplace ? 144 : 48}
 				rowActionsHeader={"\u2605"}
 				rowActionsHeaderLabel="Shortlist"
 				rowActionsHeaderTooltip="Add or remove players from the shortlist"
@@ -836,6 +941,9 @@ export default function App() {
 								if (value !== tab) {
 									setTab(value);
 									setSort(null);
+									if (value !== "form") {
+										setReplacingPlayer(null);
+									}
 								}
 							}}
 							className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm ${
@@ -940,11 +1048,7 @@ export default function App() {
 							setShowSquadView(false);
 							setShowShortlistedOnly(false);
 						}}
-						onSelectSquadView={() => {
-							setShowSquadView(true);
-							setShowShortlistedOnly(false);
-							setOwnershipFilter("all");
-						}}
+						onSelectSquadView={returnToSquadView}
 						onSelectShortlistView={() => {
 							setShowSquadView(false);
 							setShowShortlistedOnly(true);
@@ -1022,6 +1126,9 @@ export default function App() {
 						window={windowSize}
 						asOfGw={asOfGw}
 						latestGw={latestGw}
+						importedBank={importedTeamBank}
+						bankOverride={squadBank}
+						onBankOverrideChange={setSquadBank}
 						loading={
 							fplTeamQuery.isPending ||
 							squadFormQuery.isPending ||
@@ -1071,6 +1178,38 @@ export default function App() {
 					</div>
 				) : tab === "form" ? (
 					<>
+						{replacingPlayer !== null ? (
+							<div
+								role="status"
+								className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200"
+							>
+								<span>
+									Finding replacements for{" "}
+									<strong className="font-semibold">
+										{replacingPlayer.webName}
+									</strong>
+									{replacingPlayer.maxPrice !== undefined
+										? ` up to \u00a3${replacingPlayer.maxPrice.toFixed(1)}m`
+										: ""}
+								</span>
+								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										className="cursor-pointer rounded-md border border-sky-300 bg-white px-2.5 py-1 font-medium text-xs text-sky-900 hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-sky-700 dark:bg-zinc-900 dark:text-sky-200 dark:hover:bg-sky-950"
+										onClick={returnToSquadView}
+									>
+										Back to Squad
+									</button>
+									<button
+										type="button"
+										className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 font-medium text-xs text-zinc-700 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+										onClick={() => setReplacingPlayer(null)}
+									>
+										Dismiss
+									</button>
+								</div>
+							</div>
+						) : null}
 						{/* A 200-point scatter is unreadable at phone widths. */}
 						<div className="hidden sm:block">
 							<FormScatter
@@ -1135,7 +1274,7 @@ export default function App() {
 			{compareOpen ? (
 				<Suspense fallback={<PanelFallback />}>
 					<PlayerComparePanel
-						playerOptions={comparePlayerOptions}
+						playerOptions={effectiveComparePlayerOptions}
 						formPlayers={compareFormQuery.data ?? []}
 						defconPlayers={compareDefconQuery.data ?? []}
 						defconProbabilityPlayers={compareDefconProbabilityQuery.data ?? []}

@@ -407,6 +407,7 @@ class FplTeam(BaseModel):
 
     entry_id: int
     as_of_gw: int
+    bank: float | None = None
     owned_elements: list[int]
     picks: list[FplTeamPick]
 

@@ -514,6 +514,7 @@ const clubValidationRows = [
 const importedTeam = {
 	entry_id: 123,
 	as_of_gw: 38,
+	bank: null as number | null,
 	owned_elements: [1, 2],
 	picks: [
 		{
@@ -3262,4 +3263,342 @@ test("applies live availability and penalty filters on the DefCon Form tab", asy
 	expect(
 		new URLSearchParams(window.location.search).get("penalties_only"),
 	).toBe("1");
+});
+
+test("auto-prefills squad bank from imported team, persists manual overrides, and resets on team switch or clear", async () => {
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/fpl-team/123")) {
+			return Promise.resolve(
+				new Response(JSON.stringify({ ...importedTeam, bank: 1.5 }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/fpl-team/456")) {
+			return Promise.resolve(
+				new Response(
+					JSON.stringify({ ...importedTeam, entry_id: 456, bank: 0.4 }),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+
+	render(withProviders(<App />));
+
+	const bankInput = await screen.findByLabelText(/Bank/);
+	await waitFor(() => {
+		expect(bankInput).toHaveDisplayValue("1.5");
+	});
+	expect(new URLSearchParams(window.location.search).get("bank")).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: "Reset" }),
+	).not.toBeInTheDocument();
+
+	// Manual override persists in the URL and enables the Reset button.
+	fireEvent.change(bankInput, { target: { value: "2.3" } });
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("bank")).toBe("2.3");
+	});
+	const resetButton = screen.getByRole("button", { name: "Reset" });
+	fireEvent.click(resetButton);
+	await waitFor(() => {
+		expect(bankInput).toHaveDisplayValue("1.5");
+		expect(new URLSearchParams(window.location.search).get("bank")).toBeNull();
+	});
+
+	// Set a new override, then switch to a different FPL team and verify bank resets.
+	fireEvent.change(bankInput, { target: { value: "3.0" } });
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("bank")).toBe("3");
+	});
+	fireEvent.change(screen.getByLabelText("FPL Team ID"), {
+		target: { value: "456" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Import" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("fpl_team")).toBe("456");
+		expect(params.get("bank")).toBeNull();
+	});
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Squad View (2)" }),
+	);
+	await waitFor(() => {
+		expect(screen.getByLabelText(/Bank/)).toHaveDisplayValue("0.4");
+	});
+
+	// Clearing the FPL team also clears any persisted bank override.
+	fireEvent.change(screen.getByLabelText(/Bank/), { target: { value: "4.2" } });
+	await waitFor(() => {
+		expect(new URLSearchParams(window.location.search).get("bank")).toBe("4.2");
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+	await waitFor(() => {
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("fpl_team")).toBeNull();
+		expect(params.get("bank")).toBeNull();
+	});
+});
+
+test("compares replacement candidates directly against the outgoing squad player and clears replacement state cleanly", async () => {
+	const gordon = {
+		...broadFormRows[0],
+		element: 4,
+		web_name: "Gordon",
+		position: "MID",
+		team_name: "Newcastle",
+		price: 7.5,
+	};
+	const gordonDetail = {
+		...playerDetail,
+		element: 4,
+		code: 6666,
+		web_name: "Gordon",
+		position: "MID",
+		team_name: "Newcastle",
+	};
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/fpl-team/")) {
+			return Promise.resolve(
+				new Response(JSON.stringify({ ...importedTeam, bank: 1.5 }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/form")) {
+			return Promise.resolve(
+				new Response(JSON.stringify([...broadFormRows, gordon]), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (/\/players\/4(\?|$)/.test(url)) {
+			return Promise.resolve(
+				new Response(JSON.stringify(gordonDetail), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+
+	render(withProviders(<App />));
+
+	await waitFor(() => {
+		expect(screen.getByLabelText(/Bank/)).toHaveDisplayValue("1.5");
+	});
+	fireEvent.click(
+		screen.getByRole("button", { name: "Find replacement for Saka" }),
+	);
+
+	// Banner shows outgoing player and budget derived from price (10.0) + bank (1.5).
+	const banner = await screen.findByRole("status");
+	expect(banner).toHaveTextContent(
+		"Finding replacements for Saka up to \u00a311.5m",
+	);
+	await waitFor(() => {
+		expect(
+			screen.getByRole("button", { name: "Compare Saka with Gordon" }),
+		).toBeInTheDocument();
+	});
+
+	// Clicking Compare opens PlayerComparePanel with Saka vs Gordon and does not open PlayerPanel.
+	fireEvent.click(
+		screen.getByRole("button", { name: "Compare Saka with Gordon" }),
+	);
+	const compareDialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	await waitFor(() => {
+		expect(
+			within(compareDialog).getByDisplayValue("Saka - Arsenal - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(compareDialog).getByDisplayValue("Gordon - Newcastle - MID"),
+		).toBeInTheDocument();
+	});
+	expect(
+		screen.queryByRole("dialog", { name: "Gordon" }),
+	).not.toBeInTheDocument();
+	const compareParams = new URLSearchParams(window.location.search);
+	expect(compareParams.get("player")).toBeNull();
+	expect(compareParams.get("compare_a")).toBe("2");
+	expect(compareParams.get("compare_b")).toBe("4");
+
+	fireEvent.click(within(compareDialog).getByRole("button", { name: "Close" }));
+	await waitFor(() => {
+		expect(
+			screen.queryByRole("dialog", { name: "Compare Players" }),
+		).not.toBeInTheDocument();
+	});
+
+	// Switching to All Players still suppresses self-compare on Saka's own row.
+	fireEvent.click(screen.getByRole("button", { name: "All" }));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Saka"),
+		).toBeInTheDocument();
+	});
+	expect(
+		screen.queryByRole("button", { name: "Compare Saka with Saka" }),
+	).not.toBeInTheDocument();
+	expect(
+		screen.getByRole("button", { name: "Compare Saka with Mbeumo" }),
+	).toBeInTheDocument();
+
+	// Dismiss hides the replacement banner and Compare buttons without wiping filters.
+	fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+	expect(screen.queryByRole("status")).not.toBeInTheDocument();
+	expect(
+		screen.queryByRole("button", { name: "Compare Saka with Gordon" }),
+	).not.toBeInTheDocument();
+	expect(screen.getByLabelText("Position")).toHaveValue("MID");
+	expect(new URLSearchParams(window.location.search).get("max_price")).toBe(
+		"11.5",
+	);
+
+	// Re-enter replacement flow and verify Back to Squad returns to Squad View cleanly.
+	fireEvent.click(screen.getByRole("button", { name: "Squad View (2)" }));
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Find replacement for Saka" }),
+	);
+	await screen.findByRole("status");
+	fireEvent.click(screen.getByRole("button", { name: "Back to Squad" }));
+	await screen.findByText("Next-GW Squad Inspection");
+	expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+	// Re-enter replacement flow and verify switching away from Attacking Form clears it.
+	fireEvent.click(
+		screen.getByRole("button", { name: "Find replacement for Saka" }),
+	);
+	await screen.findByRole("status");
+	fireEvent.click(screen.getByRole("button", { name: "DefCon Form" }));
+	fireEvent.click(screen.getByRole("button", { name: "Attacking Form" }));
+	await waitFor(() => {
+		expect(
+			within(screen.getByRole("table")).getByText("Gordon"),
+		).toBeInTheDocument();
+	});
+	expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+	// Re-enter replacement flow and verify Clear Active Filters clears it.
+	fireEvent.click(screen.getByRole("button", { name: "Squad View (2)" }));
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Find replacement for Saka" }),
+	);
+	await screen.findByRole("status");
+	fireEvent.click(screen.getByRole("button", { name: "Clear Active Filters" }));
+	expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("keeps an outgoing squad player without form history selected in Compare-from-Replace", async () => {
+	const ghostTeam = {
+		entry_id: 123,
+		as_of_gw: 10,
+		bank: 1.0,
+		owned_elements: [99, 2],
+		picks: [
+			{
+				element: 99,
+				web_name: "NewSigning",
+				position: "MID",
+				team_name: "Arsenal",
+				squad_position: 1,
+				multiplier: 1,
+				is_captain: false,
+				is_vice_captain: false,
+				is_starting: true,
+			},
+			...importedTeam.picks.slice(1),
+		],
+	};
+	const ghostCurrent = [
+		...currentPlayerContexts,
+		{
+			...currentPlayerContexts[0],
+			element: 99,
+			web_name: "NewSigning",
+			position: "MID",
+			team_name: "Arsenal",
+			price: 8.5,
+		},
+	];
+	const ghostDetail = {
+		...playerDetail,
+		element: 99,
+		web_name: "NewSigning",
+		position: "MID",
+		team_name: "Arsenal",
+		gameweeks: [],
+	};
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/fpl-team/123")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostTeam), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/current-context")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostCurrent), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/99?")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostDetail), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+
+	fireEvent.click(
+		await screen.findByRole("button", {
+			name: "Find replacement for NewSigning",
+		}),
+	);
+	const compareButton = await screen.findByRole("button", {
+		name: "Compare NewSigning with Mbeumo",
+	});
+	fireEvent.click(compareButton);
+
+	const compareDialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	await waitFor(() => {
+		expect(
+			within(compareDialog).getByDisplayValue("NewSigning - Arsenal - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(compareDialog).getByDisplayValue("Mbeumo - Man Utd - MID"),
+		).toBeInTheDocument();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("compare_a")).toBe("99");
+	expect(params.get("compare_b")).toBe("1");
 });

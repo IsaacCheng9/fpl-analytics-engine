@@ -163,6 +163,7 @@ export function DataTable<T>({
 	rowClassName,
 	rowStickyClassName,
 	renderRowActions,
+	rowActionsWidth = 48,
 	rowActionsHeader = "",
 	rowActionsHeaderLabel = rowActionsHeader,
 	rowActionsHeaderTooltip,
@@ -182,6 +183,7 @@ export function DataTable<T>({
 	rowClassName?: (row: T) => string;
 	rowStickyClassName?: (row: T) => string;
 	renderRowActions?: (row: T) => ReactNode;
+	rowActionsWidth?: number;
 	rowActionsHeader?: string;
 	rowActionsHeaderLabel?: string;
 	rowActionsHeaderTooltip?: string;
@@ -269,7 +271,11 @@ export function DataTable<T>({
 	});
 
 	const rows = table.getRowModel().rows;
-	const actionColumnWidth = renderRowActions ? 48 : 0;
+	const actionColumnWidth = renderRowActions ? rowActionsWidth : 0;
+	const actionColumnStyle: CSSProperties = {
+		width: `${actionColumnWidth}px`,
+		minWidth: `${actionColumnWidth}px`,
+	};
 	const stickyColumnWidths = [216, 64, 128, 80];
 	const cellPadding = "px-3 py-2";
 	const headerContentClass =
@@ -331,7 +337,8 @@ export function DataTable<T>({
 							<tr key={group.id}>
 								{renderRowActions ? (
 									<th
-										className={`sticky top-0 z-30 w-12 bg-zinc-100 md:left-0 md:z-40 dark:bg-zinc-800 ${cellPadding} text-center align-bottom font-medium md:shadow-[1px_0_0_var(--sticky-shadow)]`}
+										style={actionColumnStyle}
+										className={`sticky top-0 z-30 bg-zinc-100 md:left-0 md:z-40 dark:bg-zinc-800 ${cellPadding} text-center align-bottom font-medium md:shadow-[1px_0_0_var(--sticky-shadow)]`}
 									>
 										<span className="inline-flex items-center justify-center gap-1">
 											<span aria-hidden="true">{rowActionsHeader}</span>
@@ -444,7 +451,8 @@ export function DataTable<T>({
 								>
 									{renderRowActions ? (
 										<td
-											className={`w-12 md:sticky md:left-0 md:z-30 ${cellPadding} whitespace-nowrap ${
+											style={actionColumnStyle}
+											className={`md:sticky md:left-0 md:z-30 ${cellPadding} whitespace-nowrap ${
 												rowStickyClassName?.(row.original) ??
 												"bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800"
 											} md:shadow-[1px_0_0_var(--sticky-action-shadow)]`}

@@ -1550,4 +1550,210 @@ describe("SquadInspection", () => {
 		expect(onPlayerClick).toHaveBeenNthCalledWith(1, 1);
 		expect(onPlayerClick).toHaveBeenNthCalledWith(2, 2);
 	});
+
+	test("auto-prefills importedBank, preserves in-progress typing, and resets overrides cleanly", () => {
+		const onFindReplacement = vi.fn();
+		const onBankOverrideChange = vi.fn();
+		const squadPicks = [
+			makePick({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				squad_position: 1,
+				is_starting: true,
+			}),
+		];
+		const currentPlayers = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				price: 10.0,
+			}),
+		];
+
+		const view = render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={1.5}
+				bankOverride={null}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={onFindReplacement}
+			/>,
+		);
+
+		const bankInput = screen.getByLabelText(/Bank/);
+		expect(bankInput).toHaveDisplayValue("1.5");
+		expect(
+			screen.queryByRole("button", { name: "Reset" }),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Find replacement for Saka" }),
+		);
+		expect(onFindReplacement).toHaveBeenLastCalledWith({
+			element: 1,
+			webName: "Saka",
+			position: "MID",
+			maxPrice: 11.5,
+		});
+
+		// Typing "2" reports 2 without immediately rewriting the draft to "2.0".
+		fireEvent.change(bankInput, { target: { value: "2" } });
+		expect(onBankOverrideChange).toHaveBeenLastCalledWith(2);
+		view.rerender(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={1.5}
+				bankOverride={2}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={onFindReplacement}
+			/>,
+		);
+		expect(bankInput).toHaveDisplayValue("2");
+
+		// Reset button appears when bankOverride differs from importedBank.
+		const resetButton = screen.getByRole("button", { name: "Reset" });
+		fireEvent.click(resetButton);
+		expect(onBankOverrideChange).toHaveBeenLastCalledWith(null);
+		expect(bankInput).toHaveDisplayValue("1.5");
+
+		// Clearing to empty and blurring restores importedBank and clears override.
+		fireEvent.change(bankInput, { target: { value: "" } });
+		fireEvent.blur(bankInput);
+		expect(onBankOverrideChange).toHaveBeenLastCalledWith(null);
+		expect(bankInput).toHaveDisplayValue("1.5");
+
+		// External update (e.g. URL restore or new team import) syncs the draft.
+		view.rerender(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={0.8}
+				bankOverride={null}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={onFindReplacement}
+			/>,
+		);
+		expect(bankInput).toHaveDisplayValue("0.8");
+	});
+
+	test("does not create spurious overrides on blur or when re-typing importedBank", () => {
+		const onBankOverrideChange = vi.fn();
+		const squadPicks = [
+			makePick({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				squad_position: 1,
+				is_starting: true,
+			}),
+		];
+		const currentPlayers = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				price: 10.0,
+			}),
+		];
+
+		// Blurring before importedBank arrives does not lock in bank=0.
+		const view = render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={null}
+				bankOverride={null}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+		const bankInput = screen.getByLabelText(/Bank/);
+		fireEvent.focus(bankInput);
+		fireEvent.blur(bankInput);
+		expect(onBankOverrideChange).not.toHaveBeenCalled();
+
+		// Incoming importedBank still prefills, and focusing/blurring stays clean.
+		view.rerender(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={1.5}
+				bankOverride={null}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+		expect(bankInput).toHaveDisplayValue("1.5");
+		fireEvent.focus(bankInput);
+		fireEvent.blur(bankInput);
+		expect(onBankOverrideChange).not.toHaveBeenCalled();
+
+		// Overriding to 0 is allowed; re-typing 1.5 clears the override to null.
+		fireEvent.change(bankInput, { target: { value: "0" } });
+		expect(onBankOverrideChange).toHaveBeenLastCalledWith(0);
+		view.rerender(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				importedBank={1.5}
+				bankOverride={0}
+				onBankOverrideChange={onBankOverrideChange}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+		fireEvent.change(bankInput, { target: { value: "1.5" } });
+		expect(onBankOverrideChange).toHaveBeenLastCalledWith(null);
+	});
 });

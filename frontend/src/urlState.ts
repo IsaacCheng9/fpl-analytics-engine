@@ -36,6 +36,7 @@ import {
 	DEFAULT_POSITION,
 	DEFAULT_SELECTED_ELEMENT,
 	DEFAULT_SHOW_SQUAD_VIEW,
+	DEFAULT_SQUAD_BANK,
 	DEFAULT_TAB,
 	DEFAULT_TEAM_FILTER,
 	DEFAULT_TRANSFER_FILTERS,
@@ -43,6 +44,8 @@ import {
 	metricsMatchDefault,
 	type OwnershipFilter,
 	POSITIONS,
+	SQUAD_BANK_MAX,
+	SQUAD_BANK_MIN,
 	type Tab,
 	type TransferFilters,
 	transferFiltersMatchDefault,
@@ -80,6 +83,7 @@ export type UrlState = {
 	playerWindow: number;
 	playerSeason: string | null;
 	fplTeamId: number | null;
+	squadBank: number | null;
 	ownershipFilter: OwnershipFilter;
 	showSquadView: boolean;
 	compareOpen: boolean;
@@ -111,6 +115,7 @@ export const DEFAULT_URL_STATE: UrlState = {
 	playerWindow: DEFAULT_PLAYER_WINDOW,
 	playerSeason: DEFAULT_PLAYER_SEASON,
 	fplTeamId: DEFAULT_FPL_TEAM_ID,
+	squadBank: DEFAULT_SQUAD_BANK,
 	ownershipFilter: DEFAULT_OWNERSHIP_FILTER,
 	showSquadView: DEFAULT_SHOW_SQUAD_VIEW,
 	compareOpen: DEFAULT_COMPARE_OPEN,
@@ -281,6 +286,13 @@ export function readUrlState(): UrlState {
 		min: 1,
 		integer: true,
 	});
+	const squadBank =
+		fplTeamId !== null
+			? parseOptionalNumber(params.get("bank"), {
+					min: SQUAD_BANK_MIN,
+					max: SQUAD_BANK_MAX,
+				})
+			: DEFAULT_SQUAD_BANK;
 	const tab = parseTab(params.get("tab"));
 	const showSquadView =
 		fplTeamId !== null && isPlayerTab(tab) && params.get("squad_view") === "1";
@@ -322,6 +334,7 @@ export function readUrlState(): UrlState {
 			integer: true,
 		}),
 		fplTeamId,
+		squadBank,
 		ownershipFilter: showSquadView
 			? DEFAULT_OWNERSHIP_FILTER
 			: parseOwnershipFilter(params.get("squad")),
@@ -508,6 +521,9 @@ export function writeUrlState(state: UrlState) {
 	}
 	if (state.fplTeamId !== DEFAULT_FPL_TEAM_ID) {
 		params.set("fpl_team", String(state.fplTeamId));
+		if (state.squadBank !== DEFAULT_SQUAD_BANK) {
+			params.set("bank", String(state.squadBank));
+		}
 		if (isPlayerTab(state.tab) && state.ownershipFilter !== "all") {
 			params.set("squad", state.ownershipFilter);
 		}
