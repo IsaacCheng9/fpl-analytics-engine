@@ -311,8 +311,10 @@ def get_all_seasons() -> pl.DataFrame:
     return _load_all_seasons()
 
 
-def _prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
-    """Return the season before ``season`` as per-player per-90 rates."""
+def _previous_season_history(
+    all_seasons: pl.DataFrame, season: str
+) -> pl.DataFrame | None:
+    """Return the archived history for the season immediately before ``season``."""
     if all_seasons.is_empty() or "season" not in all_seasons.columns:
         return None
     earlier = [
@@ -323,7 +325,15 @@ def _prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
     if not earlier:
         return None
     previous = max(earlier, key=data.season_sort_key)
-    return form.prior_season_rates(all_seasons.filter(pl.col("season") == previous))
+    return all_seasons.filter(pl.col("season") == previous)
+
+
+def _prior_rates(all_seasons: pl.DataFrame, season: str) -> pl.DataFrame | None:
+    """Return the season before ``season`` as per-player per-90 rates."""
+    previous = _previous_season_history(all_seasons, season)
+    if previous is None:
+        return None
+    return form.prior_season_rates(previous)
 
 
 @lru_cache
@@ -345,6 +355,36 @@ def get_prior_rates(
 ) -> pl.DataFrame | None:
     """Return last season's rates for the live season's estimated rates."""
     return _resolve_prior_rates(all_seasons, season)
+
+
+def _prior_defcon(
+    all_seasons: pl.DataFrame, season: str, min_minutes: int
+) -> pl.DataFrame | None:
+    """Return the season before ``season`` as per-player DefCon counts."""
+    previous = _previous_season_history(all_seasons, season)
+    if previous is None:
+        return None
+    return defcon.prior_season_defcon(previous, min_minutes=min_minutes)
+
+
+@lru_cache(maxsize=32)
+def _cached_prior_defcon(season: str, min_minutes: int) -> pl.DataFrame | None:
+    """Cache prior-season DefCon counts from the default archived snapshots."""
+    return _prior_defcon(_load_all_seasons(), season, min_minutes)
+
+
+def _resolve_prior_defcon(
+    all_seasons: pl.DataFrame, season: str, min_minutes: int
+) -> pl.DataFrame | None:
+    """Return cached prior DefCon counts for default snapshots, or compute."""
+    if not app.dependency_overrides and all_seasons is _load_all_seasons():
+        return _cached_prior_defcon(season, min_minutes)
+    if (
+        get_history in app.dependency_overrides
+        and get_all_seasons not in app.dependency_overrides
+    ):
+        return None
+    return _prior_defcon(all_seasons, season, min_minutes)
 
 
 def _using_default_validation_snapshots(
@@ -940,6 +980,8 @@ def players_defcon_probability(
     fixtures_data: Annotated[pl.DataFrame, Depends(get_fixtures_data)],
     teams: Annotated[pl.DataFrame, Depends(get_teams)],
     players: Annotated[pl.DataFrame, Depends(get_players_snapshot)],
+    all_seasons: Annotated[pl.DataFrame, Depends(get_all_seasons)],
+    current_season: Annotated[str, Depends(get_current_season)],
     position: Position | None = None,
     min_games: int = Query(0, ge=0),
     min_minutes: int = Query(
@@ -957,13 +999,15 @@ def players_defcon_probability(
     """Rank players by their calibrated DefCon probability given 60+ minutes.
 
     Uses a recalibrated contribution-count model over all eligible appearances
-    up to ``as_of_gw`` (defaults to the latest gameweek). The probability is
-    conditional on playing at least ``min_minutes`` (60 by default).
+    up to ``as_of_gw`` (defaults to the latest gameweek), incorporating
+    prior-season counts when available. The probability is conditional on
+    playing at least ``min_minutes`` (60 by default).
     """
     _require_current_history(history)
     gw = _resolve_as_of_gw(history, as_of_gw)
+    prior = _resolve_prior_defcon(all_seasons, current_season, min_minutes)
     probabilities = defcon.calibrated_defcon_count_probabilities(
-        history, gw, min_minutes=min_minutes
+        history, gw, min_minutes=min_minutes, prior=prior
     )
     ranked = defcon.flag_defcon_probabilities(
         probabilities,
@@ -994,10 +1038,12 @@ def _compute_defcon_probability_validation(
 ) -> DefconProbabilityValidation:
     """Run the DefCon probability model backtest for one season."""
     selected = _validation_history(season, history, all_seasons, current_season)
+    prior = _resolve_prior_defcon(all_seasons, season or current_season, min_minutes)
     scored = defcon.backtest_defcon_count_probabilities(
         selected,
         min_minutes=min_minutes,
         calibration_bins=bins,
+        prior=prior,
     )
     if scored.is_empty():
         return DefconProbabilityValidation(

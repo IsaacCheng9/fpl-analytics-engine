@@ -30,6 +30,62 @@ DEFAULT_COUNT_CALIBRATION_BINS = 10
 # hit rates from prior as-of predictions. Higher values keep more of the count
 # model's sharpness; lower values trust the empirical bucket rate faster.
 DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH = 50.0
+# Cross-season player prior settings for the Gamma-Poisson count model.
+# Require at least three prior-season appearances and cap their weight at ten
+# games so early-season estimates shrink toward stable player rates and fade
+# as current-season games accumulate.
+PRIOR_MIN_GAMES = 3
+PRIOR_MAX_WEIGHT_GAMES = 10.0
+
+_PRIOR_DEFCON_SCHEMA: dict[str, type[pl.DataType]] = {
+    "code": pl.Int64,
+    "prior_count": pl.Float64,
+    "prior_hits": pl.UInt32,
+    "prior_games": pl.UInt32,
+}
+
+
+def prior_season_defcon(history: pl.DataFrame, min_minutes: int = 1) -> pl.DataFrame:
+    """Summarise a completed season into per-player DefCon count totals.
+
+    Args:
+        history: Enriched history for the previous season, carrying the stable
+            cross-season player ``code``.
+        min_minutes: Minimum minutes for a game to count as an eligible
+            appearance.
+
+    Returns:
+        One row per ``code`` with ``prior_count`` (sum of
+        ``defensive_contribution``), ``prior_hits`` (sum of ``defcon_hit``),
+        and ``prior_games`` (eligible appearance count). Returns a typed empty
+        table when ``history`` is empty, lacks required columns, or has no
+        eligible DefCon rows.
+    """
+    required = {"code", "minutes", "defcon_hit", "defensive_contribution"}
+    if history.is_empty() or not required.issubset(history.columns):
+        return pl.DataFrame(schema=_PRIOR_DEFCON_SCHEMA)
+
+    eligible = history.filter(
+        (pl.col("minutes") >= min_minutes)
+        & pl.col("defcon_hit").is_not_null()
+        & pl.col("defensive_contribution").is_not_null()
+        & pl.col("code").is_not_null()
+    )
+    if eligible.is_empty():
+        return pl.DataFrame(schema=_PRIOR_DEFCON_SCHEMA)
+
+    return (
+        eligible.group_by(pl.col("code").cast(pl.Int64))
+        .agg(
+            pl.col("defensive_contribution")
+            .sum()
+            .cast(pl.Float64)
+            .alias("prior_count"),
+            pl.col("defcon_hit").sum().cast(pl.UInt32).alias("prior_hits"),
+            pl.len().cast(pl.UInt32).alias("prior_games"),
+        )
+        .select("code", "prior_count", "prior_hits", "prior_games")
+    )
 
 
 def _empty_probabilities_frame(
@@ -57,15 +113,14 @@ def _latest_player_meta(history: pl.DataFrame, as_of_gw: int) -> pl.DataFrame:
     sort_cols = ["round"]
     if "kickoff_time" in point_in_time.columns:
         sort_cols.append("kickoff_time")
-    return (
-        point_in_time.sort(sort_cols, nulls_last=True)
-        .group_by("element")
-        .agg(
-            pl.col("web_name").last(),
-            pl.col("position").last(),
-            pl.col("team_name").last(),
-        )
-    )
+    aggs = [
+        pl.col("web_name").last(),
+        pl.col("position").last(),
+        pl.col("team_name").last(),
+    ]
+    if "code" in point_in_time.columns:
+        aggs.append(pl.col("code").cast(pl.Int64).last().alias("code"))
+    return point_in_time.sort(sort_cols, nulls_last=True).group_by("element").agg(aggs)
 
 
 def _estimate_position_priors(
@@ -444,6 +499,7 @@ def defcon_count_probabilities(
     min_minutes: int = 1,
     empirical_bayes: bool = True,
     min_games_for_prior: int = 3,
+    prior: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Estimate DefCon hit probability from the contribution count.
 
@@ -452,6 +508,12 @@ def defcon_count_probabilities(
     the Negative-Binomial predictive. Unlike :func:`defcon_probabilities`, this
     uses the size of each contribution, so comfortably-over-threshold players
     score higher than those who scrape it. Columns mirror that function.
+
+    When a previous-season ``prior`` from :func:`prior_season_defcon` is
+    supplied and ``history`` carries ``code``, each player with at least
+    ``PRIOR_MIN_GAMES`` prior appearances adds capped prior-season count
+    evidence (up to ``PRIOR_MAX_WEIGHT_GAMES`` games) on top of the
+    current-season positional Gamma prior.
 
     Note: back-testing shows this is sharper than the binary model (lower Brier)
     but overconfident at the extremes (worse calibration), so the dashboard
@@ -464,6 +526,8 @@ def defcon_count_probabilities(
         min_minutes: Minimum minutes for a game to count as an appearance.
         empirical_bayes: Estimate the Gamma rate per position from the data.
         min_games_for_prior: Minimum games for a player to inform the prior.
+        prior: Optional output of :func:`prior_season_defcon` for the previous
+            season. Ignored when empty or when ``history`` has no ``code``.
 
     Returns:
         One row per eligible player with the empirical hit rate and the
@@ -495,11 +559,36 @@ def defcon_count_probabilities(
         per_player, min_games_for_prior, prior_strength, empirical_bayes
     )
 
+    has_prior = (
+        prior is not None
+        and not prior.is_empty()
+        and "code" in per_player.columns
+        and {"code", "prior_count", "prior_games"}.issubset(prior.columns)
+    )
+    if has_prior and prior is not None:
+        prior_lookup = prior.select(
+            pl.col("code").cast(pl.Int64),
+            pl.col("prior_count").cast(pl.Float64),
+            pl.col("prior_games").cast(pl.Float64),
+        )
+        per_player = per_player.join(prior_lookup, on="code", how="left")
+
     records = []
     for row in per_player.iter_rows(named=True):
         shape_prior, rate_prior = priors.get(row["position"], (prior_strength, 1.0))
-        post_shape = shape_prior + row["total_count"]
-        post_rate = rate_prior + row["games"]
+        if (
+            has_prior
+            and row["prior_games"] is not None
+            and row["prior_count"] is not None
+            and row["prior_games"] >= PRIOR_MIN_GAMES
+        ):
+            weight = min(float(row["prior_games"]), PRIOR_MAX_WEIGHT_GAMES)
+            prior_mean = float(row["prior_count"]) / float(row["prior_games"])
+            post_shape = shape_prior + prior_mean * weight + row["total_count"]
+            post_rate = rate_prior + weight + row["games"]
+        else:
+            post_shape = shape_prior + row["total_count"]
+            post_rate = rate_prior + row["games"]
         prob = _negbin_at_least(
             int(row["threshold"]), post_shape, post_rate / (post_rate + 1.0)
         )
@@ -539,6 +628,7 @@ def _count_and_binary_probabilities(
     min_minutes: int,
     empirical_bayes: bool,
     min_games_for_prior: int,
+    prior: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Return count and binary model probabilities for one as-of gameweek."""
     count_model = defcon_count_probabilities(
@@ -548,6 +638,7 @@ def _count_and_binary_probabilities(
         min_minutes,
         empirical_bayes,
         min_games_for_prior,
+        prior,
     ).rename({"prob": "count_prob"})
     binary_model = defcon_probabilities(
         history,
@@ -622,6 +713,7 @@ def backtest_defcon_count_probabilities(
     min_games_for_prior: int = 3,
     calibration_bins: int = DEFAULT_COUNT_CALIBRATION_BINS,
     calibration_prior_strength: float = DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH,
+    prior: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Score the recalibrated count model against following-GW outcomes.
 
@@ -641,6 +733,8 @@ def backtest_defcon_count_probabilities(
         min_games_for_prior: Forwarded to the probability models.
         calibration_bins: Number of probability buckets for count calibration.
         calibration_prior_strength: Pseudo-prediction strength for each bucket.
+        prior: Optional output of :func:`prior_season_defcon` forwarded to the
+            count probability model.
 
     Returns:
         Per-appearance rows with calibrated ``prob``, uncalibrated
@@ -667,6 +761,7 @@ def backtest_defcon_count_probabilities(
             min_minutes,
             empirical_bayes,
             min_games_for_prior,
+            prior,
         ).with_columns((pl.lit(as_of_gw) + 1).alias("next_round"))
         for as_of_gw in range(1, max(score_gameweeks) + 1)
     ]
@@ -711,6 +806,7 @@ def _raw_count_calibration_rows(
     min_minutes: int,
     empirical_bayes: bool,
     min_games_for_prior: int,
+    prior: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Build point-in-time raw count predictions paired with realised next-GW hits.
 
@@ -737,6 +833,7 @@ def _raw_count_calibration_rows(
             min_minutes,
             empirical_bayes,
             min_games_for_prior,
+            prior,
         ).select(
             "element",
             pl.col("prob").alias("count_prob"),
@@ -766,6 +863,7 @@ def calibrated_defcon_count_probabilities(
     min_games_for_prior: int = 3,
     calibration_bins: int = DEFAULT_COUNT_CALIBRATION_BINS,
     calibration_prior_strength: float = DEFAULT_COUNT_CALIBRATION_PRIOR_STRENGTH,
+    prior: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Estimate calibrated DefCon hit probabilities from contribution counts.
 
@@ -778,6 +876,8 @@ def calibrated_defcon_count_probabilities(
         min_games_for_prior: Minimum games for a player to inform the prior.
         calibration_bins: Number of probability buckets for count calibration.
         calibration_prior_strength: Pseudo-prediction strength for each bucket.
+        prior: Optional output of :func:`prior_season_defcon` forwarded to the
+            count model and its calibration history.
 
     Returns:
         One row per eligible player with calibrated ``prob``, raw hit-rate,
@@ -790,6 +890,7 @@ def calibrated_defcon_count_probabilities(
         min_minutes,
         empirical_bayes,
         min_games_for_prior,
+        prior,
     )
     if current.is_empty():
         return current.with_columns(
@@ -815,6 +916,7 @@ def calibrated_defcon_count_probabilities(
         min_minutes=min_minutes,
         empirical_bayes=empirical_bayes,
         min_games_for_prior=min_games_for_prior,
+        prior=prior,
     )
     calibrated = _apply_count_calibration(
         current,

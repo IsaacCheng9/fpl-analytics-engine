@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
-from fpl_analytics_engine import api, form
+from fpl_analytics_engine import api, defcon, form
 
 
 def _game(
@@ -1303,6 +1303,7 @@ def test_default_snapshot_caches_validation_and_prior_rates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api._cached_prior_rates.cache_clear()
+    api._cached_prior_defcon.cache_clear()
     api._cached_form_validation.cache_clear()
     api._cached_defcon_probability_validation.cache_clear()
     api._cached_club_form_validation.cache_clear()
@@ -1315,12 +1316,27 @@ def test_default_snapshot_caches_validation_and_prior_rates(
         prior_calls += 1
         return original_prior(all_seasons, season)
 
+    defcon_prior_calls = 0
+    original_defcon_prior = api._prior_defcon
+
+    def count_defcon_prior(
+        all_seasons: pl.DataFrame, season: str, min_minutes: int
+    ) -> pl.DataFrame | None:
+        nonlocal defcon_prior_calls
+        defcon_prior_calls += 1
+        return original_defcon_prior(all_seasons, season, min_minutes)
+
     monkeypatch.setattr(api, "_prior_rates", count_prior)
+    monkeypatch.setattr(api, "_prior_defcon", count_defcon_prior)
 
     with TestClient(api.app) as default_client:
         assert default_client.get("/players/form").status_code == 200
         assert default_client.get("/players/form").status_code == 200
         assert prior_calls == 1
+
+        assert default_client.get("/players/defcon-probability").status_code == 200
+        assert default_client.get("/players/defcon-probability").status_code == 200
+        assert defcon_prior_calls == 1
 
         first = default_client.get(
             "/clubs/form-validation", params={"season": "2025-26"}
@@ -1840,3 +1856,149 @@ def test_player_detail_omits_live_snapshot_on_archived_seasons(
     assert archived_body["selected_season"] == "2025-26"
     for key in api.LIVE_STATUS_COLUMNS:
         assert archived_body[key] is None
+
+
+def _defcon_cross_season_rows() -> tuple[pl.DataFrame, pl.DataFrame]:
+    def row(
+        season: str,
+        element: int,
+        code: int,
+        round_: int,
+        count: int,
+        minutes: int = 90,
+    ) -> dict:
+        return {
+            **_game(element, round_, defcon_hit=count >= 10, position="DEF"),
+            "season": season,
+            "code": code,
+            "minutes": minutes,
+            "defensive_contribution": count,
+        }
+
+    previous = pl.DataFrame(
+        [row("2025-26", 11, 1001, r, 18) for r in range(1, 7)]
+        + [row("2025-26", 12, 1002, r, 4) for r in range(1, 7)]
+        # Low-minute games for code 1003 only count when min_minutes <= 30.
+        + [row("2025-26", 13, 1003, r, 18, minutes=30) for r in range(1, 7)],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    # Identical current-season counts for all three defenders.
+    live = pl.DataFrame(
+        [row("2026-27", 1, 1001, r, 10) for r in range(1, 4)]
+        + [row("2026-27", 2, 1002, r, 10) for r in range(1, 4)]
+        + [row("2026-27", 3, 1003, r, 10) for r in range(1, 4)],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    return live, pl.concat([previous, live])
+
+
+def test_defcon_probability_incorporates_prior_season_counts(
+    client: TestClient,
+) -> None:
+    live, all_seasons = _defcon_cross_season_rows()
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+    api.app.dependency_overrides[api.get_history] = lambda: live
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: all_seasons
+
+    default_body = client.get("/players/defcon-probability").json()
+    by_el = {row["element"]: row["prob"] for row in default_body}
+    # Code 1001 (high prior) > code 1003 (no 60+ min prior) > code 1002 (low prior).
+    assert by_el[1] > by_el[3] > by_el[2]
+
+    # Lowering min_minutes to 30 activates code 1003's prior appearances.
+    low_min_body = client.get(
+        "/players/defcon-probability", params={"min_minutes": 30}
+    ).json()
+    low_by_el = {row["element"]: row["prob"] for row in low_min_body}
+    assert low_by_el[3] == pytest.approx(low_by_el[1])
+
+
+def test_defcon_probability_validation_uses_preceding_season_prior(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live, two_seasons = _defcon_cross_season_rows()
+    # Add a 2027-28 live season so 2026-27 is validated as an archived season
+    # with 2025-26 as its prior.
+    future_live = live.with_columns(
+        pl.lit("2027-28").alias("season"),
+        pl.lit(1, dtype=pl.Int64).alias("defensive_contribution"),
+        pl.lit(False).alias("defcon_hit"),
+    )
+    api.app.dependency_overrides[api.get_current_season] = lambda: "2027-28"
+    api.app.dependency_overrides[api.get_history] = lambda: future_live
+    api.app.dependency_overrides[api.get_all_seasons] = lambda: pl.concat(
+        [two_seasons, future_live]
+    )
+
+    seen_priors: list[pl.DataFrame | None] = []
+    original_backtest = defcon.backtest_defcon_count_probabilities
+
+    def record_backtest(*args, **kwargs):
+        seen_priors.append(kwargs.get("prior"))
+        return original_backtest(*args, **kwargs)
+
+    monkeypatch.setattr(defcon, "backtest_defcon_count_probabilities", record_backtest)
+
+    body = client.get(
+        "/players/defcon-probability-validation",
+        params={"season": "2026-27", "bins": 4},
+    ).json()
+
+    assert body["n_predictions"] == 6
+    assert len(seen_priors) == 1
+    prior = seen_priors[0]
+    assert prior is not None
+    # Prior reflects 2025-26 (6 games each for codes 1001 and 1002 at 60+ mins),
+    # not 2027-28.
+    by_code = {row["code"]: row for row in prior.to_dicts()}
+    assert set(by_code) == {1001, 1002}
+    assert by_code[1001]["prior_count"] == pytest.approx(108.0)
+    assert by_code[1002]["prior_count"] == pytest.approx(24.0)
+
+
+def test_defcon_probability_isolates_synthetic_history_override() -> None:
+    # Pick a real 2025-26 code from disk so any accidental disk leak would alter prob.
+    real_prior = defcon.prior_season_defcon(
+        api._load_all_seasons().filter(pl.col("season") == "2025-26"),
+        min_minutes=60,
+    ).filter(pl.col("prior_games") >= defcon.PRIOR_MIN_GAMES)
+    real_code = int(real_prior.sort("prior_count", descending=True)["code"][0])
+
+    synthetic = pl.DataFrame(
+        [
+            {
+                **_game(1, r, defcon_hit=False, position="DEF"),
+                "code": real_code,
+                "defensive_contribution": 5,
+            }
+            for r in (1, 2, 3)
+        ]
+        + [
+            {
+                **_game(2, r, defcon_hit=False, position="DEF"),
+                "code": 999_999_999,
+                "defensive_contribution": 5,
+            }
+            for r in (1, 2, 3)
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+
+    try:
+        api.app.dependency_overrides[api.get_history] = lambda: synthetic
+        api.app.dependency_overrides[api.get_fixtures_data] = lambda: pl.DataFrame()
+        api.app.dependency_overrides[api.get_teams] = _empty_teams
+        api.app.dependency_overrides[api.get_players_snapshot] = lambda: pl.DataFrame()
+        api.app.dependency_overrides[api.get_current_season] = lambda: "2026-27"
+        with TestClient(api.app) as isolated_client:
+            probs = isolated_client.get("/players/defcon-probability").json()
+            validation = isolated_client.get(
+                "/players/defcon-probability-validation"
+            ).json()
+
+        by_el = {row["element"]: row["prob"] for row in probs}
+        # Real disk prior for real_code was NOT applied; both synthetic players match.
+        assert by_el[1] == pytest.approx(by_el[2])
+        assert validation["n_predictions"] == 4
+    finally:
+        api.app.dependency_overrides.clear()

@@ -1,5 +1,7 @@
 """Tests for the empirical-Bayes DefCon hit-probability model."""
 
+from pathlib import Path
+
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -490,3 +492,249 @@ def test_calibrated_count_probabilities_skip_unused_binary_history(
     assert not result.is_empty()
     # Only the target gameweek needs binary_prob; historical calibration rows do not.
     assert binary_calls == [4]
+
+
+def _coded_count_game(
+    element: int,
+    code: int | None,
+    round_: int,
+    *,
+    count: int | None,
+    threshold: int = 10,
+    position: str = "DEF",
+    minutes: int = 90,
+    hit: bool | None = None,
+) -> dict:
+    """Build one DefCon count row carrying a cross-season player code."""
+    resolved_hit = (
+        hit if hit is not None else (None if count is None else count >= threshold)
+    )
+    return {
+        "element": element,
+        "code": code,
+        "round": round_,
+        "kickoff_time": f"2025-08-{round_:02d}T15:00:00Z",
+        "minutes": minutes,
+        "defensive_contribution": count,
+        "defcon_threshold": threshold,
+        "defcon_hit": resolved_hit,
+        "position": position,
+        "web_name": f"P{element}",
+        "team_name": "T",
+    }
+
+
+def test_prior_season_defcon_filters_minutes_and_nulls() -> None:
+    rows = [
+        _coded_count_game(1, 100, 1, count=14, minutes=90),
+        _coded_count_game(1, 100, 2, count=10, minutes=60),
+        # Below min_minutes=60.
+        _coded_count_game(1, 100, 3, count=20, minutes=59),
+        # Null count, null hit, and null code rows are dropped.
+        _coded_count_game(1, 100, 4, count=None, minutes=90, hit=None),
+        {**_coded_count_game(1, 100, 5, count=12, minutes=90), "defcon_hit": None},
+        _coded_count_game(2, None, 1, count=15, minutes=90),
+        _coded_count_game(3, 200, 1, count=8, minutes=75),
+    ]
+    history = pl.DataFrame(rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+    prior = defcon.prior_season_defcon(history, min_minutes=60).sort("code")
+
+    assert prior.columns == ["code", "prior_count", "prior_hits", "prior_games"]
+    assert prior.to_dicts() == [
+        {"code": 100, "prior_count": 24.0, "prior_hits": 2, "prior_games": 2},
+        {"code": 200, "prior_count": 8.0, "prior_hits": 0, "prior_games": 1},
+    ]
+
+
+@pytest.mark.parametrize(
+    "missing_col",
+    [None, "code", "minutes", "defcon_hit", "defensive_contribution"],
+)
+def test_prior_season_defcon_handles_empty_or_missing_columns(
+    missing_col: str | None,
+) -> None:
+    expected_cols = ["code", "prior_count", "prior_hits", "prior_games"]
+    if missing_col is None:
+        frame = pl.DataFrame()
+    else:
+        frame = pl.DataFrame([_coded_count_game(1, 100, 1, count=12)]).drop(missing_col)
+
+    prior = defcon.prior_season_defcon(frame)
+
+    assert prior.is_empty()
+    assert prior.columns == expected_cols
+
+
+def test_prior_season_defcon_returns_empty_for_all_null_defcon() -> None:
+    frame = pl.DataFrame(
+        [
+            {
+                "code": 100,
+                "minutes": 90,
+                "defcon_hit": None,
+                "defensive_contribution": None,
+            }
+        ]
+    )
+
+    prior = defcon.prior_season_defcon(frame)
+
+    assert prior.is_empty()
+    assert prior.columns == ["code", "prior_count", "prior_hits", "prior_games"]
+
+
+def test_count_probabilities_with_prior_lift_high_prior_and_fade_over_time() -> None:
+    # Two identical current-season defenders across GW1-20, plus an anchor.
+    current_rows: list[dict] = []
+    for gw in range(1, 21):
+        current_rows.append(_coded_count_game(1, 101, gw, count=10))
+        current_rows.append(_coded_count_game(2, 102, gw, count=10))
+        current_rows.append(_coded_count_game(3, 103, gw, count=10))
+    history = pl.DataFrame(current_rows, schema_overrides={"defcon_hit": pl.Boolean})
+
+    prior_rows = [_coded_count_game(10, 101, r, count=18) for r in range(1, 11)] + [
+        _coded_count_game(20, 102, r, count=4) for r in range(1, 11)
+    ]
+    prior = defcon.prior_season_defcon(
+        pl.DataFrame(prior_rows, schema_overrides={"defcon_hit": pl.Boolean})
+    )
+
+    early = defcon.defcon_count_probabilities(history, as_of_gw=2, prior=prior)
+    late = defcon.defcon_count_probabilities(history, as_of_gw=20, prior=prior)
+    early_by_el = {row["element"]: row["prob"] for row in early.to_dicts()}
+    late_by_el = {row["element"]: row["prob"] for row in late.to_dicts()}
+
+    # High prior > no prior > low prior at GW2.
+    assert early_by_el[1] > early_by_el[3] > early_by_el[2]
+    # Gap shrinks as current-season games accumulate.
+    assert (late_by_el[1] - late_by_el[2]) < (early_by_el[1] - early_by_el[2])
+
+    # Calibrated probabilities reflect the same ordering and preserve schema.
+    base_cal = defcon.calibrated_defcon_count_probabilities(history, as_of_gw=4)
+    prior_cal = defcon.calibrated_defcon_count_probabilities(
+        history, as_of_gw=4, prior=prior
+    )
+    assert prior_cal.schema == base_cal.schema
+    cal_by_el = {row["element"]: row["prob"] for row in prior_cal.to_dicts()}
+    assert cal_by_el[1] > cal_by_el[3] > cal_by_el[2]
+
+
+def test_count_probabilities_prior_min_games_and_max_weight_cap() -> None:
+    history = pl.DataFrame(
+        [
+            _coded_count_game(1, 101, 1, count=10),
+            _coded_count_game(2, 102, 1, count=10),
+            _coded_count_game(3, 103, 1, count=10),
+            _coded_count_game(4, 104, 1, count=10),
+        ],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    prior = pl.DataFrame(
+        {
+            "code": [101, 102, 103],
+            # code 101: below PRIOR_MIN_GAMES (2 games) -> ignored.
+            # code 102: exactly PRIOR_MAX_WEIGHT_GAMES (10 games, mean 16).
+            # code 103: above cap (25 games, same mean 16) -> identical to 102.
+            "prior_count": [40.0, 160.0, 400.0],
+            "prior_hits": [2, 10, 25],
+            "prior_games": [2, 10, 25],
+        }
+    )
+
+    baseline = defcon.defcon_count_probabilities(history, as_of_gw=1)
+    empty_prior = defcon.defcon_count_probabilities(
+        history, as_of_gw=1, prior=defcon.prior_season_defcon(pl.DataFrame())
+    )
+    with_prior = defcon.defcon_count_probabilities(history, as_of_gw=1, prior=prior)
+
+    assert_frame_equal(baseline.sort("element"), empty_prior.sort("element"))
+    assert with_prior.schema == baseline.schema
+
+    by_el = {row["element"]: row["prob"] for row in with_prior.to_dicts()}
+    base_by_el = {row["element"]: row["prob"] for row in baseline.to_dicts()}
+
+    assert by_el[1] == pytest.approx(base_by_el[1])
+    assert by_el[4] == pytest.approx(base_by_el[4])
+    assert by_el[2] > base_by_el[2]
+    assert by_el[3] == pytest.approx(by_el[2])
+
+
+def test_backtest_with_prior_is_point_in_time() -> None:
+    history = pl.DataFrame(
+        [_coded_count_game(1, 101, gw, count=8 + gw % 3 * 4) for gw in range(1, 7)]
+        + [_coded_count_game(2, 102, gw, count=9 + gw % 2 * 3) for gw in range(1, 7)],
+        schema_overrides={"defcon_hit": pl.Boolean},
+    )
+    prior = pl.DataFrame(
+        {
+            "code": [101, 102],
+            "prior_count": [150.0, 60.0],
+            "prior_hits": [10, 1],
+            "prior_games": [10, 10],
+        }
+    )
+    mutated = history.with_columns(
+        pl.when(pl.col("round") > 3)
+        .then(0)
+        .otherwise(pl.col("defensive_contribution"))
+        .alias("defensive_contribution"),
+        pl.when(pl.col("round") > 3)
+        .then(~pl.col("defcon_hit"))
+        .otherwise(pl.col("defcon_hit"))
+        .alias("defcon_hit"),
+    )
+
+    original = defcon.backtest_defcon_count_probabilities(
+        history, range(1, 4), prior=prior
+    )
+    poisoned = defcon.backtest_defcon_count_probabilities(
+        mutated, range(1, 4), prior=prior
+    )
+
+    assert_frame_equal(
+        original.drop("hit").sort("as_of_gw", "element"),
+        poisoned.drop("hit").sort("as_of_gw", "element"),
+    )
+
+
+def test_backtest_real_snapshots_improve_2026_27_and_preserve_2025_26() -> None:
+    data_root = Path("data")
+    h24 = pl.read_parquet(data_root / "2024-25" / "enriched.parquet")
+    h25 = pl.read_parquet(data_root / "2025-26" / "enriched.parquet")
+    h26 = pl.read_parquet(data_root / "2026-27" / "enriched.parquet")
+
+    prior_24 = defcon.prior_season_defcon(h24, min_minutes=60)
+    assert prior_24.is_empty()
+    base_25 = defcon.backtest_defcon_count_probabilities(h25, min_minutes=60)
+    with_prior_25 = defcon.backtest_defcon_count_probabilities(
+        h25, min_minutes=60, prior=prior_24
+    )
+    assert_frame_equal(
+        base_25.sort("as_of_gw", "element", "hit"),
+        with_prior_25.sort("as_of_gw", "element", "hit"),
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+
+    prior_25 = defcon.prior_season_defcon(h25, min_minutes=60)
+    assert not prior_25.is_empty()
+    base_26 = defcon.backtest_defcon_count_probabilities(h26, min_minutes=60)
+    with_prior_26 = defcon.backtest_defcon_count_probabilities(
+        h26, min_minutes=60, prior=prior_25
+    )
+
+    assert defcon.brier_score(with_prior_26, "prob") < defcon.brier_score(
+        base_26, "prob"
+    )
+    assert defcon.brier_score(with_prior_26, "count_prob") < defcon.brier_score(
+        base_26, "count_prob"
+    )
+    ece_base = defcon.expected_calibration_error(
+        defcon.calibration_table(base_26, "prob", 10)
+    )
+    ece_prior = defcon.expected_calibration_error(
+        defcon.calibration_table(with_prior_26, "prob", 10)
+    )
+    assert ece_base is not None and ece_prior is not None
+    assert ece_prior < ece_base
