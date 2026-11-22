@@ -597,13 +597,13 @@ describe("findStartSitCues", () => {
 		});
 		// Two weak DEFs (0.05 and 0.10) and one weak MID (0.20).
 		if (xi442[1].form) {
-			xi442[1].form.projected_xgi = 0.05; // Def1
+			xi442[1].form.projected_xgi = 0.05; // Def1.
 		}
 		if (xi442[2].form) {
-			xi442[2].form.projected_xgi = 0.1; // Def2
+			xi442[2].form.projected_xgi = 0.1; // Def2.
 		}
 		if (xi442[5].form) {
-			xi442[5].form.projected_xgi = 0.2; // Mid1
+			xi442[5].form.projected_xgi = 0.2; // Mid1.
 		}
 
 		const bench: SquadInsightRow[] = [
@@ -698,7 +698,7 @@ describe("findStartSitCues", () => {
 	test("enforces the 0.10 projection threshold (including float precision) and excludes doubtful bench players", () => {
 		expect(MIN_PROJECTION_GAIN).toBe(0.1);
 		const xi = makeStandardStartingXi({ defaultXgi: 0.5 });
-		// Mid1 = 0.20, Mid2 = 0.21
+		// Mid1 = 0.20, Mid2 = 0.21.
 		if (xi[4].form) {
 			xi[4].form.projected_xgi = 0.2;
 		}
@@ -838,10 +838,10 @@ describe("findStartSitCues", () => {
 			defaultXgi: 0.45,
 		});
 		if (xi[1].current) {
-			xi[1].current.status = "i"; // Def1 (must be covered by a bench DEF)
+			xi[1].current.status = "i"; // Def1 (must be covered by a bench DEF).
 		}
 		if (xi[4].current) {
-			xi[4].current.status = "s"; // Mid1 (can be covered by bench DEF or bench FWD)
+			xi[4].current.status = "s"; // Mid1 (can be covered by bench DEF or FWD).
 		}
 
 		const bench: SquadInsightRow[] = [
@@ -876,6 +876,80 @@ describe("findStartSitCues", () => {
 			starterIssue: "Suspended",
 			starter: { webName: "Mid1" },
 			bench: { webName: "BenchFwd" },
+		});
+	});
+
+	test("does not treat missing current context as a blank gameweek", () => {
+		const xi = makeStandardStartingXi({ defaultXgi: 0.4 });
+		// Replace Mid1 with a starter who has form data but no current context.
+		xi[4] = makeRow({
+			element: 105,
+			webName: "NoCurrentStarter",
+			position: "MID",
+			squadPosition: 5,
+			isStarting: true,
+			projectedXgi: 0.85,
+			omitCurrent: true,
+		});
+		const benchMid = makeRow({
+			element: 20,
+			webName: "BenchMid",
+			position: "MID",
+			squadPosition: 12,
+			isStarting: false,
+			projectedXgi: 0.45,
+			omitCurrent: true,
+		});
+
+		expect(hasBlankNextGw(xi[4], 11)).toBe(false);
+		const captains = rankCaptainCandidates(xi, 3, { nextGw: 11 });
+		expect(captains[0]?.webName).toBe("NoCurrentStarter");
+
+		const cues = findStartSitCues(xi, [benchMid], { nextGw: 11 });
+		expect(cues).toEqual([]);
+	});
+
+	test("prefers fit bench cover over higher-xGI doubtful bench player, falling back to doubtful when needed", () => {
+		const xi = makeStandardStartingXi({ defaultXgi: 0.45 });
+		if (xi[4].current) {
+			xi[4].current.status = "i";
+		}
+
+		const doubtfulHigh = makeRow({
+			element: 20,
+			webName: "DoubtfulHigh",
+			position: "MID",
+			squadPosition: 12,
+			isStarting: false,
+			projectedXgi: 0.85,
+			status: "d",
+		});
+		const fitLower = makeRow({
+			element: 21,
+			webName: "FitLower",
+			position: "MID",
+			squadPosition: 13,
+			isStarting: false,
+			projectedXgi: 0.35,
+			status: "a",
+		});
+
+		// Fit bench cover must beat a doubtful player with higher historical xGI.
+		const withFitOption = findStartSitCues(xi, [doubtfulHigh, fitLower]);
+		expect(withFitOption).toHaveLength(1);
+		expect(withFitOption[0]).toMatchObject({
+			reason: "unavailable",
+			starter: { webName: "Mid1" },
+			bench: { webName: "FitLower", isDoubtful: false },
+		});
+
+		// When only doubtful cover exists, surface it with isDoubtful flagged.
+		const fallbackOnly = findStartSitCues(xi, [doubtfulHigh]);
+		expect(fallbackOnly).toHaveLength(1);
+		expect(fallbackOnly[0]).toMatchObject({
+			reason: "unavailable",
+			starter: { webName: "Mid1" },
+			bench: { webName: "DoubtfulHigh", isDoubtful: true },
 		});
 	});
 });

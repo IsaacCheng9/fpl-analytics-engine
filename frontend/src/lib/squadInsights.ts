@@ -47,6 +47,7 @@ export type StartSitPlayerRef = {
 	projectedXgi: number | null;
 	nextFixtureLabel: string | null;
 	nextFdr: number | null;
+	isDoubtful: boolean;
 };
 
 export type StartSitCue = {
@@ -125,13 +126,13 @@ function formatFixtureLeg(fixture: UpcomingFixture): string {
 	return `${fixture.opponent_short_name} (${venue})`;
 }
 
-// Find the earliest upcoming gameweek across the squad's fixture contexts.
-export function findSquadNextGw(
-	rows: readonly SquadInsightRow[],
+// Find the earliest upcoming gameweek across a list of fixture contexts.
+export function findNextGwFromContexts(
+	contexts: readonly (CurrentPlayerContext | undefined)[],
 ): number | null {
 	let earliest: number | null = null;
-	for (const row of rows) {
-		const fixtures = row.current?.next_fixtures ?? [];
+	for (const context of contexts) {
+		const fixtures = context?.next_fixtures ?? [];
 		if (fixtures.length > 0) {
 			for (const fixture of fixtures) {
 				if (
@@ -143,7 +144,7 @@ export function findSquadNextGw(
 			}
 			continue;
 		}
-		const fallbackGw = row.current?.next_fixture_gw;
+		const fallbackGw = context?.next_fixture_gw;
 		if (
 			isFiniteNumber(fallbackGw) &&
 			(earliest === null || fallbackGw < earliest)
@@ -154,20 +155,27 @@ export function findSquadNextGw(
 	return earliest;
 }
 
-// Return true when nextGw is known across the squad and this player has no
-// fixture scheduled in nextGw.
+// Find the earliest upcoming gameweek across the squad's fixture contexts.
+export function findSquadNextGw(
+	rows: readonly SquadInsightRow[],
+): number | null {
+	return findNextGwFromContexts(rows.map((row) => row.current));
+}
+
+// Return true when nextGw is known and this player has current fixture context
+// with no fixture scheduled in nextGw.
 export function hasBlankNextGw(
 	row: SquadInsightRow,
 	nextGw: number | null,
 ): boolean {
-	if (nextGw === null) {
+	if (nextGw === null || !row.current) {
 		return false;
 	}
-	const fixtures = row.current?.next_fixtures ?? [];
+	const fixtures = row.current.next_fixtures ?? [];
 	if (fixtures.length > 0) {
 		return !fixtures.some((fixture) => fixture.gw === nextGw);
 	}
-	return row.current?.next_fixture_gw !== nextGw;
+	return row.current.next_fixture_gw !== nextGw;
 }
 
 function getNextFixtureSummary(
@@ -227,6 +235,7 @@ function toPlayerRef(
 		projectedXgi,
 		nextFixtureLabel,
 		nextFdr,
+		isDoubtful: liveStatus(row) === "d",
 	};
 }
 
@@ -340,6 +349,13 @@ function compareBenchCoverCandidates(
 	nextGw: number | null,
 	isGoalkeeper: boolean,
 ): number {
+	// Always prefer fit bench players over doubtful ones for unavailable cover.
+	const leftDoubtful = liveStatus(left) === "d" ? 1 : 0;
+	const rightDoubtful = liveStatus(right) === "d" ? 1 : 0;
+	if (leftDoubtful !== rightDoubtful) {
+		return leftDoubtful - rightDoubtful;
+	}
+
 	if (!isGoalkeeper) {
 		const leftXgi = isFiniteNumber(left.form?.projected_xgi)
 			? left.form.projected_xgi
@@ -351,13 +367,6 @@ function compareBenchCoverCandidates(
 		if (xgiDiff !== 0) {
 			return xgiDiff;
 		}
-	}
-
-	// Prefer fit bench players over doubtful ones on ties (and for GKs).
-	const leftDoubtful = liveStatus(left) === "d" ? 1 : 0;
-	const rightDoubtful = liveStatus(right) === "d" ? 1 : 0;
-	if (leftDoubtful !== rightDoubtful) {
-		return leftDoubtful - rightDoubtful;
 	}
 
 	const leftFdr = getNextFixtureSummary(left, nextGw).nextFdr;

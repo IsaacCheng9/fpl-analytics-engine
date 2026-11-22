@@ -14,6 +14,7 @@ import {
 } from "../lib/playerStatus";
 import {
 	type CaptainCandidate,
+	findNextGwFromContexts,
 	findSquadNextGw,
 	findStartSitCues,
 	rankCaptainCandidates,
@@ -563,6 +564,13 @@ function SquadInsightsPanel({
 											{benchHasXgi
 												? ` (${fmtNum(cue.bench.projectedXgi)} xGI)`
 												: ""}
+											{cue.bench.isDoubtful ? (
+												<span
+													className={`ml-1.5 inline-flex rounded-full border px-1.5 py-0.5 font-medium text-[10px] ${flagClass.watch}`}
+												>
+													Doubtful
+												</span>
+											) : null}
 										</span>
 									</li>
 								);
@@ -907,7 +915,8 @@ export function SquadInspection({
 		.filter((row) => !row.pick.is_starting)
 		.sort(compareBenchRows);
 	const summary = summarizeSquad(startingRows, benchRows);
-	const nextGw = findSquadNextGw(allRows);
+	const nextGw =
+		findNextGwFromContexts(currentPlayers) ?? findSquadNextGw(allRows);
 	const captainCandidates = rankCaptainCandidates(startingRows, 3, { nextGw });
 	const startSitCues = findStartSitCues(startingRows, benchRows, { nextGw });
 
