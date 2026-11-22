@@ -1102,4 +1102,452 @@ describe("SquadInspection", () => {
 			.closest("tr") as HTMLElement;
 		expect(within(haalandRow).getByText("Good Hold")).toBeInTheDocument();
 	});
+
+	test("renders Captaincy Shortlist and Start / Sit Watch with click-through to onPlayerClick", () => {
+		const onPlayerClick = vi.fn();
+		const squadPicks: FplTeamPick[] = [
+			makePick({
+				element: 1,
+				web_name: "Raya",
+				position: "GK",
+				squad_position: 1,
+				is_starting: true,
+			}),
+			makePick({
+				element: 2,
+				web_name: "Gabriel",
+				position: "DEF",
+				squad_position: 2,
+				is_starting: true,
+			}),
+			makePick({
+				element: 3,
+				web_name: "Saliba",
+				position: "DEF",
+				squad_position: 3,
+				is_starting: true,
+			}),
+			makePick({
+				element: 4,
+				web_name: "Timber",
+				position: "DEF",
+				squad_position: 4,
+				is_starting: true,
+			}),
+			makePick({
+				element: 5,
+				web_name: "Saka",
+				position: "MID",
+				squad_position: 5,
+				is_starting: true,
+				is_captain: true,
+				multiplier: 2,
+			}),
+			makePick({
+				element: 6,
+				web_name: "Salah",
+				position: "MID",
+				squad_position: 6,
+				is_starting: true,
+			}),
+			makePick({
+				element: 7,
+				web_name: "Minteh",
+				position: "MID",
+				squad_position: 7,
+				is_starting: true,
+			}),
+			makePick({
+				element: 8,
+				web_name: "Haaland",
+				position: "FWD",
+				squad_position: 8,
+				is_starting: true,
+			}),
+			makePick({
+				element: 12,
+				web_name: "Kelleher",
+				position: "GK",
+				squad_position: 12,
+				multiplier: 0,
+				is_starting: false,
+			}),
+			makePick({
+				element: 13,
+				web_name: "Palmer",
+				position: "MID",
+				squad_position: 13,
+				multiplier: 0,
+				is_starting: false,
+			}),
+		];
+
+		const gw11Fixture = {
+			gw: 11,
+			opponent_name: "Everton",
+			opponent_short_name: "EVE",
+			was_home: true,
+			fdr: 2,
+		};
+
+		const currentPlayers: CurrentPlayerContext[] = [
+			// Raya blanks in GW11 (next match GW12).
+			makeCurrent({
+				element: 1,
+				web_name: "Raya",
+				position: "GK",
+				next_fixture_gw: 12,
+				next_fixtures: [
+					{
+						gw: 12,
+						opponent_name: "Chelsea",
+						opponent_short_name: "CHE",
+						was_home: false,
+						fdr: 4,
+					},
+				],
+			}),
+			makeCurrent({
+				element: 2,
+				web_name: "Gabriel",
+				position: "DEF",
+				next_fixtures: [gw11Fixture],
+			}),
+			makeCurrent({
+				element: 3,
+				web_name: "Saliba",
+				position: "DEF",
+				next_fixtures: [gw11Fixture],
+			}),
+			makeCurrent({
+				element: 4,
+				web_name: "Timber",
+				position: "DEF",
+				next_fixtures: [gw11Fixture],
+			}),
+			makeCurrent({
+				element: 5,
+				web_name: "Saka",
+				position: "MID",
+				next_fdr: 2,
+				next_fixtures: [
+					{
+						gw: 11,
+						opponent_name: "Bournemouth",
+						opponent_short_name: "BOU",
+						was_home: true,
+						fdr: 2,
+					},
+				],
+			}),
+			makeCurrent({
+				element: 6,
+				web_name: "Salah",
+				position: "MID",
+				status: "d",
+				next_fdr: 3,
+				next_fixtures: [
+					{
+						gw: 11,
+						opponent_name: "Arsenal",
+						opponent_short_name: "ARS",
+						was_home: false,
+						fdr: 4,
+					},
+					{
+						gw: 11,
+						opponent_name: "Wolves",
+						opponent_short_name: "WOL",
+						was_home: true,
+						fdr: 2,
+					},
+				],
+			}),
+			makeCurrent({
+				element: 7,
+				web_name: "Minteh",
+				position: "MID",
+				next_fixtures: [gw11Fixture],
+			}),
+			makeCurrent({
+				element: 8,
+				web_name: "Haaland",
+				position: "FWD",
+				next_fdr: 2,
+				next_fixtures: [
+					{
+						gw: 11,
+						opponent_name: "Southampton",
+						opponent_short_name: "SOU",
+						was_home: true,
+						fdr: 2,
+					},
+				],
+			}),
+			makeCurrent({
+				element: 12,
+				web_name: "Kelleher",
+				position: "GK",
+				next_fixtures: [gw11Fixture],
+			}),
+			makeCurrent({
+				element: 13,
+				web_name: "Palmer",
+				position: "MID",
+				next_fixtures: [gw11Fixture],
+			}),
+		];
+
+		const formPlayers: FormPlayer[] = [
+			makeForm({
+				element: 1,
+				web_name: "Raya",
+				position: "GK",
+				projected_xgi: null,
+			}),
+			makeForm({
+				element: 2,
+				web_name: "Gabriel",
+				position: "DEF",
+				projected_xgi: 0.25,
+			}),
+			makeForm({
+				element: 3,
+				web_name: "Saliba",
+				position: "DEF",
+				projected_xgi: 0.15,
+			}),
+			makeForm({
+				element: 4,
+				web_name: "Timber",
+				position: "DEF",
+				projected_xgi: 0.18,
+			}),
+			makeForm({
+				element: 5,
+				web_name: "Saka",
+				position: "MID",
+				projected_xgi: 0.72,
+			}),
+			makeForm({
+				element: 6,
+				web_name: "Salah",
+				position: "MID",
+				projected_xgi: 0.85,
+				status: "d",
+			}),
+			makeForm({
+				element: 7,
+				web_name: "Minteh",
+				position: "MID",
+				projected_xgi: 0.31,
+			}),
+			makeForm({
+				element: 8,
+				web_name: "Haaland",
+				position: "FWD",
+				projected_xgi: 0.91,
+			}),
+			makeForm({
+				element: 12,
+				web_name: "Kelleher",
+				position: "GK",
+				projected_xgi: 0,
+			}),
+			makeForm({
+				element: 13,
+				web_name: "Palmer",
+				position: "MID",
+				projected_xgi: 0.62,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={formPlayers}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={onPlayerClick}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const captaincyPanel = screen.getByRole("region", {
+			name: "Captaincy Shortlist",
+		});
+		const captainItems = within(captaincyPanel).getAllByRole("listitem");
+		expect(captainItems).toHaveLength(3);
+		expect(captainItems[0]).toHaveTextContent("1. Haaland");
+		expect(captainItems[0]).toHaveTextContent("SOU (H) (FDR 2)");
+		expect(captainItems[0]).toHaveTextContent("0.91 xGI");
+		expect(captainItems[1]).toHaveTextContent("2. Salah");
+		expect(captainItems[1]).toHaveTextContent("Doubtful");
+		expect(captainItems[1]).toHaveTextContent("ARS (A) / WOL (H) (FDR 3)");
+		expect(captainItems[2]).toHaveTextContent("3. Saka");
+		expect(
+			within(captainItems[2]).getByText("Current captain"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			within(captaincyPanel).getByRole("button", { name: "1. Haaland" }),
+		);
+		expect(onPlayerClick).toHaveBeenCalledWith(8);
+
+		const startSitPanel = screen.getByRole("region", {
+			name: "Start / Sit Watch",
+		});
+		const cueItems = within(startSitPanel).getAllByRole("listitem");
+		expect(cueItems).toHaveLength(2);
+		expect(cueItems[0]).toHaveTextContent(
+			"Cover for Raya (BGW): start Kelleher",
+		);
+		expect(cueItems[1]).toHaveTextContent(
+			"Start Palmer (0.62 xGI) over Minteh (0.31 xGI)",
+		);
+
+		fireEvent.click(
+			within(startSitPanel).getByRole("button", { name: "Inspect Palmer" }),
+		);
+		expect(onPlayerClick).toHaveBeenCalledWith(13);
+
+		fireEvent.click(
+			within(startSitPanel).getByRole("button", { name: "Inspect Minteh" }),
+		);
+		expect(onPlayerClick).toHaveBeenCalledWith(7);
+	});
+
+	test("renders aligned Starting XI message when no Start / Sit cues are triggered", () => {
+		const squadPicks: FplTeamPick[] = [
+			makePick({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				squad_position: 1,
+				is_starting: true,
+			}),
+			makePick({
+				element: 2,
+				web_name: "Rogers",
+				position: "MID",
+				squad_position: 12,
+				multiplier: 0,
+				is_starting: false,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[
+					makeForm({ element: 1, web_name: "Saka", projected_xgi: 0.65 }),
+					makeForm({ element: 2, web_name: "Rogers", projected_xgi: 0.4 }),
+				]}
+				currentPlayers={[
+					makeCurrent({ element: 1, web_name: "Saka" }),
+					makeCurrent({ element: 2, web_name: "Rogers" }),
+				]}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const startSitPanel = screen.getByRole("region", {
+			name: "Start / Sit Watch",
+		});
+		expect(
+			within(startSitPanel).getByText(
+				"Starting XI aligns with current projections and availability.",
+			),
+		).toBeInTheDocument();
+	});
+
+	test("renders outfield injury cover with projected xGI and neutral empty captaincy state", () => {
+		const onPlayerClick = vi.fn();
+		const squadPicks: FplTeamPick[] = [
+			makePick({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				squad_position: 1,
+				is_starting: true,
+			}),
+			makePick({
+				element: 2,
+				web_name: "Rogers",
+				position: "MID",
+				squad_position: 12,
+				multiplier: 0,
+				is_starting: false,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[
+					makeForm({
+						element: 1,
+						web_name: "Saka",
+						projected_xgi: 0.72,
+						status: "i",
+					}),
+					makeForm({
+						element: 2,
+						web_name: "Rogers",
+						projected_xgi: 0.44,
+						status: "a",
+					}),
+				]}
+				currentPlayers={[
+					makeCurrent({ element: 1, web_name: "Saka", status: "i" }),
+					makeCurrent({ element: 2, web_name: "Rogers", status: "a" }),
+				]}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={onPlayerClick}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const captaincyPanel = screen.getByRole("region", {
+			name: "Captaincy Shortlist",
+		});
+		expect(
+			within(captaincyPanel).getByText(
+				"No eligible Starting XI captaincy candidates with projected xGI.",
+			),
+		).toBeInTheDocument();
+
+		const startSitPanel = screen.getByRole("region", {
+			name: "Start / Sit Watch",
+		});
+		expect(startSitPanel).toHaveTextContent(
+			"Cover for Saka (Injured): start Rogers (0.44 xGI)",
+		);
+
+		fireEvent.click(
+			within(startSitPanel).getByRole("button", { name: "Inspect Saka" }),
+		);
+		fireEvent.click(
+			within(startSitPanel).getByRole("button", { name: "Inspect Rogers" }),
+		);
+		expect(onPlayerClick).toHaveBeenNthCalledWith(1, 1);
+		expect(onPlayerClick).toHaveBeenNthCalledWith(2, 2);
+	});
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type {
 	CurrentPlayerContext,
 	DefconProbabilityPlayer,
@@ -12,6 +12,14 @@ import {
 	isUnavailableStatus,
 	statusLabel,
 } from "../lib/playerStatus";
+import {
+	type CaptainCandidate,
+	findNextGwFromContexts,
+	findSquadNextGw,
+	findStartSitCues,
+	rankCaptainCandidates,
+	type StartSitCue,
+} from "../lib/squadInsights";
 import { parseOptionalInputNumber } from "../state";
 import { fieldClass } from "../styles";
 import {
@@ -405,6 +413,212 @@ function SquadSummaryBar({
 	);
 }
 
+function formatFdrValue(fdr: number): string {
+	return Number.isInteger(fdr) ? String(fdr) : fdr.toFixed(1);
+}
+
+function SquadInsightsPanel({
+	captainCandidates,
+	startSitCues,
+	onPlayerClick,
+}: {
+	captainCandidates: CaptainCandidate[];
+	startSitCues: StartSitCue[];
+	onPlayerClick: (element: number) => void;
+}) {
+	const captaincyHeadingId = useId();
+	const startSitHeadingId = useId();
+
+	return (
+		<div className="grid gap-3 md:grid-cols-2">
+			<section
+				aria-labelledby={captaincyHeadingId}
+				className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60"
+			>
+				<div className="flex items-baseline justify-between gap-2">
+					<h3
+						id={captaincyHeadingId}
+						className="font-semibold text-xs text-zinc-700 uppercase tracking-wide dark:text-zinc-200"
+					>
+						Captaincy Shortlist
+					</h3>
+					<span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+						Starting XI by Projected xGI
+					</span>
+				</div>
+				{captainCandidates.length === 0 ? (
+					<p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+						No eligible Starting XI captaincy candidates with projected xGI.
+					</p>
+				) : (
+					<ol className="mt-2 space-y-1.5 text-sm">
+						{captainCandidates.map((candidate, index) => (
+							<li
+								key={candidate.element}
+								className="flex flex-wrap items-center justify-between gap-2"
+							>
+								<span className="inline-flex items-center gap-1.5">
+									<button
+										type="button"
+										className="cursor-pointer text-left font-medium text-zinc-900 tabular-nums hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-zinc-100"
+										onClick={() => onPlayerClick(candidate.element)}
+									>
+										{`${index + 1}. ${candidate.webName}`}
+									</button>
+									{candidate.isCurrentCaptain ? (
+										<span
+											title="Current captain"
+											className="rounded bg-zinc-900 px-1.5 py-0.5 font-semibold text-[10px] text-white dark:bg-zinc-100 dark:text-zinc-900"
+										>
+											<span aria-hidden="true">C</span>
+											<span className="sr-only">Current captain</span>
+										</span>
+									) : null}
+									{candidate.isDoubtful ? (
+										<span
+											className={`rounded-full border px-1.5 py-0.5 font-medium text-[11px] ${flagClass.watch}`}
+										>
+											Doubtful
+										</span>
+									) : null}
+								</span>
+								<span className="inline-flex items-center gap-2 text-xs tabular-nums">
+									{candidate.nextFixtureLabel ? (
+										<span className={fixtureClass(candidate.nextFdr)}>
+											{candidate.nextFixtureLabel}
+											{candidate.nextFdr != null
+												? ` (FDR ${formatFdrValue(candidate.nextFdr)})`
+												: ""}
+										</span>
+									) : candidate.nextFdr != null ? (
+										<span className={fixtureClass(candidate.nextFdr)}>
+											FDR {formatFdrValue(candidate.nextFdr)}
+										</span>
+									) : null}
+									<span className="font-semibold text-zinc-900 dark:text-zinc-100">
+										{fmtNum(candidate.projectedXgi)} xGI
+									</span>
+								</span>
+							</li>
+						))}
+					</ol>
+				)}
+			</section>
+
+			<section
+				aria-labelledby={startSitHeadingId}
+				className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60"
+			>
+				<div className="flex items-baseline justify-between gap-2">
+					<h3
+						id={startSitHeadingId}
+						className="font-semibold text-xs text-zinc-700 uppercase tracking-wide dark:text-zinc-200"
+					>
+						Start / Sit Watch
+					</h3>
+					<span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+						Bench vs Starting XI
+					</span>
+				</div>
+				{startSitCues.length === 0 ? (
+					<p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+						Starting XI aligns with current projections and availability.
+					</p>
+				) : (
+					<ul className="mt-2 space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+						{startSitCues.map((cue) => {
+							const benchHasXgi =
+								cue.bench.position !== "GK" && cue.bench.projectedXgi != null;
+							const starterHasXgi =
+								cue.starter.position !== "GK" &&
+								cue.starter.projectedXgi != null;
+							const key = `${cue.reason}-${cue.bench.element}-${cue.starter.element}`;
+
+							if (cue.reason === "unavailable") {
+								return (
+									<li key={key} className="flex items-baseline gap-1.5">
+										<span
+											className={`shrink-0 rounded-full border px-1.5 py-0.5 font-medium text-[10px] ${flagClass.risk}`}
+										>
+											Cover
+										</span>
+										<span>
+											Cover for{" "}
+											<button
+												type="button"
+												aria-label={`Inspect ${cue.starter.webName}`}
+												className="cursor-pointer font-medium text-zinc-900 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-zinc-100"
+												onClick={() => onPlayerClick(cue.starter.element)}
+											>
+												{cue.starter.webName}
+											</button>
+											{cue.starterIssue ? ` (${cue.starterIssue})` : ""}: start{" "}
+											<button
+												type="button"
+												aria-label={`Inspect ${cue.bench.webName}`}
+												className="cursor-pointer font-medium text-zinc-900 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-zinc-100"
+												onClick={() => onPlayerClick(cue.bench.element)}
+											>
+												{cue.bench.webName}
+											</button>
+											{benchHasXgi
+												? ` (${fmtNum(cue.bench.projectedXgi)} xGI)`
+												: ""}
+											{cue.bench.isDoubtful ? (
+												<span
+													className={`ml-1.5 inline-flex rounded-full border px-1.5 py-0.5 font-medium text-[10px] ${flagClass.watch}`}
+												>
+													Doubtful
+												</span>
+											) : null}
+										</span>
+									</li>
+								);
+							}
+
+							return (
+								<li key={key} className="flex items-baseline gap-1.5">
+									<span
+										className={`shrink-0 rounded-full border px-1.5 py-0.5 font-medium text-[10px] ${flagClass.good}`}
+									>
+										Swap
+									</span>
+									<span>
+										Start{" "}
+										<button
+											type="button"
+											aria-label={`Inspect ${cue.bench.webName}`}
+											className="cursor-pointer font-medium text-zinc-900 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-zinc-100"
+											onClick={() => onPlayerClick(cue.bench.element)}
+										>
+											{cue.bench.webName}
+										</button>
+										{benchHasXgi
+											? ` (${fmtNum(cue.bench.projectedXgi)} xGI)`
+											: ""}{" "}
+										over{" "}
+										<button
+											type="button"
+											aria-label={`Inspect ${cue.starter.webName}`}
+											className="cursor-pointer font-medium text-zinc-900 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-zinc-100"
+											onClick={() => onPlayerClick(cue.starter.element)}
+										>
+											{cue.starter.webName}
+										</button>
+										{starterHasXgi
+											? ` (${fmtNum(cue.starter.projectedXgi)} xGI)`
+											: ""}
+									</span>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</section>
+		</div>
+	);
+}
+
 function SquadSectionBody({
 	title,
 	rows,
@@ -701,6 +915,10 @@ export function SquadInspection({
 		.filter((row) => !row.pick.is_starting)
 		.sort(compareBenchRows);
 	const summary = summarizeSquad(startingRows, benchRows);
+	const nextGw =
+		findNextGwFromContexts(currentPlayers) ?? findSquadNextGw(allRows);
+	const captainCandidates = rankCaptainCandidates(startingRows, 3, { nextGw });
+	const startSitCues = findStartSitCues(startingRows, benchRows, { nextGw });
 
 	function normaliseBankInput() {
 		const trimmed = bankInput.trim();
@@ -770,6 +988,11 @@ export function SquadInspection({
 						bankInput={bankInput}
 						onBankInputChange={setBankInput}
 						onBankInputBlur={normaliseBankInput}
+					/>
+					<SquadInsightsPanel
+						captainCandidates={captainCandidates}
+						startSitCues={startSitCues}
+						onPlayerClick={onPlayerClick}
 					/>
 					<SquadTable
 						startingRows={startingRows}
