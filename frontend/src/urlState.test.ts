@@ -71,4 +71,45 @@ describe("urlState integer parsing and evidence season sync", () => {
 			expect(readUrlState().evidenceSeason).toBeNull();
 		}
 	});
+
+	test("round-trips exclude_unavailable and penalties_only on player tabs only", () => {
+		writeUrlState({
+			...DEFAULT_URL_STATE,
+			tab: "form",
+			transferFilters: {
+				...DEFAULT_URL_STATE.transferFilters,
+				excludeUnavailable: true,
+				penaltiesOnly: true,
+			},
+		});
+		const params = new URLSearchParams(window.location.search);
+		expect(params.get("exclude_unavailable")).toBe("1");
+		expect(params.get("penalties_only")).toBe("1");
+
+		const parsed = readUrlState();
+		expect(parsed.transferFilters.excludeUnavailable).toBe(true);
+		expect(parsed.transferFilters.penaltiesOnly).toBe(true);
+
+		writeUrlState({
+			...DEFAULT_URL_STATE,
+			tab: "clubs",
+			transferFilters: {
+				...DEFAULT_URL_STATE.transferFilters,
+				excludeUnavailable: true,
+				penaltiesOnly: true,
+			},
+		});
+		const clubParams = new URLSearchParams(window.location.search);
+		expect(clubParams.get("exclude_unavailable")).toBeNull();
+		expect(clubParams.get("penalties_only")).toBeNull();
+
+		window.history.replaceState(
+			null,
+			"",
+			"/?exclude_unavailable=0&penalties_only=yes",
+		);
+		const invalid = readUrlState();
+		expect(invalid.transferFilters.excludeUnavailable).toBe(false);
+		expect(invalid.transferFilters.penaltiesOnly).toBe(false);
+	});
 });

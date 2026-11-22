@@ -6,6 +6,12 @@ import type {
 	FplTeamPick,
 } from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
+import {
+	availabilityTooltip,
+	cardRiskBadge,
+	isUnavailableStatus,
+	statusLabel,
+} from "../lib/playerStatus";
 import { parseOptionalInputNumber } from "../state";
 import { fieldClass } from "../styles";
 import {
@@ -13,6 +19,7 @@ import {
 	FixtureStrip,
 	MAX_GAMEWEEK,
 } from "./FixtureStrip";
+import { PlayerStatusBadges } from "./PlayerStatusBadges";
 
 // Carry player identity alongside position and budget so callers can track
 // which squad pick triggered a replacement search.
@@ -34,6 +41,7 @@ type SquadInspectionRow = {
 type SquadFlag = {
 	label: string;
 	tone: "good" | "neutral" | "risk" | "watch";
+	title?: string;
 };
 
 type SquadSummary = {
@@ -210,6 +218,7 @@ function squadFlags(
 	row: Pick<SquadInspectionRow, "pick" | "form" | "current" | "defcon">,
 ): SquadFlag[] {
 	const { form, defcon, current } = row;
+	const live = current ?? form;
 	const position = playerPosition(row);
 	const startRate = form?.window_start_rate;
 	const minsPerApp = form?.window_mins_per_appearance;
@@ -219,6 +228,32 @@ function squadFlags(
 	const nextFdr = current?.next_fdr;
 	const avgFdr = current?.avg_fdr;
 	const flags: SquadFlag[] = [];
+
+	if (live && isUnavailableStatus(live.status)) {
+		const label = statusLabel(live.status);
+		if (label) {
+			flags.push({
+				label,
+				tone: "risk",
+				title: availabilityTooltip(live) ?? undefined,
+			});
+		}
+	} else if (live?.status === "d") {
+		flags.push({
+			label: "Doubtful",
+			tone: "watch",
+			title: availabilityTooltip(live) ?? undefined,
+		});
+	}
+
+	const cardRisk = cardRiskBadge(live?.yellow_cards);
+	if (cardRisk) {
+		flags.push({
+			label: "Card Risk",
+			tone: "watch",
+			title: cardRisk.tooltip,
+		});
+	}
 
 	if (
 		(typeof startRate === "number" && startRate < 0.6) ||
@@ -462,6 +497,7 @@ function SquadSectionBody({
 								>
 									{name}
 								</button>
+								<PlayerStatusBadges player={current ?? form} mode="compact" />
 								{row.pick.is_captain ? (
 									<span
 										title="Captain"
@@ -516,6 +552,7 @@ function SquadSectionBody({
 								{flags.map((flag) => (
 									<span
 										key={flag.label}
+										title={flag.title}
 										className={`rounded-full border px-2 py-0.5 font-medium text-xs ${flagClass[flag.tone]}`}
 									>
 										{flag.label}

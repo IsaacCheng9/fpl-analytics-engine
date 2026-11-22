@@ -51,8 +51,9 @@ export function countMoreFilters({
 				).length
 			: 0) +
 		(showTransferFilters
-			? Object.values(transferFilters).filter((value) => value !== null)
-					.length +
+			? Object.values(transferFilters).filter(
+					(value) => value !== null && value !== false,
+				).length +
 				(tab !== "defconProb" && minMinutes !== DEFAULT_MIN_MINUTES ? 1 : 0)
 			: 0)
 	);
@@ -90,9 +91,9 @@ export function buildActiveFilterChips({
 		period: AttackingThreatPeriod,
 		value: number | null,
 	) => void;
-	updateTransferFilter: (
-		filter: keyof TransferFilters,
-		value: number | null,
+	updateTransferFilter: <K extends keyof TransferFilters>(
+		filter: K,
+		value: TransferFilters[K],
 	) => void;
 }): ActiveFilterChip[] {
 	const {
@@ -242,6 +243,20 @@ export function buildActiveFilterChips({
 				id: "max-owned",
 				label: `Owned <= ${fmtPctPoints(transferFilters.maxOwnership, 0)}`,
 				onClear: () => updateTransferFilter("maxOwnership", null),
+			});
+		}
+		if (transferFilters.excludeUnavailable) {
+			chips.push({
+				id: "exclude-unavailable",
+				label: "Exclude Unavailable",
+				onClear: () => updateTransferFilter("excludeUnavailable", false),
+			});
+		}
+		if (transferFilters.penaltiesOnly) {
+			chips.push({
+				id: "penalties-only",
+				label: "Penalties Only",
+				onClear: () => updateTransferFilter("penaltiesOnly", false),
 			});
 		}
 	}

@@ -10,6 +10,10 @@ import type {
 } from "../api";
 import type { PlayerOption } from "../components/PlayerCombobox";
 import { fmtDelta, fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "./format";
+import {
+	formatAvailabilitySummary,
+	formatSetPiecesSummary,
+} from "./playerStatus";
 
 const PARTIAL_SEASON = "2022-23";
 
@@ -615,7 +619,6 @@ export function buildCompareRows(
 		right.form?.current_ownership,
 		{ format: (value) => fmtPctPoints(value, 1), lowerIsBetter: true },
 	);
-
 	const leftFixtures = sideUpcomingFixtures(left, comparisonGw);
 	const rightFixtures = sideUpcomingFixtures(right, comparisonGw);
 	add(
@@ -647,6 +650,20 @@ export function buildCompareRows(
 		{ format: (value) => fmtNum(value, 0) },
 	);
 
+	const leftLive = left.detail ?? left.form ?? {};
+	const rightLive = right.detail ?? right.form ?? {};
+	add(
+		"Live Snapshot",
+		"Availability",
+		formatAvailabilitySummary(leftLive),
+		formatAvailabilitySummary(rightLive),
+	);
+	add(
+		"Live Snapshot",
+		"Set Pieces",
+		formatSetPiecesSummary(leftLive),
+		formatSetPiecesSummary(rightLive),
+	);
 	addNumber(
 		"Projection",
 		"Projected xGI",

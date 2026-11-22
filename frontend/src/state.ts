@@ -31,6 +31,13 @@ export type ClubColumnGroup =
 	| "goal_difference_total"
 	| "goal_difference_rate";
 export type ClubColumnVisibility = Record<ClubColumnGroup, boolean>;
+export type NumericTransferFilterKey =
+	| "maxPrice"
+	| "maxFdr"
+	| "minStartPct"
+	| "minMinsPerAppearance"
+	| "minOwnership"
+	| "maxOwnership";
 export type TransferFilters = {
 	maxPrice: number | null;
 	maxFdr: number | null;
@@ -38,6 +45,8 @@ export type TransferFilters = {
 	minMinsPerAppearance: number | null;
 	minOwnership: number | null;
 	maxOwnership: number | null;
+	excludeUnavailable: boolean;
+	penaltiesOnly: boolean;
 };
 export type TransferFilterRow = {
 	price?: number | null;
@@ -45,6 +54,13 @@ export type TransferFilterRow = {
 	window_start_rate?: number | null;
 	window_mins_per_appearance?: number | null;
 	current_ownership?: number | null;
+	status?: string | null;
+	chance_of_playing_next_round?: number | null;
+	news?: string | null;
+	yellow_cards?: number | null;
+	penalties_order?: number | null;
+	corners_order?: number | null;
+	direct_freekicks_order?: number | null;
 };
 export type ShortlistablePlayer = {
 	element: number;
@@ -103,6 +119,8 @@ export const DEFAULT_TRANSFER_FILTERS: TransferFilters = {
 	minMinsPerAppearance: null,
 	minOwnership: null,
 	maxOwnership: null,
+	excludeUnavailable: false,
+	penaltiesOnly: false,
 };
 export const HIT_RATES = [0, 0.2, 0.4, 0.6, 0.8];
 export const ATTACKING_METRICS: AttackingMetric[] = ["xgi", "xg", "xa"];
@@ -368,7 +386,9 @@ export function transferFiltersMatchDefault(filters: TransferFilters): boolean {
 		filters.minStartPct === null &&
 		filters.minMinsPerAppearance === null &&
 		filters.minOwnership === null &&
-		filters.maxOwnership === null
+		filters.maxOwnership === null &&
+		!filters.excludeUnavailable &&
+		!filters.penaltiesOnly
 	);
 }
 

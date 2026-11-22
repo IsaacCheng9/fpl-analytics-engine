@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { DefconPlayer, FormPlayer, PlayerDetail } from "../api";
-import { buildCompareRows, type CompareSide } from "./compareRows";
+import {
+	buildCompareRows,
+	type CompareRow,
+	type CompareSide,
+	winningSide,
+} from "./compareRows";
 
 function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 	const detail: PlayerDetail = {
@@ -95,6 +100,13 @@ function makeSide(overrides: Partial<CompareSide> = {}): CompareSide {
 				defcon_hit_rate: 0.5,
 			},
 		],
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 	};
 	return {
 		option: {
@@ -149,6 +161,13 @@ function makeForm(overrides: Partial<FormPlayer> = {}): FormPlayer {
 		next_fdr: 3,
 		next_fixtures: [],
 		current_ownership: 35,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		as_of_gw: 10,
 		...overrides,
 	};
@@ -175,6 +194,13 @@ function makeDefcon(overrides: Partial<DefconPlayer> = {}): DefconPlayer {
 		next_fdr: 3,
 		next_fixtures: [],
 		current_ownership: 35,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		window_xgi90_per_million: 0.082,
 		season_points_per_million: 6.5,
 		window_start_rate: 1.0,
@@ -288,5 +314,49 @@ describe("buildCompareRows", () => {
 		expect(stripRow?.fixtureStartGw).toBe(6);
 		expect(stripRow?.leftFixtures).toEqual([]);
 		expect(stripRow?.left).toBe("-");
+	});
+
+	test("adds Live Snapshot Availability and Set Pieces rows", () => {
+		const left = makeSide();
+		const right = makeSide();
+		left.detail = {
+			...(left.detail as PlayerDetail),
+			status: "i",
+			chance_of_playing_next_round: 0,
+			news: "Hamstring injury",
+			yellow_cards: 4,
+			penalties_order: 1,
+			corners_order: 1,
+			direct_freekicks_order: 2,
+		};
+		right.detail = {
+			...(right.detail as PlayerDetail),
+			status: "a",
+			chance_of_playing_next_round: null,
+			news: null,
+			yellow_cards: 1,
+			penalties_order: null,
+			corners_order: null,
+			direct_freekicks_order: null,
+		};
+
+		const rows = buildCompareRows(left, right, 5, 10, 10);
+		const availability = rows.find(
+			(row) => row.section === "Live Snapshot" && row.label === "Availability",
+		);
+		const setPieces = rows.find(
+			(row) => row.section === "Live Snapshot" && row.label === "Set Pieces",
+		);
+
+		expect(availability).toMatchObject({
+			left: "Injured (0%, 4 YC - suspension watch) - Hamstring injury",
+			right: "Available",
+		});
+		expect(setPieces).toMatchObject({
+			left: "Penalties, Corners",
+			right: "None",
+		});
+		expect(winningSide(availability as CompareRow)).toBeNull();
+		expect(winningSide(setPieces as CompareRow)).toBeNull();
 	});
 });

@@ -76,6 +76,13 @@ function makeCurrent(
 		next_fdr: 2,
 		next_fixtures: [],
 		current_ownership: 15,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		...overrides,
 	};
 }
@@ -118,6 +125,13 @@ function makeForm(
 		next_fdr: 2,
 		next_fixtures: [],
 		current_ownership: 15,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		as_of_gw: 10,
 		...overrides,
 	};
@@ -149,6 +163,13 @@ function makeDefcon(
 		next_fdr: 2,
 		next_fixtures: [],
 		current_ownership: 15,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		as_of_gw: 10,
 		...overrides,
 	};
@@ -811,5 +832,274 @@ describe("SquadInspection", () => {
 			"GW12: Arsenal (H) - FDR 4",
 		);
 		expect(palmerRow.getAllByRole("cell")[5]).toHaveTextContent("4");
+	});
+
+	test("renders injured, doubtful, and card-risk squad flags with news tooltips", () => {
+		const currentPlayers: CurrentPlayerContext[] = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				team_name: "Arsenal",
+				price: 10.0,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.8,
+				next_fixture_gw: 11,
+				next_opponent_name: "Chelsea",
+				next_was_home: true,
+				next_fdr: 3,
+				current_ownership: 35,
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Hamstring injury - Expected back next month",
+				yellow_cards: 1,
+				penalties_order: 1,
+				corners_order: 2,
+				direct_freekicks_order: null,
+			}),
+			makeCurrent({
+				element: 2,
+				web_name: "Palmer",
+				position: "MID",
+				team_name: "Chelsea",
+				price: 10.5,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.6,
+				next_fixture_gw: 11,
+				next_opponent_name: "Arsenal",
+				next_was_home: false,
+				next_fdr: 3,
+				current_ownership: 45,
+				status: "d",
+				chance_of_playing_next_round: 75,
+				news: "Late fitness test",
+				yellow_cards: 4,
+				penalties_order: 1,
+				corners_order: null,
+				direct_freekicks_order: null,
+			}),
+			makeCurrent({
+				element: 3,
+				web_name: "Gusto",
+				position: "DEF",
+				team_name: "Chelsea",
+				price: 5.0,
+				upcoming_fixtures: 5,
+				avg_fdr: 2.6,
+				next_fixture_gw: 11,
+				next_opponent_name: "Arsenal",
+				next_was_home: false,
+				next_fdr: 3,
+				current_ownership: 10,
+				status: "s",
+				chance_of_playing_next_round: 0,
+				news: "Red card suspension",
+				yellow_cards: 9,
+				penalties_order: null,
+				corners_order: null,
+				direct_freekicks_order: null,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={picks}
+				formPlayers={[]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const sakaRow = screen
+			.getByRole("button", { name: "Saka" })
+			.closest("tr") as HTMLElement;
+		expect(within(sakaRow).getByText("Injured")).toHaveAttribute(
+			"title",
+			"Injured - 0% chance: Hamstring injury - Expected back next month",
+		);
+		expect(within(sakaRow).getByText("Inj")).toBeInTheDocument();
+		expect(within(sakaRow).getByText("P")).toBeInTheDocument();
+
+		const palmerRow = screen
+			.getByRole("button", { name: "Palmer" })
+			.closest("tr") as HTMLElement;
+		expect(within(palmerRow).getByText("Doubtful")).toHaveAttribute(
+			"title",
+			"Doubtful - 75% chance: Late fitness test",
+		);
+		expect(within(palmerRow).getByText("Card Risk")).toHaveAttribute(
+			"title",
+			"4 yellow cards - suspension watch",
+		);
+
+		const gustoRow = screen
+			.getByRole("button", { name: "Gusto" })
+			.closest("tr") as HTMLElement;
+		expect(within(gustoRow).getByText("Suspended")).toHaveAttribute(
+			"title",
+			"Suspended - 0% chance: Red card suspension",
+		);
+		expect(within(gustoRow).getByText("Card Risk")).toHaveAttribute(
+			"title",
+			"9 yellow cards - suspension watch",
+		);
+	});
+
+	test("suppresses Good Hold for flagged starters with strong form and flags bench players", () => {
+		const squadPicks: FplTeamPick[] = [
+			...picks,
+			{
+				element: 4,
+				web_name: "Haaland",
+				position: "FWD",
+				team_name: "Man City",
+				squad_position: 3,
+				multiplier: 1,
+				is_captain: false,
+				is_vice_captain: false,
+				is_starting: true,
+			},
+		];
+		const strongForm = (
+			element: number,
+			web_name: string,
+			position: string,
+			team_name: string,
+		): FormPlayer =>
+			makeForm({
+				element,
+				web_name,
+				position,
+				team_name,
+				price: 10.0,
+				window_xg90: 0.5,
+				window_xa90: 0.2,
+				window_xgi90: 0.7,
+				season_xg90: 0.5,
+				season_xa90: 0.2,
+				season_xgi90: 0.7,
+				est_xg90: 0.5,
+				est_xa90: 0.2,
+				est_xgi90: 0.7,
+				projected_minutes: 90,
+				projected_xgi: 0.7,
+				window_xg90_per_million: 0.05,
+				window_xa90_per_million: 0.02,
+				window_xgi90_per_million: 0.07,
+				season_points_per_million: 12,
+				window_start_rate: 1.0,
+				window_mins_per_appearance: 90,
+				avg_fdr: 2.5,
+				current_ownership: 35,
+			});
+		const currentPlayers: CurrentPlayerContext[] = [
+			makeCurrent({
+				element: 1,
+				web_name: "Saka",
+				position: "MID",
+				team_name: "Arsenal",
+				price: 10.0,
+				avg_fdr: 2.5,
+				current_ownership: 35,
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Thigh injury",
+				yellow_cards: 0,
+				penalties_order: 1,
+			}),
+			makeCurrent({
+				element: 2,
+				web_name: "Palmer",
+				position: "MID",
+				team_name: "Chelsea",
+				price: 10.5,
+				avg_fdr: 2.5,
+				current_ownership: 40,
+				status: "a",
+				yellow_cards: 4,
+				penalties_order: 1,
+			}),
+			makeCurrent({
+				element: 3,
+				web_name: "Gusto",
+				position: "DEF",
+				team_name: "Chelsea",
+				price: 5.0,
+				avg_fdr: 2.5,
+				current_ownership: 10,
+				status: "n",
+				chance_of_playing_next_round: 0,
+				news: "Ineligible against parent club",
+				yellow_cards: 4,
+			}),
+			makeCurrent({
+				element: 4,
+				web_name: "Haaland",
+				position: "FWD",
+				team_name: "Man City",
+				price: 15.0,
+				avg_fdr: 2.5,
+				current_ownership: 70,
+				status: "a",
+				yellow_cards: 1,
+				penalties_order: 1,
+			}),
+		];
+
+		render(
+			<SquadInspection
+				picks={squadPicks}
+				formPlayers={[
+					strongForm(1, "Saka", "MID", "Arsenal"),
+					strongForm(2, "Palmer", "MID", "Chelsea"),
+					strongForm(3, "Gusto", "DEF", "Chelsea"),
+					strongForm(4, "Haaland", "FWD", "Man City"),
+				]}
+				currentPlayers={currentPlayers}
+				defconPlayers={[]}
+				window={5}
+				asOfGw={10}
+				latestGw={10}
+				loading={false}
+				error={false}
+				onPlayerClick={() => {}}
+				onFindReplacement={() => {}}
+			/>,
+		);
+
+		const sakaRow = screen
+			.getByRole("button", { name: "Saka" })
+			.closest("tr") as HTMLElement;
+		expect(within(sakaRow).getByText("Injured")).toBeInTheDocument();
+		expect(within(sakaRow).queryByText("Good Hold")).not.toBeInTheDocument();
+
+		const palmerRow = screen
+			.getByRole("button", { name: "Palmer" })
+			.closest("tr") as HTMLElement;
+		expect(within(palmerRow).getByText("Card Risk")).toBeInTheDocument();
+		expect(within(palmerRow).queryByText("Good Hold")).not.toBeInTheDocument();
+
+		const gustoRow = screen
+			.getByRole("button", { name: "Gusto" })
+			.closest("tr") as HTMLElement;
+		expect(within(gustoRow).getByText("B1")).toBeInTheDocument();
+		expect(within(gustoRow).getByText("Unavailable")).toHaveAttribute(
+			"title",
+			"Unavailable - 0% chance: Ineligible against parent club",
+		);
+		expect(within(gustoRow).getByText("Card Risk")).toBeInTheDocument();
+		expect(within(gustoRow).queryByText("Good Hold")).not.toBeInTheDocument();
+
+		const haalandRow = screen
+			.getByRole("button", { name: "Haaland" })
+			.closest("tr") as HTMLElement;
+		expect(within(haalandRow).getByText("Good Hold")).toBeInTheDocument();
 	});
 });

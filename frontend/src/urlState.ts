@@ -353,6 +353,8 @@ export function readUrlState(): UrlState {
 			}),
 			minOwnership: parseOptionalNumber(params.get("min_owned"), { min: 0 }),
 			maxOwnership: parseOptionalNumber(params.get("max_owned"), { min: 0 }),
+			excludeUnavailable: params.get("exclude_unavailable") === "1",
+			penaltiesOnly: params.get("penalties_only") === "1",
 		},
 		playerWindow: parseNumber(
 			params.get("player_window"),
@@ -484,6 +486,12 @@ export function writeUrlState(state: UrlState) {
 		}
 		if (state.transferFilters.maxOwnership !== null) {
 			params.set("max_owned", String(state.transferFilters.maxOwnership));
+		}
+		if (state.transferFilters.excludeUnavailable) {
+			params.set("exclude_unavailable", "1");
+		}
+		if (state.transferFilters.penaltiesOnly) {
+			params.set("penalties_only", "1");
 		}
 	}
 	if (

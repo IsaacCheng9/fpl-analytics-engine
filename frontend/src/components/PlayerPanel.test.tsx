@@ -45,6 +45,13 @@ function mockApiFetch(input: RequestInfo | URL): Promise<Response> {
 				: [],
 		gameweeks: [],
 		seasons: [],
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 	};
 	return Promise.resolve(
 		new Response(
@@ -531,4 +538,99 @@ test("shows upcoming fixture strip on live season and match context or dashes by
 		olderTables[1].querySelectorAll("tbody tr")[0].querySelectorAll("td"),
 	).map((cell) => cell.textContent);
 	expect(olderCells.slice(0, 7)).toEqual(["1", "-", "90", "11", "-", "-", "-"]);
+});
+
+test("displays live availability banner, set-piece duties, and yellow cards", async () => {
+	vi.mocked(fetch).mockImplementation(async (input) => {
+		const response = await mockApiFetch(input);
+		if (new URL(String(input), "http://test").pathname === "/api/") {
+			return response;
+		}
+		const detail = (await response.json()) as PlayerDetail;
+		return new Response(
+			JSON.stringify({
+				...detail,
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Hamstring injury - Expected back in GW14",
+				yellow_cards: 4,
+				penalties_order: 1,
+				corners_order: 1,
+				direct_freekicks_order: 1,
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	});
+
+	renderPanel();
+
+	const banner = await screen.findByRole("status");
+	expect(banner).toHaveTextContent("Injured - 0% chance of playing");
+	expect(banner).toHaveTextContent("Hamstring injury - Expected back in GW14");
+	expect(screen.getByTitle("Primary penalty taker")).toBeInTheDocument();
+	expect(
+		screen.getByTitle("Primary corner and indirect free-kick taker"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByTitle("Primary direct free-kick taker"),
+	).toBeInTheDocument();
+	expect(screen.getByText("Live snapshot:")).toBeInTheDocument();
+	expect(
+		screen.getByText("Set Pieces: Penalties, Corners, Free Kicks"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText("Yellow Cards: 4 (suspension watch)"),
+	).toBeInTheDocument();
+});
+
+test("hides live availability, badges, cards, and set pieces on archived seasons", async () => {
+	vi.mocked(fetch).mockImplementation(async (input) => {
+		const response = await mockApiFetch(input);
+		if (new URL(String(input), "http://test").pathname === "/api/") {
+			return response;
+		}
+		const detail = (await response.json()) as PlayerDetail;
+		// Even if a payload includes live fields on an archived season, the UI
+		// gates live-snapshot presentation strictly to the current season.
+		return new Response(
+			JSON.stringify({
+				...detail,
+				status: "i",
+				chance_of_playing_next_round: 0,
+				news: "Hamstring injury",
+				yellow_cards: 4,
+				penalties_order: 1,
+				corners_order: 1,
+				direct_freekicks_order: 1,
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	});
+
+	renderPanel();
+
+	expect(await screen.findByRole("status")).toHaveTextContent(
+		"Injured - 0% chance of playing",
+	);
+	expect(screen.getByTitle("Primary penalty taker")).toBeInTheDocument();
+	expect(screen.getByText("Live snapshot:")).toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Season"), {
+		target: { value: previousSeason },
+	});
+	await screen.findByRole("heading", { name: `${previousSeason} by Gameweek` });
+	expect(screen.queryByRole("status")).not.toBeInTheDocument();
+	expect(screen.queryByTitle("Primary penalty taker")).not.toBeInTheDocument();
+	expect(screen.queryByText("Live snapshot:")).not.toBeInTheDocument();
+	expect(screen.queryByText(/Yellow Cards:/)).not.toBeInTheDocument();
+	expect(screen.queryByText(/Set Pieces:/)).not.toBeInTheDocument();
+
+	fireEvent.change(screen.getByLabelText("Season"), {
+		target: { value: currentSeason },
+	});
+	await screen.findByRole("heading", { name: `${currentSeason} by Gameweek` });
+	expect(screen.getByRole("status")).toHaveTextContent(
+		"Injured - 0% chance of playing",
+	);
+	expect(screen.getByTitle("Primary penalty taker")).toBeInTheDocument();
 });

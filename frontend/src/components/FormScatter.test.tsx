@@ -66,6 +66,13 @@ function makePlayer(overrides: Partial<FormPlayer> = {}): FormPlayer {
 		next_fdr: 2,
 		next_fixtures: [],
 		current_ownership: 35.4,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
 		as_of_gw: 9,
 		...overrides,
 	};

@@ -13,10 +13,17 @@ import {
 import { fetchMeta, fetchPlayerDetail, type PlayerGameweek } from "../api";
 import { fmtNum, fmtPct, fmtPctPoints, fmtPrice } from "../lib/format";
 import {
+	isCardRisk,
+	isUnavailableStatus,
+	setPieceDuties,
+	statusLabel,
+} from "../lib/playerStatus";
+import {
 	meanDefensiveContribution,
 	rollingChartRows,
 } from "../lib/playerTrends";
 import { FixtureStrip } from "./FixtureStrip";
+import { PlayerStatusBadges } from "./PlayerStatusBadges";
 
 const WINDOWS = [3, 4, 5, 6, 7, 8];
 
@@ -189,6 +196,18 @@ export function PlayerPanel({
 	const seasonSummary = detail?.seasons.find(
 		(summary) => summary.season === detail.selected_season,
 	);
+	const isLiveSeason =
+		detail !== undefined &&
+		(meta.data ? detail.selected_season === meta.data.season : season === null);
+	const liveDetail = isLiveSeason ? detail : undefined;
+	const duties = liveDetail ? setPieceDuties(liveDetail) : [];
+	const statusText =
+		liveDetail?.status && liveDetail.status !== "a"
+			? statusLabel(liveDetail.status)
+			: null;
+	const showLiveMeta =
+		liveDetail !== undefined &&
+		(duties.length > 0 || liveDetail.yellow_cards !== null);
 
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const onCloseRef = useRef(onClose);
@@ -229,16 +248,45 @@ export function PlayerPanel({
 				tabIndex={-1}
 				className="relative mx-auto mt-8 w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl outline-none dark:border dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
 			>
-				<div className="mb-4 flex items-start justify-between">
+				<div className="mb-4 flex items-start justify-between gap-4">
 					<div>
-						<h2 id="player-panel-title" className="font-semibold text-xl">
-							{detail?.web_name ?? "Player"}
-						</h2>
+						<div className="flex flex-wrap items-center gap-2">
+							<h2 id="player-panel-title" className="font-semibold text-xl">
+								{detail?.web_name ?? "Player"}
+							</h2>
+							<PlayerStatusBadges player={liveDetail} mode="full" />
+						</div>
 						{detail ? (
 							<p className="text-sm text-zinc-500 dark:text-zinc-400">
 								{detail.position} - {detail.team_name} - As Of GW{" "}
 								{detail.as_of_gw}
 							</p>
+						) : null}
+						{showLiveMeta && liveDetail ? (
+							<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+								<span className="font-medium text-zinc-500 dark:text-zinc-400">
+									Live snapshot:
+								</span>
+								{duties.length > 0 ? (
+									<span>
+										Set Pieces: {duties.map((duty) => duty.label).join(", ")}
+									</span>
+								) : null}
+								{liveDetail.yellow_cards !== null ? (
+									<span
+										className={
+											isCardRisk(liveDetail.yellow_cards)
+												? "font-medium text-amber-800 dark:text-amber-300"
+												: undefined
+										}
+									>
+										Yellow Cards: {liveDetail.yellow_cards}
+										{isCardRisk(liveDetail.yellow_cards)
+											? " (suspension watch)"
+											: ""}
+									</span>
+								) : null}
+							</div>
 						) : null}
 					</div>
 					<button
@@ -249,6 +297,30 @@ export function PlayerPanel({
 						Close
 					</button>
 				</div>
+
+				{liveDetail && statusText ? (
+					<div
+						role="status"
+						className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+							isUnavailableStatus(liveDetail.status)
+								? "border-red-200 bg-red-50 text-red-900 dark:border-red-800/70 dark:bg-red-950/60 dark:text-red-200"
+								: "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/70 dark:bg-amber-950/60 dark:text-amber-200"
+						}`}
+					>
+						<div className="flex flex-wrap items-baseline justify-between gap-2">
+							<span className="font-semibold">
+								{statusText}
+								{liveDetail.chance_of_playing_next_round !== null
+									? ` - ${liveDetail.chance_of_playing_next_round}% chance of playing`
+									: ""}
+							</span>
+							<span className="text-xs opacity-75">Live snapshot</span>
+						</div>
+						{liveDetail.news ? (
+							<p className="mt-0.5 text-xs">{liveDetail.news}</p>
+						) : null}
+					</div>
+				) : null}
 
 				<div className="mb-3 flex flex-wrap gap-3">
 					<label className="flex w-40 flex-col text-xs font-medium text-zinc-600 dark:text-zinc-300">

@@ -116,9 +116,9 @@ export function DashboardFilterBar({
 		value: number | null,
 	) => void;
 	onResetAttackingThreatFilters: () => void;
-	onTransferFilterChange: (
-		filter: keyof TransferFilters,
-		value: number | null,
+	onTransferFilterChange: <K extends keyof TransferFilters>(
+		filter: K,
+		value: TransferFilters[K],
 	) => void;
 	onMinMinutesChange: (value: number) => void;
 	onResetTransferFilters: () => void;
@@ -253,7 +253,7 @@ export function DashboardFilterBar({
 				<div className={labelClass}>
 					<span className="flex items-center gap-1">
 						<label htmlFor="as-of-gw">As Of GW</label>
-						<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership is excluded - it is always the present-day snapshot." />
+						<InfoTooltip text="Evaluate form as of this gameweek. Only matches up to and including it are counted, so there is no look-ahead. Current ownership, availability, yellow cards, and set-piece duties are excluded - they always use the present-day snapshot." />
 					</span>
 					<select
 						id="as-of-gw"

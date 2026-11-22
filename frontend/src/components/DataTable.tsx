@@ -270,7 +270,7 @@ export function DataTable<T>({
 
 	const rows = table.getRowModel().rows;
 	const actionColumnWidth = renderRowActions ? 48 : 0;
-	const stickyColumnWidths = [144, 64, 128, 80];
+	const stickyColumnWidths = [216, 64, 128, 80];
 	const cellPadding = "px-3 py-2";
 	const headerContentClass =
 		"flex max-w-24 min-w-0 items-start gap-1 whitespace-normal leading-tight";
@@ -299,13 +299,13 @@ export function DataTable<T>({
 
 	function stickyHeaderClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-40 bg-zinc-100 dark:bg-zinc-800 md:shadow-[1px_0_0_var(--sticky-shadow)]"
+			? "md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:max-w-(--sticky-width) md:z-40 bg-zinc-100 dark:bg-zinc-800 md:shadow-[1px_0_0_var(--sticky-shadow)]"
 			: "";
 	}
 
 	function stickyBodyClass(columnIndex: number): string {
 		return columnIndex < stickyDataColumns
-			? "md:sticky md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:z-20 md:shadow-[1px_0_0_var(--sticky-shadow)]"
+			? "md:sticky md:left-(--sticky-left) md:w-(--sticky-width) md:min-w-(--sticky-width) md:max-w-(--sticky-width) md:z-20 md:shadow-[1px_0_0_var(--sticky-shadow)]"
 			: "";
 	}
 
