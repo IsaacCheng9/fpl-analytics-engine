@@ -288,6 +288,7 @@ export interface FplTeamPick {
 export interface FplTeam {
 	entry_id: number;
 	as_of_gw: number;
+	bank: number | null;
 	owned_elements: number[];
 	picks: FplTeamPick[];
 }

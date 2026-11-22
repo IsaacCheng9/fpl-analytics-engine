@@ -112,4 +112,37 @@ describe("urlState integer parsing and evidence season sync", () => {
 		expect(invalid.transferFilters.excludeUnavailable).toBe(false);
 		expect(invalid.transferFilters.penaltiesOnly).toBe(false);
 	});
+
+	test("round-trips squad bank only when fpl_team is set and validates [0, 100] bounds", () => {
+		writeUrlState({
+			...DEFAULT_URL_STATE,
+			fplTeamId: 123,
+			squadBank: 1.5,
+		});
+		expect(new URLSearchParams(window.location.search).get("bank")).toBe("1.5");
+		expect(readUrlState().squadBank).toBe(1.5);
+
+		writeUrlState({
+			...DEFAULT_URL_STATE,
+			fplTeamId: 123,
+			squadBank: 0,
+		});
+		expect(new URLSearchParams(window.location.search).get("bank")).toBe("0");
+		expect(readUrlState().squadBank).toBe(0);
+
+		writeUrlState({
+			...DEFAULT_URL_STATE,
+			fplTeamId: null,
+			squadBank: 2.5,
+		});
+		expect(new URLSearchParams(window.location.search).get("bank")).toBeNull();
+
+		window.history.replaceState(null, "", "/?bank=2.5");
+		expect(readUrlState().squadBank).toBeNull();
+
+		for (const invalid of ["-0.1", "100.1", "abc", ""]) {
+			window.history.replaceState(null, "", `/?fpl_team=123&bank=${invalid}`);
+			expect(readUrlState().squadBank).toBeNull();
+		}
+	});
 });

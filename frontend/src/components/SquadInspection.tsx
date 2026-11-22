@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type {
 	CurrentPlayerContext,
 	DefconProbabilityPlayer,
@@ -20,7 +20,11 @@ import {
 	rankCaptainCandidates,
 	type StartSitCue,
 } from "../lib/squadInsights";
-import { parseOptionalInputNumber } from "../state";
+import {
+	parseOptionalInputNumber,
+	SQUAD_BANK_MAX,
+	SQUAD_BANK_MIN,
+} from "../state";
 import { fieldClass } from "../styles";
 import {
 	DEFAULT_FIXTURE_HORIZON,
@@ -63,8 +67,6 @@ type SquadSummary = {
 };
 
 const TABLE_COLUMN_COUNT = 18;
-const BANK_MIN = 0;
-const BANK_MAX = 100;
 
 const flagClass: Record<SquadFlag["tone"], string> = {
 	good: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/60 dark:text-emerald-300",
@@ -309,13 +311,19 @@ function squadFlags(
 function SquadSummaryBar({
 	summary,
 	bankInput,
+	importedBank,
+	showResetBank,
 	onBankInputChange,
 	onBankInputBlur,
+	onResetBank,
 }: {
 	summary: SquadSummary;
 	bankInput: string;
+	importedBank: number | null;
+	showResetBank: boolean;
 	onBankInputChange: (value: string) => void;
 	onBankInputBlur: () => void;
+	onResetBank: () => void;
 }) {
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
@@ -400,14 +408,24 @@ function SquadSummaryBar({
 					type="number"
 					inputMode="decimal"
 					step="0.1"
-					min={BANK_MIN}
-					max={BANK_MAX}
+					min={SQUAD_BANK_MIN}
+					max={SQUAD_BANK_MAX}
 					placeholder="0.0"
 					className={`${fieldClass} w-20`}
 					value={bankInput}
 					onChange={(event) => onBankInputChange(event.target.value)}
 					onBlur={onBankInputBlur}
 				/>
+				{showResetBank && importedBank !== null ? (
+					<button
+						type="button"
+						title={`Reset bank to imported \u00a3${importedBank.toFixed(1)}m`}
+						className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2 py-1 font-medium text-xs text-zinc-700 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-sky-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+						onClick={onResetBank}
+					>
+						Reset
+					</button>
+				) : null}
 			</div>
 		</div>
 	);
@@ -869,6 +887,9 @@ export function SquadInspection({
 	window,
 	asOfGw,
 	latestGw,
+	importedBank = null,
+	bankOverride = null,
+	onBankOverrideChange,
 	loading,
 	error,
 	onRetry,
@@ -882,15 +903,55 @@ export function SquadInspection({
 	window: number;
 	asOfGw: number | null;
 	latestGw: number;
+	importedBank?: number | null;
+	bankOverride?: number | null;
+	onBankOverrideChange?: (value: number | null) => void;
 	loading: boolean;
 	error: boolean;
 	onRetry?: () => void;
 	onPlayerClick: (element: number) => void;
 	onFindReplacement: (request: ReplacementRequest) => void;
 }) {
-	const [bankInput, setBankInput] = useState("0.0");
-	const bank =
-		parseOptionalInputNumber(bankInput, { min: BANK_MIN, max: BANK_MAX }) ?? 0;
+	const isControlledBank = onBankOverrideChange !== undefined;
+	const fallbackBank = importedBank ?? 0;
+	const externalBank = bankOverride ?? fallbackBank;
+	const [bankInput, setBankInput] = useState(() => externalBank.toFixed(1));
+	const lastExternalBankRef = useRef(externalBank);
+
+	// Sync the local text draft when imported or URL-persisted bank changes
+	// externally, without clobbering in-progress decimal typing.
+	useEffect(() => {
+		if (lastExternalBankRef.current === externalBank) {
+			return;
+		}
+		lastExternalBankRef.current = externalBank;
+		setBankInput((current) => {
+			const trimmed = current.trim();
+			if (trimmed !== "") {
+				const parsed = Number(trimmed);
+				if (
+					Number.isFinite(parsed) &&
+					parsed >= SQUAD_BANK_MIN &&
+					parsed <= SQUAD_BANK_MAX &&
+					roundTo1Decimal(parsed) === roundTo1Decimal(externalBank)
+				) {
+					return current;
+				}
+			}
+			return externalBank.toFixed(1);
+		});
+	}, [externalBank]);
+
+	const bank = isControlledBank
+		? externalBank
+		: (parseOptionalInputNumber(bankInput, {
+				min: SQUAD_BANK_MIN,
+				max: SQUAD_BANK_MAX,
+			}) ?? (bankInput.trim() === "" ? 0 : fallbackBank));
+	const showResetBank =
+		bankOverride !== null &&
+		importedBank !== null &&
+		bankOverride !== importedBank;
 
 	const formByElement = indexByElement(formPlayers);
 	const currentByElement = indexByElement(currentPlayers);
@@ -920,17 +981,49 @@ export function SquadInspection({
 	const captainCandidates = rankCaptainCandidates(startingRows, 3, { nextGw });
 	const startSitCues = findStartSitCues(startingRows, benchRows, { nextGw });
 
+	function handleBankInputChange(value: string) {
+		setBankInput(value);
+		if (!onBankOverrideChange) {
+			return;
+		}
+		const trimmed = value.trim();
+		if (trimmed === "") {
+			return;
+		}
+		const parsed = Number(trimmed);
+		if (
+			Number.isFinite(parsed) &&
+			parsed >= SQUAD_BANK_MIN &&
+			parsed <= SQUAD_BANK_MAX
+		) {
+			onBankOverrideChange(roundTo1Decimal(parsed));
+		}
+	}
+
 	function normaliseBankInput() {
 		const trimmed = bankInput.trim();
 		if (trimmed === "") {
-			setBankInput("0.0");
+			setBankInput(fallbackBank.toFixed(1));
+			onBankOverrideChange?.(null);
 			return;
 		}
 		const parsed = parseOptionalInputNumber(trimmed, {
-			min: BANK_MIN,
-			max: BANK_MAX,
+			min: SQUAD_BANK_MIN,
+			max: SQUAD_BANK_MAX,
 		});
-		setBankInput(parsed === null ? "0.0" : parsed.toFixed(1));
+		if (parsed === null) {
+			setBankInput(fallbackBank.toFixed(1));
+			onBankOverrideChange?.(null);
+			return;
+		}
+		const rounded = roundTo1Decimal(parsed);
+		setBankInput(rounded.toFixed(1));
+		onBankOverrideChange?.(rounded);
+	}
+
+	function handleResetBank() {
+		setBankInput(fallbackBank.toFixed(1));
+		onBankOverrideChange?.(null);
 	}
 
 	return (
@@ -986,8 +1079,11 @@ export function SquadInspection({
 					<SquadSummaryBar
 						summary={summary}
 						bankInput={bankInput}
-						onBankInputChange={setBankInput}
+						importedBank={importedBank}
+						showResetBank={showResetBank}
+						onBankInputChange={handleBankInputChange}
 						onBankInputBlur={normaliseBankInput}
+						onResetBank={handleResetBank}
 					/>
 					<SquadInsightsPanel
 						captainCandidates={captainCandidates}
