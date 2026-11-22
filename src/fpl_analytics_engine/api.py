@@ -1,5 +1,6 @@
 """FastAPI gateway exposing point-in-time form and DefCon player views."""
 
+import math
 import re
 from collections.abc import Callable
 from functools import lru_cache
@@ -716,6 +717,22 @@ def _team_pick_frame(payload: dict) -> pl.DataFrame:
     )
 
 
+def _extract_entry_bank(payload: dict) -> float | None:
+    """Return money in the bank in millions from an FPL entry-picks payload."""
+    entry_history = payload.get("entry_history")
+    if not isinstance(entry_history, dict):
+        return None
+    raw = entry_history.get("bank")
+    if (
+        isinstance(raw, bool)
+        or not isinstance(raw, (int, float))
+        or not math.isfinite(raw)
+        or raw < 0
+    ):
+        return None
+    return round(float(raw) / 10, 1)
+
+
 app = FastAPI(title="FPL Analytics Engine")
 
 
@@ -767,6 +784,7 @@ def fpl_team(
     return FplTeam(
         entry_id=entry_id,
         as_of_gw=gw,
+        bank=_extract_entry_bank(payload),
         owned_elements=picks["element"].to_list(),
         picks=[FplTeamPick(**row) for row in picks.select(pick_cols).to_dicts()],
     )

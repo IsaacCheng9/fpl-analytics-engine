@@ -191,8 +191,44 @@ def test_fpl_team_endpoint_uses_requested_event(client: TestClient) -> None:
     body = client.get("/fpl-team/123", params={"event": 2}).json()
 
     assert body["as_of_gw"] == 2
+    assert body["bank"] is None
     assert body["owned_elements"] == []
     assert seen == {"entry_id": 123, "event": 2}
+
+
+@pytest.mark.parametrize(
+    ("payload_extra", "expected_bank"),
+    [
+        ({"entry_history": {"bank": 15}}, 1.5),
+        ({"entry_history": {"bank": 0}}, 0.0),
+        ({"entry_history": {"bank": 23.0}}, 2.3),
+        ({}, None),
+        ({"entry_history": None}, None),
+        ({"entry_history": "invalid"}, None),
+        ({"entry_history": {}}, None),
+        ({"entry_history": {"bank": -5}}, None),
+        ({"entry_history": {"bank": True}}, None),
+        ({"entry_history": {"bank": False}}, None),
+        ({"entry_history": {"bank": "15"}}, None),
+        ({"entry_history": {"bank": None}}, None),
+        ({"entry_history": {"bank": float("nan")}}, None),
+        ({"entry_history": {"bank": float("inf")}}, None),
+    ],
+)
+def test_fpl_team_endpoint_extracts_entry_bank(
+    client: TestClient,
+    payload_extra: dict,
+    expected_bank: float | None,
+) -> None:
+    def fake_fetch(_entry_id: int, _event: int) -> dict:
+        return {"picks": [], **payload_extra}
+
+    api.app.dependency_overrides[api.get_entry_picks_fetcher] = lambda: fake_fetch
+
+    response = client.get("/fpl-team/123")
+
+    assert response.status_code == 200
+    assert response.json()["bank"] == expected_bank
 
 
 @pytest.fixture
