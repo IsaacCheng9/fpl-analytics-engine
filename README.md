@@ -1,6 +1,7 @@
 # FPL Analytics Engine
 
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Type Check](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/type-check.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/type-check.yml)
 [![Test](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/test.yml)
 [![Frontend](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml/badge.svg)](https://github.com/IsaacCheng9/fpl-analytics-engine/actions/workflows/frontend.yml)
 
@@ -13,101 +14,117 @@ as of any gameweek, only data from that gameweek and earlier is used – so the
 engine is fully back-testable with no look-ahead.
 
 The differentiator over public form tables is the combination of a configurable
-recent-form window, expected-stats (xG/xA/xGI) rather than raw points, transfer
-candidate context, and a point-in-time design that lets every recommendation be
-replayed and scored against what actually happened next. The dashboard can also
-import a public FPL squad, so the same evidence can be read through a transfer
-planning lens: which players you own, which candidates are shortlisted, and
-where the current squad looks weak for the next gameweek.
+recent-form window, expected stats (`xG`/`xA`/`xGI`) rather than raw points,
+live transfer and fixture context, and a point-in-time design that lets every
+recommendation be replayed and scored against what actually happened next.
+The dashboard can also import a public FPL squad, splitting Starting XI from
+Bench so you can see where your squad looks weak and jump straight to
+filtered replacement candidates.
 
 ## Key Features
 
 - **Point-in-time form engine** – ranks players by projected xGI per gameweek:
   an estimated underlying xGI per 90, pulled towards last season's rate, times
-  expected minutes. Recent N-gameweek per-90 expected output (xG/xA/xGI) and its
-  swing against the season-to-date baseline stay visible as descriptive context,
-  because backtests found the swing does not persist
+  expected minutes. Recent N-gameweek per-90 expected output (`xG`/`xA`/`xGI`)
+  and its swing against the season-to-date baseline stay visible as descriptive
+  context, because backtests found the swing does not persist
 - **DefCon hit-probability model** – a calibrated contribution-count model that
-  estimates `P(Hit | 60+ Mins)`, uses the size of each
-  defensive-contribution performance, then recalibrates those probabilities
-  against prior point-in-time prediction buckets
-- **Backtesting harness** – replays each gameweek on the point-in-time view,
-  then scores the form ranking signals, DefCon probabilities and club form
-  against the following gameweeks
-- **Research view** – surfaces the player form-signal backtest, the DefCon
-  probability backtest and the corrected club-form validation inside the
-  dashboard, including negative results where recent form did not beat a
-  season-to-date baseline; it shows the last complete season until the live
-  season reaches GW19, with a season selector for any season from 2025-26
-- **Season archival** – snapshots preseason players and fixtures as soon as the
-  FPL game rolls over, then adds current-season per-gameweek detail after GW1
-- **Historical backfill** – adapts the vaastav community archive (2022-23
-  onward) into the same enriched schema, so the form engine runs across seasons
-  for cross-season comparison
-- **One-command data refresh** – archives the latest live season, refreshes the
-  cross-season enriched snapshots, validates the Parquet data, and runs the
-  real-data smoke check before refreshed snapshots are pushed
-- **REST API** – a FastAPI gateway exposing the form, DefCon,
-  DefCon-probability, FPL team import, backtest validation, club-form, and
-  player-detail views
+  estimates `P(Hit | 60+ Mins)`, uses the size of each defensive-contribution
+  performance, then recalibrates those probabilities against prior point-in-time
+  prediction buckets
+- **Backtesting harness and Research view** – replays each gameweek on the
+  point-in-time view, then scores the form ranking signals, DefCon probabilities
+  and club form against the following gameweeks inside the dashboard, including
+  negative results where recent form did not beat a season-to-date baseline.
+  Shows the last complete season until the live season reaches GW19, with a
+  season selector for any season from 2025-26 onward
 - **Interactive web dashboard** – a React single-page app with sortable,
-  filterable tables across Attacking Form, DefCon Form, DefCon Probability, Club
-  Form, and Research views, URL-backed controls, active filter chips, presets,
-  colour-coded signal columns, sticky player context columns, and a
-  collapsible form-versus-baseline scatter plot in Attacking Form
-- **Table pagination** – shows 25 rows per page in the player and club tables,
-  with 10, 25, 50, 100, or all rows available. Sorting and filtering apply to the
-  full result set, and the scatter plot retains all matching players
-- **Transfer decision workflow** – combines attacking-threat thresholds, price,
-  FDR, minutes, starts, ownership, shortlist filtering, and side-by-side player
-  comparison so transfer candidates can be narrowed and inspected without
-  leaving the table context
-- **Team-aware squad inspection** – imports a public FPL team ID, highlights
-  currently owned players, filters owned/not-owned players, and shows a
-  next-gameweek squad inspection view with next fixture, FDR, minutes, threat,
-  `P(Hit | 60+ Mins)`, ownership, and transparent risk/hold flags
-- **Player detail view** – click any table row to inspect a player's
-  selected-season gameweeks, rolling xG/xA/xGI per 90 and DefCon counts against
-  their season averages, and cross-season history keyed by stable FPL `code`
+  paginated tables (10, 25, 50, 100, or all rows; sorting and filtering apply to
+  the full result set) across Attacking Form, DefCon Form, DefCon Probability,
+  Club Form, and Research views, URL-backed controls, active filter chips,
+  presets, colour-coded signal columns, sticky player context, and a
+  Light / System / Dark theme toggle
+- **Interactive screening scatter plot** – collapsible Attacking Form chart with
+  three views (`Projected xGI vs Price` value frontier by default,
+  `Est. xGI/90 vs Projected Minutes`, and `Recent vs Season xGI/90`),
+  colour-coded by position or Squad / Shortlist, retaining all filtered players
+  with click-through to Player Detail
+- **Transfer workflow and live context** – filters by price, FDR, minutes,
+  starts, ownership, attacking-threat thresholds, shortlist, `Exclude
+  Unavailable`, and `Penalties Only`, with live-snapshot availability,
+  yellow-card suspension watch, and set-piece badges (`P`, `C`, `FK`) across
+  all player views
+- **Actionable squad inspection** – imports a public FPL team ID, splits
+  Starting XI from Bench in FPL auto-sub order, displays a summary bar with
+  optional Bank (£m) input and 5-GW colour-coded fixture strips, flags
+  availability, card risk, minutes, fixture, threat, and DefCon upside, and
+  provides one-click `Replace` filtering into Attacking Form
+- **Player detail and side-by-side comparison** – click any player row to
+  inspect live availability, news, set-piece duties, yellow cards, a 5-GW
+  fixture strip, rolling `xG`/`xA`/`xGI` per 90 and DefCon charts, per-gameweek
+  opponent, venue, goals, assists, and bonus, and cross-season history keyed by
+  stable FPL `code`. Compare two players side by side with overlaid rolling
+  `xGI/90` and DefCon charts, a `Swap` control, fixture strips, and live
+  snapshot context
 - **Club form context** – compares each club's recent attacking and defensive
-  output with its season baseline, then shows that form next to upcoming FDR
+  expected output with its season baseline alongside a colour-coded `Next 5`
+  fixture strip and 5-GW FDR
+- **Automated data pipeline and REST API** – archives live FPL snapshots
+  (including preseason rollover handling), backfills 2022-25 from the vaastav
+  community archive into the same enriched schema, publishes atomically after
+  data-health validation and real-data smoke checks, and serves all views over
+  a FastAPI gateway
 
 ## Screenshots
 
-<img width="3840" height="3544" alt="Attacking Form table" src="https://github.com/user-attachments/assets/0199d2ef-40ca-4813-b8f3-160d754e1c4d" />
+<img width="3840" height="2360" alt="Attacking Form table" src="https://github.com/user-attachments/assets/b67493a1-674f-472c-9af0-ba0fea131556" />
 
 <details>
 <summary>DefCon Form</summary>
 
-<img width="3840" height="2906" alt="DefCon Form table" src="https://github.com/user-attachments/assets/21851fa4-8055-4cb1-bd5e-02b2547213ab" />
+<img width="3840" height="2360" alt="DefCon Form table" src="https://github.com/user-attachments/assets/91d3a850-254c-4bca-a8e7-6e14dce890e9" />
 
 </details>
 
 <details>
 <summary>DefCon Probability</summary>
 
-<img width="3840" height="2906" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/7ddef70d-19d5-4b06-af5e-af8bf366d711" />
+<img width="3840" height="2360" alt="DefCon Probability table" src="https://github.com/user-attachments/assets/2ede966d-9208-4923-9905-5a718672f918" />
 
 </details>
 
 <details>
 <summary>Club Form</summary>
 
-<img width="3840" height="2680" alt="Club Form table" src="https://github.com/user-attachments/assets/99b87468-7a6d-4c34-b770-018461745f05" />
+<img width="3840" height="2960" alt="Club Form table" src="https://github.com/user-attachments/assets/e5bff89a-5c85-470d-bd3e-7d1c6b0e8f2d" />
 
 </details>
 
 <details>
 <summary>Research</summary>
 
-<img width="3840" height="3706" alt="Research view" src="https://github.com/user-attachments/assets/377fd880-3907-4a52-8776-e6dd044b8eb9" />
+<img width="3840" height="3700" alt="Research view" src="https://github.com/user-attachments/assets/61523db7-b60c-40f4-8298-404f3d1fabd9" />
 
 </details>
 
 <details>
 <summary>Detailed Player View</summary>
 
-<img width="3840" height="2440" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/12ebbd0c-b92e-481e-b405-b27a856887a4" />
+<img width="3840" height="2520" alt="Detailed Player View panel" src="https://github.com/user-attachments/assets/50253fd6-a26b-4d9b-8282-bb63fd8248db" />
+
+</details>
+
+<details>
+<summary>Compare Players</summary>
+
+<img width="3840" height="2400" alt="Compare Players panel" src="https://github.com/user-attachments/assets/a1d2bcad-7f4a-455c-a3ef-a67feb460e85" />
+
+</details>
+
+<details>
+<summary>Dark Mode</summary>
+
+<img width="3840" height="2240" alt="Attacking Form in dark mode" src="https://github.com/user-attachments/assets/515f75a5-2a69-401c-ba12-0cfdafaf99d1" />
 
 </details>
 
@@ -126,13 +143,13 @@ The table ranks players by `projected_xgi`, their expected xGI per gameweek:
 - `est_xgi90` – the season-to-date rate pulled towards last season's rate, which
   counts as 900 extra minutes for players with 900+ expected-stat minutes last
   season
-	- Last season dominates early on and fades as this season's minutes
-	  accumulate; players without enough minutes last season keep their
-	  season-to-date rate
+  - Last season dominates early on and fades as this season's minutes
+    accumulate; players without enough minutes last season keep their
+    season-to-date rate
 - `projected_minutes` – an even blend of recent-window and season-to-date
   minutes per gameweek, because recent playing-time changes partly persist
-	- Both count only gameweeks since the player joined the game, so a
-	  mid-season signing is not diluted by gameweeks before their arrival
+  - Both count only gameweeks since the player joined the game, so a
+    mid-season signing is not diluted by gameweeks before their arrival
 - `projected_xgi = est_xgi90 * projected_minutes / 90`
 
 The recent swing, `delta_xgi90 = window_xgi90 - season_xgi90`, is still shown
@@ -172,7 +189,7 @@ the next four gameweeks, and top-20 points are the mean per pick. Persistence is
 the share of a recent swing above or below the season rate that carried into
 those gameweeks: 100% means it fully persisted, 0% means players reverted. The
 xGI swing counts only players with 270+ window minutes and 180+ later minutes,
-so both sides are real rates. The Research view shows 2025-26 onwards, while the
+so both sides are real rates. The Research view shows 2025-26 onward, while the
 endpoint also accepts 2023-24 and 2024-25.
 
 | Season | xGI90 Swing Persists (95% Interval) | Minutes Swing Persists | Rank Correlation – Projected / Season / Delta | Top 20 Next-4 Points – Projected / Season / Delta |
@@ -215,35 +232,48 @@ positional average made rankings worse.
 ### Transfer Workflow
 
 The dashboard is designed around narrowing transfer candidates without hiding
-the underlying evidence. Transfer filters apply across the player tables: price
+the underlying evidence. Transfer filters apply across all player tables: price
 ceiling, FDR ceiling, minutes floor, minutes per appearance, start percentage,
-ownership range, and minimum attacking-threat thresholds for the enabled
-expected-stat metrics. Presets provide quick starting points for common
-candidate types, while active filter chips make the current constraints visible
-and removable.
+ownership range, minimum attacking-threat thresholds for the enabled
+expected-stat metrics, and live-snapshot toggles for `Exclude Unavailable`
+(hides injured, suspended, unavailable, and ineligible players while keeping
+available and doubtful ones) and `Penalties Only` (primary penalty takers).
+Presets provide quick starting points for common candidate types, while active
+filter chips make every active constraint visible and removable.
 
-Shortlisting is URL-backed, so a focused candidate list can be shared or
-reopened, and the compare panel shows two selected players side by side using
-the same point-in-time window and as-of gameweek assumptions. A public FPL team
-ID can also be imported from the official entry-picks endpoint. Imported
-ownership is labelled as `Currently Owned` because the app does not have
-historical squad state; the analytics around those players still use the chosen
-point-in-time `as_of_gw`.
+Shortlisting is URL-backed so a focused candidate list can be shared or
+reopened. The compare panel shows two selected players side by side under the
+same point-in-time window and as-of gameweek assumptions, with overlaid rolling
+`xGI/90` and rolling DefCon charts, a `Swap` button, clickable headers that
+open Player Detail, side-by-side 5-GW fixture strips, and a `Live Snapshot`
+section for availability and set-piece duties.
 
-The player table can switch between all players, the imported squad inspection,
-and shortlisted players. The squad inspection view is diagnostic rather than a
-solver: it shows the current squad as one list, with the current next fixture
-and FDR, projected and estimated threat alongside recent and season threat,
-minutes, start rate, `P(Hit | 60+ Mins)`, ownership, and simple flags such as
-`Minutes Risk`, `Fixture Risk`, `Low Threat`, `DefCon Upside`, and `Good Hold`.
-`Low Threat` uses the estimated xGI per 90, the best per-90 predictor in the
-form backtest, so a quiet recent spell alone does not trigger it.
+A public FPL team ID can be imported from the official entry-picks endpoint.
+Imported ownership is labelled as `Currently Owned` because the app does not
+have historical squad state; the analytics around those players still use the
+chosen point-in-time `as_of_gw`. The table switches between all players, the
+imported squad inspection, and shortlisted players.
 
-### Table Colours
+Squad inspection is diagnostic rather than a solver: it splits **Starting XI**
+(ordered by position then name) from **Bench** (ordered by FPL auto-sub order
+`B1`–`B4`), summarises Starting XI projected xGI, Risk/Watch counts, and
+average next FDR alongside an optional **Bank (£m)** input, and renders a
+5-GW colour-coded fixture strip for each player. It surfaces transparent flags
+– `Injured`, `Suspended`, `Unavailable`, `Doubtful`, `Card Risk`, `Minutes
+Risk`, `Fixture Risk`, `Low Threat`, `DefCon Upside`, and `Good Hold` – and
+provides a one-click `Replace` action that opens Attacking Form filtered to the
+same position, `price + bank`, and unowned players. `Low Threat` uses the
+estimated xGI per 90, the best per-90 predictor in the form backtest, so a
+quiet recent spell alone does not trigger it.
+
+### Table Colours and Appearance
+
+The header includes a **Light / System / Dark** theme toggle persisted in
+`localStorage`, with dark-aware table heat scales and chart styling.
 
 Shading marks signal columns only. Changes, form scores, and over- or
-underperformance use a red–white–green scale centred on zero: green is
-favourable, red is unfavourable, and values near zero stay white. For goals
+underperformance use a red–neutral–green scale centred on zero: green is
+favourable, red is unfavourable, and values near zero stay unshaded. For goals
 conceded and xGC, lower values count as favourable. Columns where more is
 better, such as xGI per 90 or `P(Hit | 60+ Mins)`, use a single green that
 strengthens with the value. These scales use the league-wide results, so a
@@ -260,17 +290,16 @@ defensive actions in a match – defenders need 10+ CBIT (clearances, blocks,
 interceptions, tackles); midfielders and forwards need 12+ CBIRT (CBIT plus
 recoveries). Rather than report a raw hit-rate, the engine models each player's
 probability of hitting from their defensive-contribution counts, conditional on
-playing at least 60 minutes: a
-Gamma-Poisson count model estimates the chance of clearing the positional
-threshold, then a point-in-time calibration layer shrinks that probability
-toward the observed hit-rate of similar prior predictions. The model is
-evaluated by backtest. Brier score measures average probability error, so lower
-is better: confident wrong predictions are punished more than cautious ones.
-Expected calibration error (ECE) checks whether probabilities mean what they say
-– for example, whether players predicted around 40% actually hit around 40% of
-the time. The UI also surfaces average defensive-contribution counts, which show
-whether a player is trending near the threshold even when their binary hit-rate
-is flat.
+playing at least 60 minutes: a Gamma-Poisson count model estimates the chance
+of clearing the positional threshold, then a point-in-time calibration layer
+shrinks that probability toward the observed hit-rate of similar prior
+predictions. The model is evaluated by backtest. Brier score measures average
+probability error, so lower is better: confident wrong predictions are punished
+more than cautious ones. Expected calibration error (ECE) checks whether
+probabilities mean what they say – for example, whether players predicted
+around 40% actually hit around 40% of the time. The UI also surfaces average
+defensive-contribution counts, which show whether a player is trending near the
+threshold even when their binary hit-rate is flat.
 
 #### DefCon Probability Backtest Results (2025-26 Season)
 
@@ -327,9 +356,11 @@ who transfer mid-season remain attributed to the club they represented in each
 match. The view compares recent per-match xG and xGC against each club's
 season-to-date baseline, and shows per-match xGD (xG minus xGC) for both periods
 as a net measure of how far each club out-creates its opponents. It then joins
-exact next-fixture context and the next-five-gameweek FDR. Actual goals and
-goals conceded are available as optional context, but expected data stays the
-default signal because finishing and concession outcomes are noisier.
+a colour-coded `Next 5` fixture strip (showing home/away, FDR 1–5, `BGW`
+blanks, and paired `DGW` doubles) alongside the next-five-gameweek average FDR.
+Actual goals and goals conceded are available as optional context, but expected
+data stays the default signal because finishing and concession outcomes are
+noisier.
 
 Window and season overperformance columns show both total and per-match
 differences. Attacking overperformance is goals scored minus xG; defensive
@@ -342,8 +373,9 @@ uplift.
 The collapsible Columns panel controls expected metrics, match counts, FDR,
 actual goals, form summaries and separate total/per-match overperformance
 groups. By default, the table shows Club, Matches, window/season/delta xG and
-xGC, window/season xGD, and FDR. Column selections persist in shareable URLs;
-Reset Columns restores this compact view.
+xGC, window/season xGD, and the `FDR` group (`Next 5` fixture strip and
+`FDR (Next 5)`). Column selections persist in shareable URLs; Reset Columns
+restores this compact view.
 
 #### Validation Backtest Results (2025-26 Season)
 
@@ -369,18 +401,22 @@ available in the live scouting view only as current fixture context.
 
 ### Data Availability Caveats
 
-- Expected stats (xG/xA/xGI/xGC) exist from 2022-23 onward, so the form engine
-  only runs from that season
+- Expected stats (`xG`/`xA`/`xGI`/`xGC`) exist from 2022-23 onward, so the form
+  engine only runs from that season
 - DefCon was introduced by FPL in 2025-26 – the underlying defensive components
   do not exist in any comparable form before then, so DefCon analysis is
-  2025-26-only and historical seasons carry null DefCon columns
-- In the vaastav archive, 2022-23 expected stats only cover GW16-38; expected
+  available from 2025-26 onward and earlier seasons (2022-23 to 2024-25) carry
+  null DefCon columns
+- Per-gameweek opponent, venue, goals, assists, and bonus in Player Detail are
+  available from 2025-26 onward; older vaastav backfills omit them
+- In the vaastav archive, 2022-23 expected stats only cover GW16–38; expected
   rates use that coverage and remain unavailable before GW16
-- Cross-season player matching uses stable FPL `code`; historical `element` ids
+- Cross-season player matching uses stable FPL `code`; historical `element` IDs
   are season-local and are not safe for matching the same player across seasons
-- Current ownership and imported squad membership are live/current-state
-  overlays from the official FPL API; they are not point-in-time historical
-  fields and do not change with `as_of_gw`
+- Current ownership, availability/news, yellow cards, set-piece duties, and
+  imported squad membership are live/current-state overlays from the official
+  FPL API – they are not point-in-time historical fields and do not change with
+  `as_of_gw`. Archived `GET /players/{element}` requests omit live-only fields
 - Curated Parquet snapshots under `data/` are committed for reproducible
   deployment and personal/non-commercial use; they are sourced from the public
   FPL API and public community archives
@@ -398,34 +434,35 @@ flowchart TD
     enriched --> defconmod[defcon.py<br/>calibrated count probability + backtest]
     enriched --> playermod[player.py<br/>player detail + season history]
     enriched --> clubmod[club.py<br/>club form + validation]
-    snap --> fixmod[fixtures.py<br/>FDR + next fixtures]
+    snap --> fixmod[fixtures.py<br/>FDR + 5-GW fixture strips]
     formmod --> api[api.py<br/>FastAPI gateway]
     defconmod --> api
     playermod --> api
     clubmod --> api
     fixmod --> api
-    api -->|JSON| ui[React dashboard<br/>tables + detail panel]
+    api -->|JSON| ui[React dashboard<br/>tables, charts, squad, compare]
 ```
 
 ## Technology Stack
 
 ### Backend
 
-- **Python 3.14**: managed with uv
-- **Polars**: all data loading, enrichment, and analytics
-- **FastAPI**: REST gateway exposing the analytics views
-- **Pydantic**: response modelling and validation
-- **Ruff** and **Pyrefly**: linting, formatting, and type checking
+- **Python 3.14** – managed with `uv`
+- **Polars** – data loading, enrichment, and analytics
+- **FastAPI** – REST gateway exposing the analytics views
+- **Pydantic** – response modelling and validation
+- **Ruff** and **Pyrefly** – linting, formatting, and type checking
 
 ### Frontend
 
-- **React 19** with **TypeScript** on **Vite**: single-page dashboard
-- **TanStack Table** and **TanStack Query**: sortable tables and data fetching
-- **Recharts**: the form-versus-baseline scatter plot and player-detail rolling
-  charts
-- **Tailwind CSS**: styling
-- **Biome**: linting and formatting
-- **Vitest** with **Testing Library**: component tests
+- **React 19** with **TypeScript** on **Vite** – single-page dashboard
+- **TanStack Table** and **TanStack Query** – sortable tables and data fetching
+- **Recharts** – lazy-loaded charts for the three-mode Attacking Form scatter
+  plot, Player Detail rolling trends, Compare overlaid trend lines, and
+  Research DefCon calibration
+- **Tailwind CSS** – styling and Light / Dark theme support
+- **Biome** – linting and formatting
+- **Vitest** with **Testing Library** – component tests
 
 ## Data
 
@@ -440,18 +477,40 @@ The engine reads from committed Parquet snapshots under `data/`:
   [vaastav archive](https://github.com/vaastav/Fantasy-Premier-League) for
   2022-23 to 2024-25 and maps it into the same enriched schema, so the same form
   functions work across every archived season. It also reads each season's
-  `players_raw.csv` so historical `element` ids can be mapped to stable FPL
+  `players_raw.csv` so historical `element` IDs can be mapped to stable FPL
   `code` and current-style `web_name`
 
 ## Usage
 
-### Installing Dependencies
+### Quick Start
 
-Run from the project root:
+The committed Parquet snapshots under `data/` make the API and dashboard usable
+immediately after checkout.
 
-```bash
-uv sync
-```
+1. **Install backend dependencies** from the project root:
+
+   ```bash
+   uv sync
+   ```
+
+2. **Run the API**:
+
+   ```bash
+   uv run uvicorn fpl_analytics_engine.api:app --reload
+   ```
+
+   - **API**: [http://localhost:8000](http://localhost:8000)
+   - **Interactive docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+3. **Run the dashboard** in a second terminal (expects the API on port 8000):
+
+   ```bash
+   cd frontend
+   bun install
+   bun run dev
+   ```
+
+   The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ### Refreshing Data
 
@@ -503,10 +562,7 @@ suite. A passing run opens or updates a single review PR from the
 `data/scheduled-refresh` branch – nothing reaches `main` or the deployed
 dashboard until that PR is merged, and a failed or blocked FPL request fails the
 run without committing data. Trigger it manually with `force` to refresh the
-snapshot context without a new gameweek. PRs opened with the default workflow
-token do not trigger CI, so close and reopen the PR to run it, or add a
-fine-grained `DATA_REFRESH_TOKEN` secret with contents and pull-request write
-access.
+snapshot context without a new gameweek.
 
 ### Archiving the Current Season
 
@@ -524,9 +580,6 @@ Download and adapt the vaastav archive into `data/<season>/enriched.parquet`:
 uv run python -m fpl_analytics_engine.backfill
 ```
 
-The committed snapshots make the dashboard usable immediately after checkout;
-the refresh command above is the preferred way to update them.
-
 ### Validating Local Data
 
 Check that the committed Parquet snapshots are present and internally usable:
@@ -535,44 +588,23 @@ Check that the committed Parquet snapshots are present and internally usable:
 uv run python -m fpl_analytics_engine.data_health
 ```
 
-Run the opt-in real-data smoke check after archiving and backfilling:
+Run the real-data smoke check against the committed snapshots (also invoked by
+`refresh` and CI; `scripts/real_data_smoke.py` delegates to the same module):
 
 ```bash
-uv run python scripts/real_data_smoke.py
+uv run python -m fpl_analytics_engine.smoke
 ```
 
-The smoke script uses Saka by default as a known cross-season player, verifies
+The smoke check uses Saka by default as a known cross-season player, verifies
 stable-code matching, and checks that 2022-23 expected-stat rates are scoped to
 GW16 onward.
 
-Run the opt-in club-form validation, which reads the 2025-26 archive by default
-(pass `--data-dir` to choose another season):
+Run the standalone club-form validation script, which reads the 2025-26 archive
+by default (pass `--data-dir` to choose another season):
 
 ```bash
 uv run python scripts/club_form_validation.py
 ```
-
-### Running the API
-
-```bash
-uv run uvicorn fpl_analytics_engine.api:app --reload
-```
-
-- **API**: [http://localhost:8000](http://localhost:8000)
-- **Interactive docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### Running the Dashboard
-
-The frontend lives in [frontend/](./frontend) and expects the API running on
-port 8000:
-
-```bash
-cd frontend
-bun install
-bun run dev
-```
-
-The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 
 ## API Endpoints
 
@@ -580,30 +612,31 @@ The dashboard is then served at [http://localhost:5173](http://localhost:5173).
 | --- | --- | --- |
 | `GET /` | Live season, analytical readiness, next deadline, and latest completed gameweek | – |
 | `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
-| `GET /players/current-context` | Current snapshot player metadata and scheduled, unstarted fixture context | – |
+| `GET /players/current-context` | Current snapshot player metadata, availability, set-piece duties, and upcoming fixture context | – |
 | `GET /players/form` | Players ranked by projected xGI per gameweek, with recent-versus-season form | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/form-validation` | Backtest the form ranking signals against the next gameweeks | `window`, `horizon`, `season` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes`, `season` |
-| `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form with upcoming fixture strips | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /clubs/form-validation` | Backtest a season baseline versus baseline plus recent club form | `window`, `horizon`, `min_train_rows`, `season` |
-| `GET /players/{element}` | Point-in-time player gameweeks and cross-season summaries | Path: `element`; query: `window`, `season`, `as_of_gw` |
+| `GET /players/{element}` | Point-in-time player gameweeks, cross-season summaries, and live-season context | Path: `element`; query: `window`, `season`, `as_of_gw` |
 
 The analytical table endpoints accept `as_of_gw` to evaluate the point-in-time
 view as it would have looked after an earlier gameweek; it defaults to the
-latest gameweek in the data. Current ownership and `/fpl-team/{entry_id}` squad
-membership are deliberately not point-in-time, because the FPL API exposes only
-live ownership and visible entry-pick snapshots. The player-detail endpoint is
-keyed by the current-season `element` id, tracks the player across seasons by
-stable `code`, and resolves `as_of_gw` within the selected `season`. Historical
-seasons default to their own latest gameweek; an explicit cutoff limits that
+latest gameweek in the data. Current ownership, availability/news, yellow cards,
+set-piece duties, and `/fpl-team/{entry_id}` squad membership are deliberately
+not point-in-time, because the FPL API exposes only live snapshots for those
+fields. The player-detail endpoint is keyed by the current-season `element` ID,
+tracks the player across seasons by stable `code`, and resolves `as_of_gw`
+within the selected `season`. Historical seasons default to their own latest
+gameweek and omit live-only status fields; an explicit cutoff limits that
 season's rows and summary. Earlier season summaries remain complete, and later
 seasons are excluded. A missing history `code` falls back to the live player
 snapshot; without a stable code, only that player's current-season rows are
-available. In the player panel, switching to an older season
-shows its full history, while returning to the live season restores the main
-table's as-of cutoff.
+available. In the player panel, switching to an older season shows its full
+history, while returning to the live season restores the main table's as-of
+cutoff.
 
 Before GW1, current-season analytical and team-import endpoints return HTTP 409
 rather than silently serving the previous season. Explicit historical player
@@ -617,38 +650,47 @@ accepts 2023-24 or later. `/players/form` filters on the recent swing only when
 example, `/api/players/form`).
 
 ### Current Squad Context
+
 `/players/current-context` supplies squad inspection with current snapshot club,
-price, ownership, and fixture context, including players without appearances.
-Unlike historical analytical FDR anchored to `as_of_gw`, it selects the earliest
-scheduled, unstarted fixture by kickoff time for the player's snapshot club,
-excluding finished or started matches. The next fixture is not horizon-limited;
-aggregate FDR covers five gameweeks starting at the gameweek of the earliest
-scheduled, unstarted kickoff in the snapshot. Rounds outside that range are
-excluded, including rearranged earlier rounds. Historical analytical endpoints
-retain their existing semantics.
+price, ownership, availability/news, yellow cards, set-piece duties, and
+fixture context (next fixture, 5-GW fixture strip, and 5-GW average FDR),
+including players without appearances. Unlike historical analytical FDR
+anchored to `as_of_gw`, it selects the earliest scheduled, unstarted fixture by
+kickoff time for the player's snapshot club, excluding finished or started
+matches. The next fixture is not horizon-limited; aggregate FDR and the fixture
+strip cover five gameweeks starting at the gameweek of the earliest scheduled,
+unstarted kickoff in the snapshot. Rounds outside that range are excluded,
+including rearranged earlier rounds. Historical analytical endpoints retain
+their existing semantics.
 
 This route reads archived snapshots only and makes no live FPL requests. Club,
 schedule, and match-status changes since the last snapshot refresh are not
 reflected, so 'current' does not mean real-time. It also works before GW1 and
-returns null next-fixture context when no eligible fixture is known.
-Missing metadata leaves known player IDs in the response with null fields;
-squad inspection does not replace unknown fixtures with historical context or
-infer a home venue when it is unknown.
+returns null next-fixture context when no eligible fixture is known. Missing
+metadata leaves known player IDs in the response with null fields; squad
+inspection does not replace unknown fixtures with historical context or infer a
+home venue when it is unknown.
 
 ## Testing
 
-Run the backend test suite with coverage:
+Run backend checks (tests with coverage, lint, format, and type checking):
 
 ```bash
 uv run pytest -v --cov=src/fpl_analytics_engine --cov-report=term-missing
+uv run ruff check
+uv run ruff format --check
+uv run pyrefly check
 ```
 
-Run the frontend tests:
+Run frontend checks (lint/format, type check + build, and component tests):
 
 ```bash
 cd frontend
+bun run lint
+bun run build
 bun run test
 ```
 
-GitHub Actions runs the backend suite on pushes to `main` and on pull requests,
-and the frontend suite whenever files under `frontend/` change.
+GitHub Actions runs `Lint`, `Type Check`, and `Test` (Pytest, `data_health`,
+and `smoke`) on pushes to `main` and on pull requests, and `Frontend` (Biome,
+`tsc -b && vite build`, and Vitest) whenever files under `frontend/` change.
