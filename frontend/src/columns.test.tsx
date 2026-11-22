@@ -1,12 +1,19 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import type { ClubForm, DefconProbabilityPlayer, FormPlayer } from "./api";
+import type {
+	ClubForm,
+	DefconPlayer,
+	DefconProbabilityPlayer,
+	FormPlayer,
+} from "./api";
 import {
 	buildClubColumns,
+	buildDefconColumns,
 	buildDefconProbColumns,
 	buildFormColumns,
 	CLUB_HEAT_KEYS,
 	computeRanges,
+	DEFCON_HEAT_KEYS,
 	DEFCON_PROB_HEAT_KEYS,
 	FORM_HEAT_KEYS,
 } from "./columns";
@@ -418,5 +425,265 @@ describe("nullable numeric column sorting", () => {
 		).toBeInTheDocument();
 		expect(screen.getByText("4 YC")).toHaveAttribute("aria-hidden", "true");
 		expect(screen.getByText("Saka")).toHaveClass("min-w-0", "truncate");
+	});
+});
+
+function makeDefconPlayer(
+	overrides: Partial<DefconPlayer> & { element: number; web_name: string },
+): DefconPlayer {
+	return {
+		position: "DEF",
+		team_name: "Arsenal",
+		price: 5.5,
+		window_games: 5,
+		window_minutes: 450,
+		window_defcon_hits: 3,
+		window_defcon_games: 5,
+		window_defcon_hit_rate: 0.6,
+		window_defcon: 10.5,
+		window_xgi90_per_million: 0.03,
+		season_points_per_million: 12,
+		window_start_rate: 1,
+		window_mins_per_appearance: 90,
+		upcoming_fixtures: 5,
+		avg_fdr: 3.0,
+		next_fixture_gw: 11,
+		next_opponent_name: "Chelsea",
+		next_was_home: true,
+		next_fdr: 3,
+		next_fixtures: [],
+		current_ownership: 15,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
+		as_of_gw: 10,
+		...overrides,
+	};
+}
+
+function makeDefconProbPlayer(
+	overrides: Partial<DefconProbabilityPlayer> & {
+		element: number;
+		web_name: string;
+	},
+): DefconProbabilityPlayer {
+	return {
+		position: "DEF",
+		team_name: "Arsenal",
+		price: 5.0,
+		window_minutes: 360,
+		window_defcon: 10,
+		games: 4,
+		hits: 2,
+		raw_rate: 0.5,
+		prob: 0.55,
+		upcoming_fixtures: 5,
+		avg_fdr: 3.0,
+		next_fixture_gw: 11,
+		next_opponent_name: "Chelsea",
+		next_was_home: true,
+		next_fdr: 3,
+		next_fixtures: [],
+		current_ownership: 10,
+		status: "a",
+		chance_of_playing_next_round: null,
+		news: null,
+		yellow_cards: 0,
+		penalties_order: null,
+		corners_order: null,
+		direct_freekicks_order: null,
+		window_xgi90_per_million: 0.02,
+		season_points_per_million: 10,
+		window_start_rate: 1,
+		window_mins_per_appearance: 90,
+		as_of_gw: 10,
+		...overrides,
+	};
+}
+
+describe("player Next 5 fixture strip column", () => {
+	test("places Next 5 right after FDR (Next 5) with sorting disabled across all player tables", () => {
+		const sampleFixtures = [
+			{
+				gw: 11,
+				opponent_name: "Bournemouth",
+				opponent_short_name: "BOU",
+				was_home: true,
+				fdr: 2,
+			},
+		];
+		const formPlayers = [
+			makeFormPlayer({
+				element: 1,
+				web_name: "Saka",
+				as_of_gw: 10,
+				next_fixtures: sampleFixtures,
+			}),
+		];
+		const defconPlayers = [
+			makeDefconPlayer({
+				element: 1,
+				web_name: "Gabriel",
+				as_of_gw: 10,
+				next_fixtures: sampleFixtures,
+			}),
+		];
+		const defconProbPlayers = [
+			makeDefconProbPlayer({
+				element: 1,
+				web_name: "Saliba",
+				as_of_gw: 10,
+				next_fixtures: sampleFixtures,
+			}),
+		];
+
+		const tables = [
+			() =>
+				render(
+					<DataTable
+						data={formPlayers}
+						columns={buildFormColumns(
+							computeRanges(formPlayers, FORM_HEAT_KEYS),
+							DEFAULT_ATTACKING_METRICS,
+						)}
+					/>,
+				),
+			() =>
+				render(
+					<DataTable
+						data={defconPlayers}
+						columns={buildDefconColumns(
+							computeRanges(defconPlayers, DEFCON_HEAT_KEYS),
+						)}
+					/>,
+				),
+			() =>
+				render(
+					<DataTable
+						data={defconProbPlayers}
+						columns={buildDefconProbColumns(
+							computeRanges(defconProbPlayers, DEFCON_PROB_HEAT_KEYS),
+						)}
+					/>,
+				),
+		];
+
+		for (const renderTable of tables) {
+			const { unmount } = renderTable();
+			const headers = screen
+				.getAllByRole("columnheader")
+				.map((header) => header.textContent ?? "");
+			const fdrIndex = headers.findIndex((text) =>
+				text.startsWith("FDR (Next 5)"),
+			);
+			const next5Index = headers.findIndex((text) => text.startsWith("Next 5"));
+
+			expect(fdrIndex).toBeGreaterThanOrEqual(0);
+			expect(next5Index).toBe(fdrIndex + 1);
+			expect(
+				screen.getByRole("columnheader", { name: /^Next 5/ }),
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole("button", { name: /^Next 5/ }),
+			).not.toBeInTheDocument();
+			expect(screen.getByText("BOU (H)")).toHaveAttribute(
+				"title",
+				"GW11: Bournemouth (H) - FDR 2",
+			);
+			unmount();
+		}
+	});
+
+	test("anchors FixtureStrip at as_of_gw + 1 with BGW gaps, DGW stacks, and empty fallback", () => {
+		const players = [
+			makeFormPlayer({
+				element: 1,
+				web_name: "Saka",
+				as_of_gw: 10,
+				next_fixtures: [
+					{
+						gw: 12,
+						opponent_name: "Bournemouth",
+						opponent_short_name: "BOU",
+						was_home: true,
+						fdr: 2,
+					},
+					{
+						gw: 13,
+						opponent_name: "Man City",
+						opponent_short_name: "MCI",
+						was_home: false,
+						fdr: 5,
+					},
+					{
+						gw: 13,
+						opponent_name: "Everton",
+						opponent_short_name: "EVE",
+						was_home: true,
+						fdr: 2,
+					},
+					{
+						gw: 15,
+						opponent_name: "Chelsea",
+						opponent_short_name: "CHE",
+						was_home: true,
+						fdr: 3,
+					},
+				],
+			}),
+			makeFormPlayer({
+				element: 2,
+				web_name: "EmptyRun",
+				as_of_gw: 10,
+				next_fixtures: [],
+			}),
+		];
+		const columns = buildFormColumns(
+			computeRanges(players, FORM_HEAT_KEYS),
+			DEFAULT_ATTACKING_METRICS,
+		);
+		render(<DataTable data={players} columns={columns} />);
+
+		const headers = screen
+			.getAllByRole("columnheader")
+			.map((header) => header.textContent ?? "");
+		const next5Index = headers.findIndex((text) => text.startsWith("Next 5"));
+		expect(next5Index).toBeGreaterThanOrEqual(0);
+
+		const sakaRow = screen.getByText("Saka").closest("tr") as HTMLElement;
+		const sakaCell = within(sakaRow).getAllByRole("cell")[next5Index];
+		expect(
+			within(sakaCell).getByRole("list", {
+				name: "Upcoming fixtures GW11 to GW15",
+			}),
+		).toBeInTheDocument();
+		expect(
+			within(sakaCell).getByTitle("GW11: Blank gameweek"),
+		).toHaveTextContent("BGW");
+		expect(within(sakaCell).getByText("BOU (H)")).toHaveAttribute(
+			"title",
+			"GW12: Bournemouth (H) - FDR 2",
+		);
+		const dgwPill = within(sakaCell).getByTitle(
+			"GW13 (DGW): Man City (A) - FDR 5 / Everton (H) - FDR 2",
+		);
+		expect(within(dgwPill).getByText("MCI (A)")).toBeInTheDocument();
+		expect(within(dgwPill).getByText("EVE (H)")).toBeInTheDocument();
+		expect(
+			within(sakaCell).getByTitle("GW14: Blank gameweek"),
+		).toHaveTextContent("BGW");
+		expect(within(sakaCell).getByText("CHE (H)")).toHaveAttribute(
+			"title",
+			"GW15: Chelsea (H) - FDR 3",
+		);
+
+		const emptyRow = screen.getByText("EmptyRun").closest("tr") as HTMLElement;
+		const emptyCell = within(emptyRow).getAllByRole("cell")[next5Index];
+		expect(emptyCell).toHaveTextContent("-");
+		expect(within(emptyCell).queryByRole("list")).not.toBeInTheDocument();
 	});
 });

@@ -302,6 +302,26 @@ function buildPlayerContextColumns<
 			}),
 		},
 		{
+			id: "next_fixtures",
+			accessorKey: "next_fixtures",
+			enableSorting: false,
+			header: "Next 5",
+			cell: ({ row }) => (
+				<FixtureStrip
+					fixtures={row.original.next_fixtures ?? []}
+					startGw={
+						row.original.as_of_gw != null
+							? row.original.as_of_gw + 1
+							: undefined
+					}
+				/>
+			),
+			meta: {
+				tooltip:
+					"Upcoming 5-gameweek fixture run, colour-coded by fixture difficulty",
+			},
+		},
+		{
 			...nullableNumericColumn<T, "current_ownership">("current_ownership"),
 			header: "Owned %",
 			cell: heatCell<T>({
