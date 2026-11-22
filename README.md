@@ -18,8 +18,8 @@ recent-form window, expected stats (`xG`/`xA`/`xGI`) rather than raw points,
 live transfer and fixture context, and a point-in-time design that lets every
 recommendation be replayed and scored against what actually happened next.
 The dashboard can also import a public FPL squad, splitting Starting XI from
-Bench so you can see where your squad looks weak and jump straight to
-filtered replacement candidates.
+Bench with captaincy and start/sit cues so you can spot weak links, filter
+replacement candidates, and compare them side by side.
 
 ## Key Features
 
@@ -30,8 +30,10 @@ filtered replacement candidates.
   context, because backtests found the swing does not persist
 - **DefCon hit-probability model** – a calibrated contribution-count model that
   estimates `P(Hit | 60+ Mins)`, uses the size of each defensive-contribution
-  performance, then recalibrates those probabilities against prior point-in-time
-  prediction buckets
+  performance, incorporates cross-season player priors keyed by stable FPL
+  `code` when a prior DefCon season exists (`2026-27` onward, gated on matching
+  DefCon rule thresholds), and recalibrates probabilities against prior
+  point-in-time prediction buckets
 - **Backtesting harness and Research view** – replays each gameweek on the
   point-in-time view, then scores the form ranking signals, DefCon probabilities
   and club form against the following gameweeks inside the dashboard, including
@@ -41,8 +43,9 @@ filtered replacement candidates.
 - **Interactive web dashboard** – a React single-page app with sortable,
   paginated tables (10, 25, 50, 100, or all rows; sorting and filtering apply to
   the full result set) across Attacking Form, DefCon Form, DefCon Probability,
-  Club Form, and Research views, URL-backed controls, active filter chips,
-  presets, colour-coded signal columns, sticky player context, and a
+  Club Form, and Research views, inline 5-GW colour-coded `Next 5` fixture
+  strips across all player and club tables, URL-backed controls, active filter
+  chips, presets, colour-coded signal columns, sticky player context, and a
   Light / System / Dark theme toggle
 - **Interactive screening scatter plot** – collapsible Attacking Form chart with
   three views (`Projected xGI vs Price` value frontier by default,
@@ -55,10 +58,12 @@ filtered replacement candidates.
   yellow-card suspension watch, and set-piece badges (`P`, `C`, `FK`) across
   all player views
 - **Actionable squad inspection** – imports a public FPL team ID, splits
-  Starting XI from Bench in FPL auto-sub order, displays a summary bar with
-  optional Bank (£m) input and 5-GW colour-coded fixture strips, flags
-  availability, card risk, minutes, fixture, threat, and DefCon upside, and
-  provides one-click `Replace` filtering into Attacking Form
+  Starting XI from Bench in FPL auto-sub order, auto-prefills Bank (£m) from
+  the entry's balance (with URL-persisted manual overrides and `Reset`),
+  surfaces a Captaincy Shortlist and formation-legal Start / Sit Watch below
+  the summary bar, displays 5-GW colour-coded fixture strips and transparent
+  risk/hold flags, and provides one-click `Replace` filtering into Attacking
+  Form with per-row `Compare` directly against the outgoing player
 - **Player detail and side-by-side comparison** – click any player row to
   inspect live availability, news, set-piece duties, yellow cards, a 5-GW
   fixture strip, rolling `xG`/`xA`/`xGI` per 90 and DefCon charts, per-gameweek
@@ -232,14 +237,17 @@ positional average made rankings worse.
 ### Transfer Workflow
 
 The dashboard is designed around narrowing transfer candidates without hiding
-the underlying evidence. Transfer filters apply across all player tables: price
-ceiling, FDR ceiling, minutes floor, minutes per appearance, start percentage,
-ownership range, minimum attacking-threat thresholds for the enabled
-expected-stat metrics, and live-snapshot toggles for `Exclude Unavailable`
-(hides injured, suspended, unavailable, and ineligible players while keeping
-available and doubtful ones) and `Penalties Only` (primary penalty takers).
-Presets provide quick starting points for common candidate types, while active
-filter chips make every active constraint visible and removable.
+the underlying evidence. All three player tables (Attacking Form, DefCon Form,
+and DefCon Probability) show a 5-GW colour-coded `Next 5` fixture strip inline
+beside `FDR (Next 5)`, anchored at `as_of_gw + 1` to match Club Form. Transfer
+filters apply across all player tables: price ceiling, FDR ceiling, minutes
+floor, minutes per appearance, start percentage, ownership range, minimum
+attacking-threat thresholds for the enabled expected-stat metrics, and
+live-snapshot toggles for `Exclude Unavailable` (hides injured, suspended,
+unavailable, and ineligible players while keeping available and doubtful ones)
+and `Penalties Only` (primary penalty takers). Presets provide quick starting
+points for common candidate types, while active filter chips make every active
+constraint visible and removable.
 
 Shortlisting is URL-backed so a focused candidate list can be shared or
 reopened. The compare panel shows two selected players side by side under the
@@ -248,23 +256,36 @@ same point-in-time window and as-of gameweek assumptions, with overlaid rolling
 open Player Detail, side-by-side 5-GW fixture strips, and a `Live Snapshot`
 section for availability and set-piece duties.
 
-A public FPL team ID can be imported from the official entry-picks endpoint.
-Imported ownership is labelled as `Currently Owned` because the app does not
-have historical squad state; the analytics around those players still use the
-chosen point-in-time `as_of_gw`. The table switches between all players, the
-imported squad inspection, and shortlisted players.
+A public FPL team ID can be imported from the official entry-picks endpoint,
+including the entry's in-the-bank balance (`entry_history.bank`). Imported
+ownership is labelled as `Currently Owned` because the app does not have
+historical squad state; the analytics around those players still use the chosen
+point-in-time `as_of_gw`. The table switches between all players, the imported
+squad inspection, and shortlisted players.
 
 Squad inspection is diagnostic rather than a solver: it splits **Starting XI**
 (ordered by position then name) from **Bench** (ordered by FPL auto-sub order
 `B1`–`B4`), summarises Starting XI projected xGI, Risk/Watch counts, and
-average next FDR alongside an optional **Bank (£m)** input, and renders a
-5-GW colour-coded fixture strip for each player. It surfaces transparent flags
-– `Injured`, `Suspended`, `Unavailable`, `Doubtful`, `Card Risk`, `Minutes
-Risk`, `Fixture Risk`, `Low Threat`, `DefCon Upside`, and `Good Hold` – and
-provides a one-click `Replace` action that opens Attacking Form filtered to the
-same position, `price + bank`, and unowned players. `Low Threat` uses the
-estimated xGI per 90, the best per-90 predictor in the form backtest, so a
-quiet recent spell alone does not trigger it.
+average next FDR alongside a **Bank (£m)** input auto-prefilled from the
+imported entry balance (with URL-persisted manual overrides via `bank` and a
+`Reset` action), and renders a 5-GW colour-coded fixture strip for each player.
+Directly below the summary bar, a two-column **Lineup & Captaincy Insights**
+panel surfaces a **Captaincy Shortlist** (top three eligible outfield Starting
+XI candidates ranked by `projected_xgi`, next FDR, and `est_xgi90`, highlighting
+current captain and doubtful flags) alongside a **Start / Sit Watch**
+(formation-legal Bench-to-Starting-XI swaps enforcing `DEF >= 3`, `MID >= 2`,
+`FWD >= 1`, resolving unavailable or blanking starters first – preferring fit
+bench cover over doubtful players – before surfacing `>= 0.10` `projected_xgi`
+upgrades). It surfaces transparent flags – `Injured`, `Suspended`,
+`Unavailable`, `Doubtful`, `Card Risk`, `Minutes Risk`, `Fixture Risk`,
+`Low Threat`, `DefCon Upside`, and `Good Hold` – and provides a one-click
+`Replace` action that opens Attacking Form filtered to the same position,
+`price + bank`, and unowned players, accompanied by a contextual replacement
+banner (`Back to Squad`, `Dismiss`) and a per-row `Compare` button to open
+`PlayerComparePanel` directly against the outgoing squad player (including
+zero-appearance picks). `Low Threat` uses the estimated xGI per 90, the best
+per-90 predictor in the form backtest, so a quiet recent spell alone does not
+trigger it.
 
 ### Table Colours and Appearance
 
@@ -291,29 +312,38 @@ interceptions, tackles); midfielders and forwards need 12+ CBIRT (CBIT plus
 recoveries). Rather than report a raw hit-rate, the engine models each player's
 probability of hitting from their defensive-contribution counts, conditional on
 playing at least 60 minutes: a Gamma-Poisson count model estimates the chance
-of clearing the positional threshold, then a point-in-time calibration layer
-shrinks that probability toward the observed hit-rate of similar prior
-predictions. The model is evaluated by backtest. Brier score measures average
-probability error, so lower is better: confident wrong predictions are punished
-more than cautious ones. Expected calibration error (ECE) checks whether
-probabilities mean what they say – for example, whether players predicted
-around 40% actually hit around 40% of the time. The UI also surfaces average
-defensive-contribution counts, which show whether a player is trending near the
-threshold even when their binary hit-rate is flat.
+of clearing the positional threshold, incorporates cross-season player priors
+when a prior DefCon season exists (`2026-27` onward), and a point-in-time
+calibration layer shrinks that probability toward the observed hit-rate of
+similar prior predictions. Cross-season priors match players by stable FPL
+`code` and add capped prior-season count evidence (requiring 3+ eligible prior
+appearances, capped at 10 games) on top of the current-season positional Gamma
+prior, fading as current-season appearances accumulate; priors are gated on
+matching DefCon rule thresholds so `DEF` (CBIT, 10) ↔ `MID`/`FWD` (CBIRT, 12)
+reclassifications fall back to the current-season positional prior while `MID`
+↔ `FWD` movers keep their prior. The model is evaluated by backtest. Brier
+score measures average probability error, so lower is better: confident wrong
+predictions are punished more than cautious ones. Expected calibration error
+(ECE) checks whether probabilities mean what they say – for example, whether
+players predicted around 40% actually hit around 40% of the time. The UI also
+surfaces average defensive-contribution counts, which show whether a player is
+trending near the threshold even when their binary hit-rate is flat.
 
 #### DefCon Probability Backtest Results (2025-26 Season)
 
 Player models were replayed point-in-time at GW1–37, predicting each eligible
 appearance in GW2–38 using only data through the as-of gameweek. The committed
 2025-26 archive yields 6,635 scored appearances (1,350 hits), requiring at least
-60 minutes and a non-null DefCon outcome. Each of the 69 player double gameweeks
-contributes two observations with the same pre-gameweek prediction, including
-20 mixed hit/miss pairs. Calibration also counts those appearances separately
-and uses only outcomes realised by the as-of gameweek. Settings are unchanged:
-empirical-Bayes priors, fallback strength 5, at least 3 appearances to inform
-prior variance, 10 calibration bins and calibration prior strength 50. The
-constant baseline uses the full scored sample's hit rate, so it is a hindsight
-reference rather than a point-in-time forecast.
+60 minutes and a non-null DefCon outcome. Because 2024-25 predates DefCon,
+2025-26 receives an empty prior and uses current-season positional priors alone.
+Each of the 69 player double gameweeks contributes two observations with the
+same pre-gameweek prediction, including 20 mixed hit/miss pairs. Calibration
+also counts those appearances separately and uses only outcomes realised by the
+as-of gameweek. Settings are unchanged: empirical-Bayes priors, fallback
+strength 5, at least 3 appearances to inform prior variance, 10 calibration bins
+and calibration prior strength 50. The constant baseline uses the full scored
+sample's hit rate, so it is a hindsight reference rather than a point-in-time
+forecast.
 
 | Method | Brier | ECE | Verdict |
 | --- | ---: | ---: | --- |
@@ -325,7 +355,10 @@ reference rather than a point-in-time forecast.
 
 The calibrated count model is preferred because it keeps almost all of the raw
 count model's Brier improvement while sharply reducing ECE, making the displayed
-probability more trustworthy.
+probability more trustworthy. On the early 2026-27 archive (GW1–10, 1,529 scored
+appearances), adding threshold-matched 2025-26 player priors lowers calibrated
+Brier from 0.1304 to 0.1275 (-2.2%) and ECE from 0.0230 to 0.0194, outperforming
+the binary empirical-Bayes baseline (0.1334 Brier) by 4.5%.
 
 Reproduce the metrics through the existing validation endpoint without fetching
 or modifying data:
@@ -414,9 +447,10 @@ available in the live scouting view only as current fixture context.
 - Cross-season player matching uses stable FPL `code`; historical `element` IDs
   are season-local and are not safe for matching the same player across seasons
 - Current ownership, availability/news, yellow cards, set-piece duties, and
-  imported squad membership are live/current-state overlays from the official
-  FPL API – they are not point-in-time historical fields and do not change with
-  `as_of_gw`. Archived `GET /players/{element}` requests omit live-only fields
+  imported squad membership and bank balance are live/current-state overlays
+  from the official FPL API – they are not point-in-time historical fields and
+  do not change with `as_of_gw`. Archived `GET /players/{element}` requests omit
+  live-only fields
 - Curated Parquet snapshots under `data/` are committed for reproducible
   deployment and personal/non-commercial use; they are sourced from the public
   FPL API and public community archives
@@ -611,12 +645,12 @@ uv run python scripts/club_form_validation.py
 | Endpoint | Description | Parameters |
 | --- | --- | --- |
 | `GET /` | Live season, analytical readiness, next deadline, and latest completed gameweek | – |
-| `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad | Path: `entry_id`; query: `event` |
+| `GET /fpl-team/{entry_id}` | Import a public FPL entry's currently visible squad and bank balance | Path: `entry_id`; query: `event` |
 | `GET /players/current-context` | Current snapshot player metadata, availability, set-piece duties, and upcoming fixture context | – |
 | `GET /players/form` | Players ranked by projected xGI per gameweek, with recent-versus-season form | `window`, `position`, `min_minutes`, `min_delta`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/form-validation` | Backtest the form ranking signals against the next gameweeks | `window`, `horizon`, `season` |
 | `GET /players/defcon` | Players ranked by point-in-time DefCon hit-rate | `window`, `position`, `min_minutes`, `min_hit_rate`, `top_k`, `as_of_gw`, `fdr_horizon` |
-| `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
+| `GET /players/defcon-probability` | Players ranked by calibrated `P(Hit \| 60+ Mins)` (with prior-season counts when available) | `position`, `min_games`, `min_minutes`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /players/defcon-probability-validation` | Backtest the DefCon probability model | `bins`, `min_minutes`, `season` |
 | `GET /clubs/form` | Clubs ranked by recent-versus-season xG and xGC form with upcoming fixture strips | `window`, `top_k`, `as_of_gw`, `fdr_horizon` |
 | `GET /clubs/form-validation` | Backtest a season baseline versus baseline plus recent club form | `window`, `horizon`, `min_train_rows`, `season` |
