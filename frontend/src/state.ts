@@ -1,4 +1,4 @@
-import type { FormPlayer, Position } from "./api";
+import type { FormPlayer, Position, UpcomingFixture } from "./api";
 
 export type Tab = "form" | "defcon" | "defconProb" | "clubs" | "evidence";
 export type AttackingMetric = "xg" | "xa" | "xgi";
@@ -51,6 +51,8 @@ export type TransferFilters = {
 export type TransferFilterRow = {
 	price?: number | null;
 	avg_fdr?: number | null;
+	next_fixtures?: UpcomingFixture[];
+	as_of_gw?: number;
 	window_start_rate?: number | null;
 	window_mins_per_appearance?: number | null;
 	current_ownership?: number | null;
