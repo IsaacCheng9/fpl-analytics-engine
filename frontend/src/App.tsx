@@ -105,13 +105,7 @@ export default function App() {
 		useState<ReplacementRequest | null>(null);
 	const [urlState, setUrlState] = useUrlState((restored) => {
 		setFplTeamInput(restored.fplTeamId?.toString() ?? "");
-		if (
-			restored.tab !== "form" ||
-			restored.showSquadView ||
-			restored.fplTeamId === null
-		) {
-			setReplacingPlayer(null);
-		}
+		setReplacingPlayer(null);
 	});
 	const {
 		tab,
@@ -241,23 +235,63 @@ export default function App() {
 		setSquadBank,
 	]);
 
+	// Include an outgoing squad player without form history in the compare
+	// combobox so Compare-from-Replace never silently drops them.
+	const effectiveComparePlayerOptions = useMemo(() => {
+		if (
+			replacingPlayer === null ||
+			compareOptionElements.has(replacingPlayer.element)
+		) {
+			return comparePlayerOptions;
+		}
+		const pick = squadPicks.find(
+			(item) => item.element === replacingPlayer.element,
+		);
+		const currentContext = squadCurrentContextQuery.data?.find(
+			(item) => item.element === replacingPlayer.element,
+		);
+		const fallbackOption = {
+			element: replacingPlayer.element,
+			web_name: replacingPlayer.webName,
+			position: replacingPlayer.position,
+			team_name: currentContext?.team_name ?? pick?.team_name ?? null,
+		};
+		return [...comparePlayerOptions, fallbackOption].sort((left, right) => {
+			const name = left.web_name.localeCompare(right.web_name);
+			return name !== 0
+				? name
+				: (left.team_name ?? "").localeCompare(right.team_name ?? "");
+		});
+	}, [
+		compareOptionElements,
+		comparePlayerOptions,
+		replacingPlayer,
+		squadCurrentContextQuery.data,
+		squadPicks,
+	]);
+	const effectiveCompareOptionElements = useMemo(
+		() =>
+			new Set(effectiveComparePlayerOptions.map((player) => player.element)),
+		[effectiveComparePlayerOptions],
+	);
+
 	useEffect(() => {
 		if (!compareOpen || comparePlayerOptions.length === 0) {
 			return;
 		}
 		const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
 		const defaultElement = defaults.find((element) =>
-			compareOptionElements.has(element),
+			effectiveCompareOptionElements.has(element),
 		);
 		setCompareLeftElement((current) =>
-			current !== null && compareOptionElements.has(current)
+			current !== null && effectiveCompareOptionElements.has(current)
 				? current
 				: (defaultElement ?? null),
 		);
 	}, [
 		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
+		comparePlayerOptions.length,
+		effectiveCompareOptionElements,
 		ownedElementList,
 		shortlist,
 		setCompareLeftElement,
@@ -271,22 +305,23 @@ export default function App() {
 			if (
 				current !== null &&
 				current !== compareLeftElement &&
-				compareOptionElements.has(current)
+				effectiveCompareOptionElements.has(current)
 			) {
 				return current;
 			}
 			const defaults = shortlist.length > 0 ? shortlist : ownedElementList;
 			const defaultElement = defaults.find(
 				(element) =>
-					element !== compareLeftElement && compareOptionElements.has(element),
+					element !== compareLeftElement &&
+					effectiveCompareOptionElements.has(element),
 			);
 			return defaultElement ?? null;
 		});
 	}, [
 		compareLeftElement,
 		compareOpen,
-		compareOptionElements,
-		comparePlayerOptions,
+		comparePlayerOptions.length,
+		effectiveCompareOptionElements,
 		ownedElementList,
 		shortlist,
 		setCompareRightElement,
@@ -820,7 +855,7 @@ export default function App() {
 				rowClassName={playerRowClassName}
 				rowStickyClassName={playerStickyClassName}
 				renderRowActions={renderPlayerRowActions}
-				rowActionsWidth={showCompareFromReplace ? 128 : 48}
+				rowActionsWidth={showCompareFromReplace ? 144 : 48}
 				rowActionsHeader={"\u2605"}
 				rowActionsHeaderLabel="Shortlist"
 				rowActionsHeaderTooltip="Add or remove players from the shortlist"
@@ -1239,7 +1274,7 @@ export default function App() {
 			{compareOpen ? (
 				<Suspense fallback={<PanelFallback />}>
 					<PlayerComparePanel
-						playerOptions={comparePlayerOptions}
+						playerOptions={effectiveComparePlayerOptions}
 						formPlayers={compareFormQuery.data ?? []}
 						defconPlayers={compareDefconQuery.data ?? []}
 						defconProbabilityPlayers={compareDefconProbabilityQuery.data ?? []}

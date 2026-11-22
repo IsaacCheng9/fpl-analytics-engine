@@ -3503,3 +3503,102 @@ test("compares replacement candidates directly against the outgoing squad player
 	fireEvent.click(screen.getByRole("button", { name: "Clear Active Filters" }));
 	expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
+
+test("keeps an outgoing squad player without form history selected in Compare-from-Replace", async () => {
+	const ghostTeam = {
+		entry_id: 123,
+		as_of_gw: 10,
+		bank: 1.0,
+		owned_elements: [99, 2],
+		picks: [
+			{
+				element: 99,
+				web_name: "NewSigning",
+				position: "MID",
+				team_name: "Arsenal",
+				squad_position: 1,
+				multiplier: 1,
+				is_captain: false,
+				is_vice_captain: false,
+				is_starting: true,
+			},
+			...importedTeam.picks.slice(1),
+		],
+	};
+	const ghostCurrent = [
+		...currentPlayerContexts,
+		{
+			...currentPlayerContexts[0],
+			element: 99,
+			web_name: "NewSigning",
+			position: "MID",
+			team_name: "Arsenal",
+			price: 8.5,
+		},
+	];
+	const ghostDetail = {
+		...playerDetail,
+		element: 99,
+		web_name: "NewSigning",
+		position: "MID",
+		team_name: "Arsenal",
+		gameweeks: [],
+	};
+
+	vi.mocked(fetch).mockImplementation((input) => {
+		const url = String(input);
+		if (url.includes("/fpl-team/123")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostTeam), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/current-context")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostCurrent), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		if (url.includes("/players/99?")) {
+			return Promise.resolve(
+				new Response(JSON.stringify(ghostDetail), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+		}
+		return mockApiFetch(input);
+	});
+
+	window.history.replaceState(null, "", "/?fpl_team=123&squad_view=1");
+	render(withProviders(<App />));
+
+	fireEvent.click(
+		await screen.findByRole("button", {
+			name: "Find replacement for NewSigning",
+		}),
+	);
+	const compareButton = await screen.findByRole("button", {
+		name: "Compare NewSigning with Mbeumo",
+	});
+	fireEvent.click(compareButton);
+
+	const compareDialog = await screen.findByRole("dialog", {
+		name: "Compare Players",
+	});
+	await waitFor(() => {
+		expect(
+			within(compareDialog).getByDisplayValue("NewSigning - Arsenal - MID"),
+		).toBeInTheDocument();
+		expect(
+			within(compareDialog).getByDisplayValue("Mbeumo - Man Utd - MID"),
+		).toBeInTheDocument();
+	});
+	const params = new URLSearchParams(window.location.search);
+	expect(params.get("compare_a")).toBe("99");
+	expect(params.get("compare_b")).toBe("1");
+});

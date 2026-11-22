@@ -996,7 +996,10 @@ export function SquadInspection({
 			parsed >= SQUAD_BANK_MIN &&
 			parsed <= SQUAD_BANK_MAX
 		) {
-			onBankOverrideChange(roundTo1Decimal(parsed));
+			const rounded = roundTo1Decimal(parsed);
+			onBankOverrideChange(
+				importedBank !== null && rounded === importedBank ? null : rounded,
+			);
 		}
 	}
 
@@ -1004,7 +1007,9 @@ export function SquadInspection({
 		const trimmed = bankInput.trim();
 		if (trimmed === "") {
 			setBankInput(fallbackBank.toFixed(1));
-			onBankOverrideChange?.(null);
+			if (bankOverride !== null) {
+				onBankOverrideChange?.(null);
+			}
 			return;
 		}
 		const parsed = parseOptionalInputNumber(trimmed, {
@@ -1013,11 +1018,22 @@ export function SquadInspection({
 		});
 		if (parsed === null) {
 			setBankInput(fallbackBank.toFixed(1));
-			onBankOverrideChange?.(null);
+			if (bankOverride !== null) {
+				onBankOverrideChange?.(null);
+			}
 			return;
 		}
 		const rounded = roundTo1Decimal(parsed);
 		setBankInput(rounded.toFixed(1));
+		if (importedBank !== null && rounded === importedBank) {
+			if (bankOverride !== null) {
+				onBankOverrideChange?.(null);
+			}
+			return;
+		}
+		if (bankOverride === null && rounded === fallbackBank) {
+			return;
+		}
 		onBankOverrideChange?.(rounded);
 	}
 
